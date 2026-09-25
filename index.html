@@ -656,16 +656,23 @@ function newRoute(base){
 }
 let saveT=null;
 function save(){ store.cur=route.id; clearTimeout(saveT); saveT=setTimeout(saveNow,250); }
-function saveNow(){ store.savedAt=Date.now();
+function saveNow(){ store.savedAt=Date.now(); if(route) route.savedAt=store.savedAt;
   for(const r of store.routes){ const used=new Set((r.steps||[]).filter(s=>s.src&&!s.src.auto).map(s=>s.src.g)); for(const g of r.guides||[]){ if(used.has(g.id)){ if(!g.raw&&rawCache.has(g.id)) g.raw=rawCache.get(g.id); } else if(g.raw){ if(!rawCache.has(g.id)) rawCache.set(g.id,g.raw); delete g.raw; } } }
   const txt=JSON.stringify(store); let lsOK=false;
   try{ localStorage.setItem(LS,txt); lsOK=true; }catch(e){ // too big for browser storage: keep a copy without the guide text (that also lives in the database); never delete the old copy
     try{ localStorage.setItem(LS,JSON.stringify(store,(k,v)=>k==='raw'?undefined:v)); lsOK=true; }catch(_){ } }
+  for(const r of store.routes) if(r.savedAt) kvPut('route:'+r.id,JSON.stringify(r)); // each route also on its own, so one bad load can never wipe the others
   kvPut('store',txt).then(ok=>{ const bad=!ok&&!lsOK; const b=document.getElementById('saveWarn'); if(b) b.hidden=!bad; }); }
 addEventListener('pagehide',()=>{ if(saveT){ clearTimeout(saveT); saveNow(); } });
 async function loadStore(){
   let a=null,b=null; try{ a=JSON.parse(localStorage.getItem(LS)||'null'); }catch(e){} try{ b=JSON.parse(await kvGet('store')||'null'); }catch(e){}
   const ok=s=>s&&Array.isArray(s.routes)&&s.routes.length; const s=ok(a)&&ok(b)?((b.savedAt||0)>=(a.savedAt||0)?b:a):(ok(b)?b:ok(a)?a:null); if(s) store=s;
+  // merge in every route saved on its own (newest copy of each wins; routes you deleted stay deleted)
+  try{ const del=new Set([...(a?.deleted||[]),...(b?.deleted||[]),...(store.deleted||[])]); store.deleted=[...del]; const byId=new Map();
+    for(const r of [...(a?.routes||[]),...(b?.routes||[])]) if(r&&r.id&&!del.has(r.id)&&(!byId.has(r.id)||(r.savedAt||0)>(byId.get(r.id).savedAt||0))) byId.set(r.id,r);
+    for(const k of (await kvKeys()).filter(k=>String(k).startsWith('route:'))){ let r=null; try{ r=JSON.parse(await kvGet(k)); }catch(e){} if(r&&r.id&&!del.has(r.id)&&(!byId.has(r.id)||(r.savedAt||0)>(byId.get(r.id).savedAt||0))) byId.set(r.id,r); }
+    const order=store.routes.map(r=>r.id); const merged=[...byId.values()].sort((x,y)=>{ const i=order.indexOf(x.id), j=order.indexOf(y.id); return (i<0?1e9:i)-(j<0?1e9:j); });
+    const full=merged.filter(r=>(r.steps||[]).length||(r.guides||[]).length), empty=merged.filter(r=>!full.includes(r)); if(merged.length) store.routes=[...full,...empty.slice(0,full.length?1:1)]; if(!store.routes.some(r=>r.id===store.cur)&&full[0]) store.cur=full[0].id; }catch(e){}
   // daily backups of what was loaded (last 7 kept), restorable from Settings
   if(s){ try{ const day=new Date().toISOString().slice(0,10); const keys=(await kvKeys()).filter(k=>String(k).startsWith('backup:')).sort(); if(!keys.includes('backup:'+day)) await kvPut('backup:'+day,JSON.stringify(s)); const db=await rawDB(); for(const k of keys.slice(0,Math.max(0,keys.length-7))) db.transaction('kv','readwrite').objectStore('kv').delete(k); }catch(e){} }
   for(const r of store.routes) for(const g of r.guides||[]) if(g.raw) rawCache.set(g.id,g.raw);
@@ -1624,7 +1631,7 @@ canvas.addEventListener('pointerdown',()=>{ if(innerWidth<=900) closePanels(); }
 $('#clearSteps').addEventListener('click',async()=>{ if(!route.steps.length) return toast('This route has no steps'); if(!await ask(`Remove all ${route.steps.length} steps from "${route.name}"? You can undo this.`)) return; pushHistory(); route.steps=[]; cursor=-1; $('#dlgChar').close('cancel'); refresh(); toast('All steps removed. Undo brings them back.'); });
 $('#clearAfter').addEventListener('click',async()=>{ const n=route.steps.length-1-cursor; if(n<=0) return toast('No steps after the selected one'); if(!await ask(`Remove the ${n} step${n>1?'s':''} after step ${cursor+1}? You can undo this.`)) return; pushHistory(); route.steps.splice(cursor+1); $('#dlgChar').close('cancel'); refresh(); toast(`Removed ${n} step${n>1?'s':''}`); });
 $('#delRoute').addEventListener('click',async()=>{ if(!await ask(`Delete the route "${route.name}" and its imported guides? This can't be undone.`)) return;
-  store.routes=store.routes.filter(r=>r!==route); if(!store.routes.length) store.routes.push(newRoute({name:'New route'}));
+  store.deleted=[...(store.deleted||[]),route.id]; kvDel('route:'+route.id); store.routes=store.routes.filter(r=>r!==route); if(!store.routes.length) store.routes.push(newRoute({name:'New route'}));
   route=store.routes[0]; cursor=route.steps.length-1; history=[]; selQuest=null; if(typeof selGuide!=='undefined') selGuide=null; $('#dlgChar').close('cancel'); refresh(); toast('Route deleted'); });
 let stepsFocus=false; document.addEventListener('pointerdown',e=>{ stepsFocus=!!e.target.closest('#steps'); },true);
 document.addEventListener('keydown',e=>{ if((e.key==='Delete'||e.key==='Backspace')&&stepsFocus&&cursor>=0&&!e.target.closest('input,textarea,select,dialog')){ e.preventDefault(); removeStep(cursor); } });
@@ -1743,6 +1750,7 @@ function buildGuideSteps(g,convert){
 const rawCache=new Map(); let rawDBp=null;
 function rawDB(){ if(!rawDBp) rawDBp=new Promise((res)=>{ try{ const rq=indexedDB.open('frp-raw',2); rq.onupgradeneeded=()=>{ const d=rq.result; if(!d.objectStoreNames.contains('g')) d.createObjectStore('g'); if(!d.objectStoreNames.contains('kv')) d.createObjectStore('kv'); }; rq.onsuccess=()=>res(rq.result); rq.onerror=()=>res(null); }catch(e){ res(null); } }); return rawDBp; }
 function kvPut(k,v){ return rawDB().then(db=>new Promise(res=>{ if(!db) return res(false); try{ const t=db.transaction('kv','readwrite'); t.objectStore('kv').put(v,k); t.oncomplete=()=>res(true); t.onerror=t.onabort=()=>res(false); }catch(e){ res(false); } })); }
+function kvDel(k){ rawDB().then(db=>{ try{ db&&db.transaction('kv','readwrite').objectStore('kv').delete(k); }catch(e){} }); }
 async function kvKeys(){ const db=await rawDB(); if(!db) return []; return new Promise(res=>{ try{ const rq=db.transaction('kv').objectStore('kv').getAllKeys(); rq.onsuccess=()=>res(rq.result||[]); rq.onerror=()=>res([]); }catch(e){ res([]); } }); }
 async function kvGet(k){ const db=await rawDB(); if(!db) return null; return new Promise(res=>{ try{ const rq=db.transaction('kv').objectStore('kv').get(k); rq.onsuccess=()=>res(rq.result??null); rq.onerror=()=>res(null); }catch(e){ res(null); } }); }
 function rawPut(id,blocks){ rawCache.set(id,blocks); rawDB().then(db=>{ if(!db) return; try{ db.transaction('g','readwrite').objectStore('g').put(blocks,id); }catch(e){} }); }
