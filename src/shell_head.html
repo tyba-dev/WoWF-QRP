@@ -261,7 +261,7 @@ dialog textarea{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-
     <button class="who linkish" id="whoBtn" style="text-decoration:none"></button>
     <button class="btn" id="aboutBtn">About</button>
     <button class="btn" id="themeBtn" aria-label="Toggle light or dark theme">Theme</button>
-    <button class="btn gold" id="exportBtn">Export</button>
+    <button class="btn gold" id="exportBtn">Import / Export</button>
     <button class="btn icon mobile-only" id="openRight" aria-label="Show quests">Quests</button>
   </header>
   <div class="main">
@@ -398,7 +398,7 @@ dialog textarea{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-
 </form></dialog>
 
 <dialog id="dlgExport"><div class="dl">
-  <h2>Export route</h2>
+  <h2>Import / export route</h2>
   <div class="seg" id="expMode"><button type="button" data-m="rxp" aria-pressed="true">RestedXP guide</button><button type="button" data-m="json" aria-pressed="false">Route file (for sharing)</button></div>
   <div class="grid2" data-exp="rxp"><label>Guide group<input type="text" id="expGroup"></label><label>Guide name<input type="text" id="expName"></label></div>
   <div class="grid2" data-exp="rxp"><label>Next guide (optional)<input type="text" id="expNext"></label><label>Extra header lines<input type="text" id="expExtra" placeholder="e.g. #classic"></label></div>
@@ -406,8 +406,9 @@ dialog textarea{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-
   <p class="note" id="expMsg" style="margin:0;color:var(--warn)"></p>
   <textarea id="expText" spellcheck="false" aria-label="Exported text"></textarea>
   <p class="note" data-exp="rxp" style="margin:0">Objective numbers in <code>.complete</code> follow Questie's order (kills, objects, items). Check them in-game on quests with mixed objectives.</p>
-  <p class="note" data-exp="json" style="margin:0" hidden>Paste a route file here and choose Import to load it as a new route.</p>
+  <p class="note" data-exp="json" style="margin:0" hidden>To load a route: choose Open file… or paste a route file here, then Import. It is added as a new route.</p>
   <div class="actions">
+    <label class="btn" data-exp="json" hidden style="cursor:pointer">Open file…<input type="file" id="expFile" accept=".json,.txt,application/json,text/plain" hidden></label>
     <button class="btn" id="expImport" data-exp="json" hidden>Import</button>
     <button class="btn" id="expCopy">Copy</button>
     <button class="btn" id="expSave">Download</button>

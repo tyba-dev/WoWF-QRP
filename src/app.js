@@ -1124,6 +1124,7 @@ $('#expSave').addEventListener('click',async()=>{ const m=$('#expMode [aria-pres
   if(!dl){ try{ const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([$('#expText').value],{type:'text/plain'})); a.download=m==='rxp'?name+'.lua':name+'.json'; document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); },1000); toast('Saved'); }catch(e){ toast('Download isn\u2019t available here. Use Copy instead.'); } return; }
   try{ await dl.save({filename:m==='rxp'?name+'.txt':name+'.json',data:new TextEncoder().encode($('#expText').value)}); toast('Saved'); }
   catch(e){ if(e?.code!=='declined') toast('Download failed: '+(e?.message||e?.code||'unknown')); } });
+$('#expFile').addEventListener('change',async e=>{ const f=e.target.files[0]; if(!f) return; $('#expText').value=await f.text(); e.target.value=''; $('#expImport').click(); });
 $('#expImport').addEventListener('click',()=>{ try{ const o=JSON.parse($('#expText').value); const r=o.route||o; if(!Array.isArray(r.steps)) throw 0; const nr=migrateRoute(newRoute({...r,id:uid(),name:(r.name||'Imported')+' (imported)'})); for(const g of nr.guides||[]) if(g.raw){ rawPut(g.id,g.raw); delete g.raw; } store.routes.push(nr); route=nr; cursor=nr.steps.length-1; history=[]; refresh(); $('#dlgExport').close(); toast('Route imported'); }catch(e){ toast('That text isn\u2019t a route file'); } });
 
 /* ---------- zone images (IndexedDB, this browser only) ---------- */
