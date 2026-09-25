@@ -1143,7 +1143,7 @@ $('#imgOpacity').addEventListener('input',e=>{ imgOpacity=+e.target.value; try{l
 $('#imgClose').addEventListener('click',()=>$('#dlgImg').close());
 
 /* ---------- misc ---------- */
-function toast(t){ const el=$('#toast'); el.textContent=t; el.style.display='block'; clearTimeout(toast._t); toast._t=setTimeout(()=>el.style.display='none',2200); }
+function toast(t,ms){ const el=$('#toast'); el.textContent=t; el.style.display='block'; clearTimeout(toast._t); toast._t=setTimeout(()=>el.style.display='none',ms||2200); }
 $$('#layers input').forEach(i=>i.addEventListener('change',()=>{ layers[i.dataset.l]=i.checked; requestDraw(); }));
 $('#zin').addEventListener('click',()=>zoomAt(1.5,W/2,H/2)); $('#zout').addEventListener('click',()=>zoomAt(1/1.5,W/2,H/2)); $('#zfit').addEventListener('click',fitAll);
 $('#zcur').addEventListener('click',()=>{ let p=null; for(let i=cursor;i>=0&&!p;i--) p=SIM.res[i]?.pt; if(p) flyTo(p.X,p.Y,Math.max(view.s,0.12)); else toast('No step with a location yet'); });
@@ -1313,8 +1313,8 @@ function importGuides(text,convert){
       for(const r of store.routes){ r.steps=r.steps.filter(st=>{ if(!st.src||st.src.g!==ex.id) return true; const ni=map[st.src.i];
           if(ni==null||ni<0){ if(st.t==='travel'&&(st.kind==='note'||st.kind==='goto')&&!st.src.auto) return false; if(st.src.auto){ st.src={...st.src,i:Math.max(0,Math.min(steps.length-1,st.src.i))}; return true; } delete st.src; return true; } // unmatched guide notes are re-added in place by the fill below; other unmatched steps become your own steps
           st.src.i=ni; const ns=steps[ni]; for(const f of ['reqs','rx','qn','ride','gopt','cw','sticky','label','text','kind','loc']) if(ns[f]!=null) st[f]=ns[f]; return true; }); if(r===route) cursor=Math.min(cursor,r.steps.length-1); }
-      ex.excluded=(ex.excluded||[]).map(i=>map[i]).filter(i=>i>=0); ex.removed=(ex.removed||[]).map(i=>map[i]).filter(i=>i>=0); ex.from=Math.max(0,map[ex.from]??0); ex.steps=steps; ex.to=steps.length-1; refreshed.push(ex); continue; }
-    const g={id:uid(),name:pg.name||pg.group||'Imported guide',group:pg.group,cond:pg.cond,next:pg.next,ver:pg.ver||'',xprate:pg.xprate||'',color:GCOLORS[route.guides.length%GCOLORS.length],visible:false,from:0,to:steps.length-1,excluded:[],stopAtBlocked:false,includeNotes:true,includeXp:true,steps};
+      ex.excluded=(ex.excluded||[]).map(i=>map[i]).filter(i=>i>=0); ex.removed=(ex.removed||[]).map(i=>map[i]).filter(i=>i>=0); ex.from=Math.max(0,map[ex.from]??0); ex.steps=steps; ex.pv=2; ex.to=steps.length-1; refreshed.push(ex); continue; }
+    const g={id:uid(),pv:2,name:pg.name||pg.group||'Imported guide',group:pg.group,cond:pg.cond,next:pg.next,ver:pg.ver||'',xprate:pg.xprate||'',color:GCOLORS[route.guides.length%GCOLORS.length],visible:false,from:0,to:steps.length-1,excluded:[],stopAtBlocked:false,includeNotes:true,includeXp:true,steps};
     route.guides.push(g); added.push(g); rawPut(g.id,pg.blocks.map(b=>(b.raw||[]).join('\n')));
   }
   const vis=added.find(x=>guideOK(x))||added[0]; if(vis) vis.visible=true;
@@ -1548,7 +1548,7 @@ function afterGuidesRender(){
   on('gFilt','change',e=>{ gFilter=e.target.value; renderRight(); });
   on('gSuggest','click',()=>suggestJoin(g));
   on('gConnect','click',()=>connectGuide(g));
-  on('gFill','click',()=>{ const n=fillGuide(g); refresh(); toast(n?`Added ${n} missing step${n>1?'s':''} in place`:'Nothing missing: your route already has every step of this guide in that stretch'); });
+  on('gFill','click',()=>{ if(!g.pv){ toast('This guide was imported by an older planner version that left out Forever quests. Import the guide file again (Import button) and the missing steps are added in place.',9000); return; } const n=fillGuide(g); refresh(); toast(n?`Added ${n} missing step${n>1?'s':''} in place`:'Nothing missing: your route already has every step of this guide in that stretch'); });
   const sel=$('#rightBody .gstep.sel'); if(sel&&renderGuides._scroll){ sel.scrollIntoView({block:'nearest'}); renderGuides._scroll=false; }
 }
 document.addEventListener('click',async e=>{
