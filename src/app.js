@@ -248,6 +248,9 @@ function migrateRoute(r){ r.guides=r.guides||[];
   return r; }
 function initState(r){ return {level:+r.char.level||1,xp:+r.char.xp||0,party:Math.max(1,+r.char.party||1),log:new Map(),turned:new Set(),fps:new Set(r.char.fps||[]),home:null}; }
 function cloneState(s){ return {level:s.level,xp:s.xp,party:s.party,log:new Map([...s.log].map(([k,v])=>[k,{...v,objs:v.objs?new Set(v.objs):undefined}])),turned:new Set(s.turned),fps:new Set(s.fps),home:s.home}; }
+// Forever: quest log holds 40, but escort quests can't be started with 25+ quests in the log
+const LOGMAX=40, ESC_LIMIT=25, ESCORT=new Set([155,219,309,435,648,660,665,667,731,836,863,898,938,945,976,994,995,1144,1222,1249,1270,1393,1440,1560,1651,2742,2767,2845,2904,2969,3382,3525,3982,4121,4245,4261,4265,4322,4491,4770,4901,4904,4966,5203,5321,5713,5821,5943,5944,6132,6403,6482,6523,6544,6641,8736]);
+const ESC_NOTE=`Escort quest: have fewer than ${ESC_LIMIT} quests in your log before accepting (Forever bug)`;
 function simulate(){
   const st=initState(route); const res=[]; let atCursor=cloneState(st); const optQ=new Set(route.optOff?route.steps.filter(x=>x.opt&&x.t==='accept'&&x.q).map(x=>x.q):[]);
   let lastPt=null; const rqC=new Map();
@@ -272,7 +275,7 @@ function simulate(){
       r.warn.push(`Forever quest not in the Questie database: kept exactly as the guide has it.${s.t==='turnin'?(xp?` Counting ${fmt(xp)} XP.`:' Set its XP reward below if you know it.'):''}`); }
     else if(s.t==='accept'){
       const w=whyUnavailable(s.q,st,route); if(w) r.err.push(w.why);
-      if(st.log.size>=20) r.err.push('Quest log is full (20)');
+      if(st.log.size>=LOGMAX) r.err.push(`Quest log is full (${LOGMAX})`); else if(ESCORT.has(s.q)&&st.log.size>=ESC_LIMIT) r.err.push(`Escort quest: you have ${st.log.size} quests in your log; drop below ${ESC_LIMIT} before accepting`);
       st.log.set(s.q,{done:!hasObjectives(s.q)});
     } else if(s.t==='complete'){
       if(!st.log.has(s.q)) r.err.push('Not in your quest log yet'); else { const e=st.log.get(s.q); e.objs=e.objs||new Set();
@@ -724,7 +727,7 @@ function renderSteps(){
     const lvl=r.after.level+(r.after.level<MAXLVL?r.after.xp/XP_TABLE[r.after.level]:0);
     parts.push(`<li tabindex="-1" class="step ${i===cursor?'cur':''} ${i>cursor?'future':''} ${r.inactive?'inactive':''} ${dgTags.length?'dgstep':''} ${s.opt?'optstep':''} ${selSteps.has(i)?'msel':''}" data-i="${i}" draggable="true">
       <span class="n" title="Drag to reorder">${i+1}</span><span class="ic ${tx.cls} ${dq?'dq':''}" aria-hidden="true">${tx.ic}</span>
-      <span class="t">${''}${s.src&&s.t==='travel'&&(s.kind==='note'||s.kind==='goto')?rxpHTML(tx.t):esc(rxpPlain(tx.t))}${(()=>{const gs=s.src&&!s.src.auto?G(s.src.g)?.steps[s.src.i]:null; return gs?notesHTML(gs,s.t==='travel'&&(s.kind==='note'||s.kind==='goto')?(s.text||''):''):'';})()}${s.t==='grind'&&r.party>1?`<span class="sub">in a group of ${r.party}</span>`:''}${r.kill?`<span class="sub kx">≈${fmt(r.kill.kills)} kills${r.kill.guessed?' (some counts guessed)':''}${r.party>1?` · group of ${r.party}`:''}${r.kill.dg?' · dungeon mobs':''}</span>`:''}${stickyChip(s,i)}${allTags.map(t=>`<span class="dgtag" data-dgsel="${esc(t)}" title="${dgTags.includes(t)?`Only because you're running ${esc(dgName(t))}`:`${esc(dgName(t))} quest`}. Click to select every ${esc(t)} step">${esc(t)}</span>`).join('')}${tx.sub?`<span class="sub">${esc(tx.sub)}</span>`:''}${r.inactive?`<span class="wrn">${esc(r.inactive)}</span>`:''}${r.err.map(e=>{ const m=e.match(/^Requires level (\d+)/); return `<span class="err">${esc(e)}${m?` <button class="linkish" data-fixgrind="${i}:${m[1]}">Add a grind to level ${m[1]} before this</button>`:''}</span>`; }).join('')}${r.warn.map(e=>`<span class="wrn">${esc(e)}</span>`).join('')}${r.custom&&s.t==='turnin'?`<button class="linkish" data-uxp="${i}">${route.qxp?.[s.q]?'Change XP reward':'Set XP reward'}</button>`:''}</span>
+      <span class="t">${''}${s.src&&s.t==='travel'&&(s.kind==='note'||s.kind==='goto')?rxpHTML(tx.t):esc(rxpPlain(tx.t))}${(()=>{const gs=s.src&&!s.src.auto?G(s.src.g)?.steps[s.src.i]:null; return gs?notesHTML(gs,s.t==='travel'&&(s.kind==='note'||s.kind==='goto')?(s.text||''):''):'';})()}${s.t==='grind'&&r.party>1?`<span class="sub">in a group of ${r.party}</span>`:''}${r.kill?`<span class="sub kx">≈${fmt(r.kill.kills)} kills${r.kill.guessed?' (some counts guessed)':''}${r.party>1?` · group of ${r.party}`:''}${r.kill.dg?' · dungeon mobs':''}</span>`:''}${stickyChip(s,i)}${s.t==='accept'&&ESCORT.has(s.q)?`<span class="sub" style="color:var(--warn)">⚠ ${esc(ESC_NOTE)}</span>`:''}${allTags.map(t=>`<span class="dgtag" data-dgsel="${esc(t)}" title="${dgTags.includes(t)?`Only because you're running ${esc(dgName(t))}`:`${esc(dgName(t))} quest`}. Click to select every ${esc(t)} step">${esc(t)}</span>`).join('')}${tx.sub?`<span class="sub">${esc(tx.sub)}</span>`:''}${r.inactive?`<span class="wrn">${esc(r.inactive)}</span>`:''}${r.err.map(e=>{ const m=e.match(/^Requires level (\d+)/); return `<span class="err">${esc(e)}${m?` <button class="linkish" data-fixgrind="${i}:${m[1]}">Add a grind to level ${m[1]} before this</button>`:''}</span>`; }).join('')}${r.warn.map(e=>`<span class="wrn">${esc(e)}</span>`).join('')}${r.custom&&s.t==='turnin'?`<button class="linkish" data-uxp="${i}">${route.qxp?.[s.q]?'Change XP reward':'Set XP reward'}</button>`:''}</span>
       <span class="x">${r.gained?`<b>+${fmt(r.gained)}</b><br>`:''}${lvl.toFixed(1)}</span>
       <span class="sbtns">${s.q?`<a class="wh" href="${whURL(s.q,s.qn)}" target="_blank" rel="noopener" title="Open this quest on Wowhead">wh↗</a>`:''}<button class="opt ${s.opt?'on':''}" data-opt="${i}" title="${s.opt?'Optional (click to make required)':'Mark as optional'}" aria-pressed="${!!s.opt}">opt</button><button class="del" data-del="${i}" aria-label="Delete step ${i+1}">×</button></span></li>`);
     if(i===cursor && i<route.steps.length-1) parts.push(`<li class="insert">New steps are added here</li>`);
@@ -853,7 +856,7 @@ function renderRight(){
   } else if(tab==='log'){
     const st=SIM.st; const rows=[...st.log].map(([qid,v])=>{ const q=Q(qid); if(!q) return ''; const dc=diffClass(q.l,st.level);
       return `<div class="qrow ${selQuest===qid?'sel':''}" data-q="${qid}"><span class="lv c-${dc}">${q.l}</span><span class="nm"><span class="c-${dc}">${esc(q.n)}</span><br><span class="meta">${v.done?'Ready to turn in':'In progress'} · ${esc(areaLabel(q))}</span>${v.done?'':objChecklist(qid,v)}</span><span class="row" style="flex-wrap:nowrap">${v.done?'':`<button class="btn sm" data-complete="${qid}">Done</button>`}<button class="btn sm" data-turnin="${qid}">Turn in</button></span></div>`; });
-    body.innerHTML=`<div class="qgroup"><h3>Quest log at this step (${st.log.size}/20)</h3>${rows.join('')||'<div class="empty">Your quest log is empty at this step.</div>'}</div>`;
+    body.innerHTML=`<div class="qgroup"><h3>Quest log at this step (${st.log.size}/${LOGMAX})</h3>${rows.join('')||'<div class="empty">Your quest log is empty at this step.</div>'}</div>`;
   } else if(tab==='guides'){ body.innerHTML=renderGuides(); afterGuidesRender(); } else body.innerHTML=renderDetail();
 }
 function renderDetail(){
@@ -1058,6 +1061,7 @@ function buildRXP(){
       if(seg.lastBlk&&seg.lastBlk.g===gg.id) for(let k=seg.lastBlk.rx+1;k<gsx.rx;k++){ const t=raw[k-1]; if(!t) continue; if(blkLines(t).slice(1).every(l=>/^\s*(#|--)/.test(l)) && condOK(blkHdrCond(t))) seg.items.push({rx:k,text:t,step:null}); } // label-only anchors
       const runActs=new Set(run.filter(x=>x.q).map(x=>actKey(x.t,x.q))); const rm=new Set(gg.removed||[]); const blkActs=new Set(gg.steps.map((x,k)=>[x,k]).filter(([x,k])=>x.rx===gsx.rx&&x.cond&&x.q&&rm.has(k)).map(([x])=>actKey(x.t,x.q)));
       const out=[]; let cut=0; for(const ln of raw[gsx.rx-1].split('\n')){ const am=ln.match(/^\s*\.(accept|turnin|complete)\s+(\d+)/i); if(am){ const k=actKey(am[1].toLowerCase(),+am[2]); if(blkActs.has(k)&&!runActs.has(k)){ cut++; continue; } } out.push(ln); }
+      for(let k=out.length-1;k>=0;k--){ const am=out[k].match(/^\s*\.accept\s+(\d+)/i); if(am&&ESCORT.has(+am[1])&&!out.some(l=>l.includes('Forever bug'))) out.splice(k+1,0,`    >>|cRXP_WARN_${ESC_NOTE}|r`); }
       if(run.some(x=>x.opt)&&!out.some(l=>/^\s*#optional\b/i.test(l))) out.splice(1,0,'    #optional');
       const txt=out.join('\n'); seg.items.push({rx:gsx.rx,text:txt,step:i,cut}); seg.lastBlk={g:gg.id,rx:gsx.rx}; seg.prevKey=null; return;
     }
@@ -1067,7 +1071,7 @@ function buildRXP(){
     const cont=merge&&key&&key===seg.prevKey; seg.prevKey=key;
     const gp=s.t==='travel'&&(s.kind==='fly'||s.kind==='ride')?r.dep:p;
     if(!cont){ L.push('step'); if(optl) L.push(optl); if(xrl) L.push(xrl); const gl=gotoLine(gp); if(gl&&!(s.t==='travel'&&(s.kind==='hs'||s.kind==='note'||s.kind==='ride'))&&(s.t!=='grind'||s.loc)) L.push(gl); }
-    if(s.t==='accept') lines.push(`    .accept ${s.q} >>Accept ${q.on||q.n}`);
+    if(s.t==='accept'){ lines.push(`    .accept ${s.q} >>Accept ${q.on||q.n}`); if(ESCORT.has(s.q)) lines.push(`    >>|cRXP_WARN_${ESC_NOTE}|r`); }
     else if(s.t==='turnin') lines.push(`    .turnin ${s.q} >>Turn in ${q.on||q.n}`);
     else if(s.t==='abandon') lines.push(`    .abandon ${s.q} >>Abandon ${q.on||q.n}`);
     else if(s.t==='complete'){ const obs=objIndexList(s.q).filter(([n])=>!s.obj||n===s.obj); if(obs.length) obs.forEach(([n,t])=>lines.push(`    .complete ${s.q},${n} --${t}`)); else lines.push(`    >>Complete ${q.on||q.n}`); }
