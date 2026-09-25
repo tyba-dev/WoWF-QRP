@@ -248,6 +248,7 @@ dialog textarea{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-
 <body>
 <div class="loading" id="loading">Unrolling the map…</div>
 <div class="app">
+<div id="saveWarn" hidden style="background:var(--danger);color:#fff;padding:6px 12px;font-weight:700">Your changes can't be saved in this browser right now. Use Export → Route file → Download to keep a copy.</div>
   <header class="top">
     <button class="btn icon mobile-only" id="openLeft" aria-label="Show route">Route</button>
     <div class="brand">Forever Route Planner<small>Questie data</small></div>
@@ -358,7 +359,7 @@ dialog textarea{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-
   <label class="inline"><input type="checkbox" name="event"> Show seasonal and event quests</label>
   <fieldset style="border:1px solid var(--line);border-radius:8px;padding:6px 10px"><legend class="note">Flight paths already known at the start</legend><label class="inline" style="margin-bottom:4px"><input type="checkbox" id="fpAll"> Assume every flight path is known</label><div class="dggrid" id="fpSettings" style="max-height:160px;overflow:auto"></div></fieldset>
   <fieldset style="border:1px solid var(--line);border-radius:8px;padding:6px 10px"><legend class="note">Dungeons you'll run (for guide <code>.dungeon</code> steps)</legend><div class="dggrid" id="dgSettings"></div></fieldset>
-  <div class="row" style="border-top:1px solid var(--line);padding-top:10px"><button type="button" class="btn" id="clearSteps">Remove all steps</button><button type="button" class="btn" id="clearAfter">Remove steps after the selected one</button><button type="button" class="btn danger" id="delRoute">Delete this route</button></div>
+  <div class="row" style="border-top:1px solid var(--line);padding-top:10px"><button type="button" class="btn" id="clearSteps">Remove all steps</button><button type="button" class="btn" id="clearAfter">Remove steps after the selected one</button><button type="button" class="btn" id="restoreBtn">Restore from a backup…</button><button type="button" class="btn danger" id="delRoute">Delete this route</button></div>
   <div class="actions"><button class="btn" value="cancel" formnovalidate>Cancel</button><button class="btn gold" value="ok">Save</button></div>
 </form></dialog>
 
@@ -431,6 +432,12 @@ dialog textarea{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-
   <label class="inline"><input type="checkbox" id="impConvert" checked> The guide uses Classic Era coordinates (adjust for Forever's resized Mulgore, Redridge, Eastern Plaguelands and Stormwind)</label>
   <p class="note" id="impMsg" style="margin:0"></p>
   <div class="actions"><button class="btn" id="impCancel">Cancel</button><button class="btn gold" id="impGo">Import</button></div>
+</div></dialog>
+<dialog id="dlgBackup"><div class="dl">
+  <h2>Restore from a backup</h2>
+  <p class="note" style="margin:0">The planner keeps a copy of your routes each day you open it (the last 7 days). Restoring adds the routes from that day as copies; nothing you have now is removed.</p>
+  <div id="backupList" class="note"></div>
+  <div class="actions"><button class="btn gold" id="backupClose">Close</button></div>
 </div></dialog>
 <dialog id="dlgAbout"><div class="dl">
   <h2>About the Forever Route Planner</h2>
@@ -651,11 +658,16 @@ let saveT=null;
 function save(){ store.cur=route.id; clearTimeout(saveT); saveT=setTimeout(saveNow,250); }
 function saveNow(){ store.savedAt=Date.now();
   for(const r of store.routes){ const used=new Set((r.steps||[]).filter(s=>s.src&&!s.src.auto).map(s=>s.src.g)); for(const g of r.guides||[]){ if(used.has(g.id)){ if(!g.raw&&rawCache.has(g.id)) g.raw=rawCache.get(g.id); } else if(g.raw){ if(!rawCache.has(g.id)) rawCache.set(g.id,g.raw); delete g.raw; } } }
-  const txt=JSON.stringify(store); kvPut('store',txt); try{ localStorage.setItem(LS,txt); }catch(e){ try{ localStorage.removeItem(LS); }catch(_){ } } }
+  const txt=JSON.stringify(store); let lsOK=false;
+  try{ localStorage.setItem(LS,txt); lsOK=true; }catch(e){ // too big for browser storage: keep a copy without the guide text (that also lives in the database); never delete the old copy
+    try{ localStorage.setItem(LS,JSON.stringify(store,(k,v)=>k==='raw'?undefined:v)); lsOK=true; }catch(_){ } }
+  kvPut('store',txt).then(ok=>{ const bad=!ok&&!lsOK; const b=document.getElementById('saveWarn'); if(b) b.hidden=!bad; }); }
 addEventListener('pagehide',()=>{ if(saveT){ clearTimeout(saveT); saveNow(); } });
 async function loadStore(){
   let a=null,b=null; try{ a=JSON.parse(localStorage.getItem(LS)||'null'); }catch(e){} try{ b=JSON.parse(await kvGet('store')||'null'); }catch(e){}
   const ok=s=>s&&Array.isArray(s.routes)&&s.routes.length; const s=ok(a)&&ok(b)?((b.savedAt||0)>=(a.savedAt||0)?b:a):(ok(b)?b:ok(a)?a:null); if(s) store=s;
+  // daily backups of what was loaded (last 7 kept), restorable from Settings
+  if(s){ try{ const day=new Date().toISOString().slice(0,10); const keys=(await kvKeys()).filter(k=>String(k).startsWith('backup:')).sort(); if(!keys.includes('backup:'+day)) await kvPut('backup:'+day,JSON.stringify(s)); const db=await rawDB(); for(const k of keys.slice(0,Math.max(0,keys.length-7))) db.transaction('kv','readwrite').objectStore('kv').delete(k); }catch(e){} }
   for(const r of store.routes) for(const g of r.guides||[]) if(g.raw) rawCache.set(g.id,g.raw);
   if(!store.routes.length){ const r=newRoute({name:'Mulgore start'}); store.routes.push(r); store.cur=r.id; }
   route=store.routes.find(r=>r.id===store.cur)||store.routes[0];
@@ -702,7 +714,10 @@ function simulate(){
     if(!skip && route.hideOpt!==false && route.optOff){ if(s.opt) skip='Optional step, not counted'; else if(s.q&&optQ.has(s.q)&&s.t!=='accept') skip='Part of an optional quest, not counted'; }
     if(!skip && route.optOff && s.opt && s.t==='accept') optQ.add(s.q);
     if(skip){ r.inactive=skip; }
-    else if((s.t==='accept'||s.t==='complete'||s.t==='turnin'||s.t==='abandon') && !q) r.warn.push('Quest '+s.q+' isn\u2019t in the Questie database yet: no XP or map pin for it');
+    else if((s.t==='accept'||s.t==='complete'||s.t==='turnin'||s.t==='abandon') && !q){ // Forever quest Questie doesn't know yet: kept as written, tracked like a custom quest
+      const xp=+(route.qxp?.[s.q])||0; r.custom=true;
+      if(s.t==='turnin'&&xp){ r.gained=xp; addXP(st,xp); }
+      r.warn.push(`Forever quest not in the Questie database: kept exactly as the guide has it.${s.t==='turnin'?(xp?` Counting ${fmt(xp)} XP.`:' Set its XP reward below if you know it.'):''}`); }
     else if(s.t==='accept'){
       const w=whyUnavailable(s.q,st,route); if(w) r.err.push(w.why);
       if(st.log.size>=20) r.err.push('Quest log is full (20)');
@@ -818,10 +833,16 @@ const reliefImgs=[];
 function loadRelief(){ for(const [m,r] of Object.entries(META.relief||{})){ const o={...r,m,ri:new Image(),wi:new Image(),rs:new Set(r.tile?.r||[]),ws:new Set(r.tile?.w||[])}; o.ri.onload=o.wi.onload=requestDraw; o.ri.src='data:image/webp;base64,'+r.rel; o.wi.src='data:image/webp;base64,'+r.wat; reliefImgs.push(o);} }
 const _cv={}; function offCtx(n){ let c=_cv[n]; if(!c){ c=_cv[n]=document.createElement('canvas').getContext('2d'); } if(c.canvas.width!==canvas.width||c.canvas.height!==canvas.height){ c.canvas.width=canvas.width; c.canvas.height=canvas.height; } return c; }
 const landCtx=()=>offCtx('land'), maskCtx=()=>offCtx('mask');
-const tileCache=new Map(); let tileFail=false;
-function tileImg(src){ let im=tileCache.get(src); if(im){ tileCache.delete(src); tileCache.set(src,im); return im.complete&&im.naturalWidth?im:null; }
-  if(tileFail) return null; im=new Image(); im.onload=requestDraw; im.onerror=()=>{ tileFail=true; }; im.src=src; tileCache.set(src,im);
-  while(tileCache.size>60){ const k=tileCache.keys().next().value; const x=tileCache.get(k); tileCache.delete(k); x.src=''; } return null; }
+const tileCache=new Map();
+// close-up terrain tiles live in one pack file per continent (tiles/terrainN.bin: 4-byte header length, JSON index, WebP images)
+const packs={};
+function packFor(m){ let p=packs[m]; if(p) return p; p=packs[m]={state:'loading'};
+  fetch(`tiles/terrain${m}.bin`).then(r=>{ if(!r.ok) throw new Error(r.status); return r.arrayBuffer(); }).then(b=>{ const n=new DataView(b).getUint32(0,true); p.idx=JSON.parse(new TextDecoder().decode(new Uint8Array(b,4,n))); p.base=4+n; p.buf=b; p.state='ok'; requestDraw(); }).catch(()=>{ p.state='fail'; }); return p; }
+function tileImg(m,name){ const key=m+'/'+name; let im=tileCache.get(key); if(im){ tileCache.delete(key); tileCache.set(key,im); return im.complete&&im.naturalWidth?im:null; }
+  const p=packFor(m); if(p.state==='loading') return null; let url;
+  if(p.state==='ok'){ const e=p.idx[name]; if(!e) return null; url=URL.createObjectURL(new Blob([new Uint8Array(p.buf,p.base+e[0],e[1])],{type:'image/webp'})); } else url=`tiles/${name}.webp`; // no pack file: fall back to single tile images
+  im=new Image(); im._u=url.startsWith('blob:')?url:null; im.onload=requestDraw; im.src=url; tileCache.set(key,im);
+  while(tileCache.size>60){ const k=tileCache.keys().next().value; const x=tileCache.get(k); tileCache.delete(k); if(x._u) URL.revokeObjectURL(x._u); x.src=''; } return null; }
 const HIRES_S=0.1;
 function reliefDraw(g,kind){
   const s=view.s, vx0=-view.tx/s, vy0=-view.ty/s, vx1=(W-view.tx)/s, vy1=(H-view.ty)/s;
@@ -832,7 +853,7 @@ function reliefDraw(g,kind){
     const tx0=Math.max(0,Math.floor((vx0-o.x)/t.yd)), tx1=Math.min(t.nx-1,Math.floor((vx1-o.x)/t.yd)), ty0=Math.max(0,Math.floor((vy0-o.y)/t.yd)), ty1=Math.min(t.ny-1,Math.floor((vy1-o.y)/t.yd));
     for(let ty=ty0;ty<=ty1;ty++) for(let tx=tx0;tx<=tx1;tx++){ const k=ty+'_'+tx; if(!set.has(k)) continue;
       const X=o.x+tx*t.yd, Y=o.y+ty*t.yd, tw=Math.min(t.yd,o.w-tx*t.yd), th=Math.min(t.yd,o.h-ty*t.yd);
-      const im=tileImg(`tiles/t${o.m}_${k}_${kind}.webp`);
+      const im=tileImg(o.m,`t${o.m}_${k}_${kind}`);
       if(im) g.drawImage(im,X,Y,im.naturalWidth*t.yd/t.px,im.naturalHeight*t.yd/t.px);
       else { const sx=(X-o.x)*sc, sy=(Y-o.y)*sc; g.drawImage(ov,sx,sy,Math.min(tw*sc,ov.naturalWidth-sx),Math.min(th*sc,ov.naturalHeight-sy),X,Y,Math.min(tw*sc,ov.naturalWidth-sx)/sc,Math.min(th*sc,ov.naturalHeight-sy)/sc); }
     }
@@ -1132,7 +1153,8 @@ let history=[], future=[];
 function pushHistory(){ history.push(JSON.stringify({steps:route.steps,cursor})); if(history.length>100) history.shift(); future=[]; }
 function undo(){ selSteps.clear(); const h=history.pop(); if(!h) return toast('Nothing to undo'); future.push(JSON.stringify({steps:route.steps,cursor})); const o=JSON.parse(h); route.steps=o.steps; cursor=o.cursor; refresh(); }
 function addStep(step){ pushHistory(); route.steps.splice(cursor+1,0,step); cursor++; refresh(); scrollCursor(); }
-function removeStep(i){ pushHistory(); route.steps.splice(i,1); if(cursor>=i) cursor--; refresh(); }
+function markRemoved(st){ if(!st?.src||st.src.auto) return; const g=G(st.src.g); if(!g) return; g.removed=g.removed||[]; if(!g.removed.includes(st.src.i)) g.removed.push(st.src.i); }
+function removeStep(i){ pushHistory(); markRemoved(route.steps[i]); route.steps.splice(i,1); if(cursor>=i) cursor--; refresh(); }
 function moveStep(from,to){ if(from===to) return; pushHistory(); const [s]=route.steps.splice(from,1); if(to>from) to--; route.steps.splice(to,0,s); cursor=to; refresh(); }
 function setCursor(i){ cursor=i; refresh(); scrollCursor(); const p=SIM.res[i]?.pt; if(p){ const [x,y]=toS(p); if(x<40||y<40||x>W-40||y>H-40) flyTo(p.X,p.Y); } }
 function scrollCursor(){ const el=$('#steps .cur'); el&&el.scrollIntoView({block:'nearest'}); }
@@ -1150,7 +1172,7 @@ function renderSteps(){
     const lvl=r.after.level+(r.after.level<MAXLVL?r.after.xp/XP_TABLE[r.after.level]:0);
     parts.push(`<li tabindex="-1" class="step ${i===cursor?'cur':''} ${i>cursor?'future':''} ${r.inactive?'inactive':''} ${dgTags.length?'dgstep':''} ${s.opt?'optstep':''} ${selSteps.has(i)?'msel':''}" data-i="${i}" draggable="true">
       <span class="n" title="Drag to reorder">${i+1}</span><span class="ic ${tx.cls} ${dq?'dq':''}" aria-hidden="true">${tx.ic}</span>
-      <span class="t">${''}${s.src&&s.t==='travel'&&(s.kind==='note'||s.kind==='goto')?rxpHTML(tx.t):esc(rxpPlain(tx.t))}${(()=>{const gs=s.src&&!s.src.auto?G(s.src.g)?.steps[s.src.i]:null; return gs?notesHTML(gs,s.t==='travel'&&(s.kind==='note'||s.kind==='goto')?(s.text||''):''):'';})()}${s.t==='grind'&&r.party>1?`<span class="sub">in a group of ${r.party}</span>`:''}${r.kill?`<span class="sub kx">≈${fmt(r.kill.kills)} kills${r.kill.guessed?' (some counts guessed)':''}${r.party>1?` · group of ${r.party}`:''}${r.kill.dg?' · dungeon mobs':''}</span>`:''}${stickyChip(s,i)}${allTags.map(t=>`<span class="dgtag" data-dgsel="${esc(t)}" title="${dgTags.includes(t)?`Only because you're running ${esc(dgName(t))}`:`${esc(dgName(t))} quest`}. Click to select every ${esc(t)} step">${esc(t)}</span>`).join('')}${tx.sub?`<span class="sub">${esc(tx.sub)}</span>`:''}${r.inactive?`<span class="wrn">${esc(r.inactive)}</span>`:''}${r.err.map(e=>{ const m=e.match(/^Requires level (\d+)/); return `<span class="err">${esc(e)}${m?` <button class="linkish" data-fixgrind="${i}:${m[1]}">Add a grind to level ${m[1]} before this</button>`:''}</span>`; }).join('')}${r.warn.map(e=>`<span class="wrn">${esc(e)}</span>`).join('')}</span>
+      <span class="t">${''}${s.src&&s.t==='travel'&&(s.kind==='note'||s.kind==='goto')?rxpHTML(tx.t):esc(rxpPlain(tx.t))}${(()=>{const gs=s.src&&!s.src.auto?G(s.src.g)?.steps[s.src.i]:null; return gs?notesHTML(gs,s.t==='travel'&&(s.kind==='note'||s.kind==='goto')?(s.text||''):''):'';})()}${s.t==='grind'&&r.party>1?`<span class="sub">in a group of ${r.party}</span>`:''}${r.kill?`<span class="sub kx">≈${fmt(r.kill.kills)} kills${r.kill.guessed?' (some counts guessed)':''}${r.party>1?` · group of ${r.party}`:''}${r.kill.dg?' · dungeon mobs':''}</span>`:''}${stickyChip(s,i)}${allTags.map(t=>`<span class="dgtag" data-dgsel="${esc(t)}" title="${dgTags.includes(t)?`Only because you're running ${esc(dgName(t))}`:`${esc(dgName(t))} quest`}. Click to select every ${esc(t)} step">${esc(t)}</span>`).join('')}${tx.sub?`<span class="sub">${esc(tx.sub)}</span>`:''}${r.inactive?`<span class="wrn">${esc(r.inactive)}</span>`:''}${r.err.map(e=>{ const m=e.match(/^Requires level (\d+)/); return `<span class="err">${esc(e)}${m?` <button class="linkish" data-fixgrind="${i}:${m[1]}">Add a grind to level ${m[1]} before this</button>`:''}</span>`; }).join('')}${r.warn.map(e=>`<span class="wrn">${esc(e)}</span>`).join('')}${r.custom&&s.t==='turnin'?`<button class="linkish" data-uxp="${i}">${route.qxp?.[s.q]?'Change XP reward':'Set XP reward'}</button>`:''}</span>
       <span class="x">${r.gained?`<b>+${fmt(r.gained)}</b><br>`:''}${lvl.toFixed(1)}</span>
       <span class="sbtns">${s.q?`<a class="wh" href="${whURL(s.q,s.qn)}" target="_blank" rel="noopener" title="Open this quest on Wowhead">wh↗</a>`:''}<button class="opt ${s.opt?'on':''}" data-opt="${i}" title="${s.opt?'Optional (click to make required)':'Mark as optional'}" aria-pressed="${!!s.opt}">opt</button><button class="del" data-del="${i}" aria-label="Delete step ${i+1}">×</button></span></li>`);
     if(i===cursor && i<route.steps.length-1) parts.push(`<li class="insert">New steps are added here</li>`);
@@ -1188,14 +1210,15 @@ function moveBlock(idxs,to){ // move steps idxs (any order) so they sit before i
   route.steps.splice(ins,0,...items); selSteps=new Set(items.map((_,k)=>ins+k)); selAnchor=ins; cursor=ins+items.length-1; refresh(); scrollCursor(); }
 function blockAction(a){ const idx=[...selSteps].sort((x,y)=>x-y); if(!idx.length) return;
   if(a==='clear'){ selSteps.clear(); renderSteps(); return; }
-  if(a==='del'){ pushHistory(); const del=new Set(idx); const before=idx.filter(i=>i<=cursor).length; route.steps=route.steps.filter((_,i)=>!del.has(i)); cursor=Math.max(-1,cursor-before); selSteps.clear(); refresh(); toast(`Deleted ${idx.length} steps`); return; }
+  if(a==='del'){ pushHistory(); const del=new Set(idx); idx.forEach(i=>markRemoved(route.steps[i])); const before=idx.filter(i=>i<=cursor).length; route.steps=route.steps.filter((_,i)=>!del.has(i)); cursor=Math.max(-1,cursor-before); selSteps.clear(); refresh(); toast(`Deleted ${idx.length} steps`); return; }
   if(a==='up'){ if(idx[0]===0) return; moveBlock(idx,idx[0]-1); return; }
   if(a==='down'){ const last=idx[idx.length-1]; if(last>=route.steps.length-1) return; moveBlock(idx,last+2); return; }
   if(a==='cursor'){ askMoveAfter(idx); } }
-async function askMoveAfter(idx){ const v=await askText(`Move the ${idx.length} selected steps to just after step number:`,String(cursor+1)); if(v==null) return; const n=parseInt(v); if(!(n>=0&&n<=route.steps.length)) return toast('Enter a step number between 0 and '+route.steps.length);
+async function askMoveAfter(idx){ const v=await askText(`Move the ${idx.length} selected steps to just after step number:`,String(cursor+1),'Move'); if(v==null) return; const n=parseInt(v); if(!(n>=0&&n<=route.steps.length)) return toast('Enter a step number between 0 and '+route.steps.length);
   if(idx.includes(n-1)&&!idx.includes(n)) return; moveBlock(idx,n); }
 $('#steps').addEventListener('click',e=>{
   if(e.target.closest('a.wh')){ e.stopPropagation(); return; }
+  const ux=e.target.closest('[data-uxp]'); if(ux){ e.stopPropagation(); askUXP(route.steps[+ux.dataset.uxp]); return; }
   const bb=e.target.closest('[data-blk]'); if(bb){ e.stopPropagation(); blockAction(bb.dataset.blk); return; }
   const dgs=e.target.closest('[data-dgsel]'); if(dgs){ e.stopPropagation(); selectDungeon(dgs.dataset.dgsel,e.ctrlKey||e.metaKey||e.shiftKey); return; }
   if(e.target.closest('.selbar')) return;
@@ -1208,7 +1231,9 @@ $('#steps').addEventListener('click',e=>{
   if(selSteps.size){ selSteps.clear(); } selAnchor=i; setCursor(i);
   const s=route.steps[i]; if(s&&s.q&&Q(s.q)){ selQuest=s.q; renderRight(); requestDraw(); }
 });
-$('#steps').addEventListener('dblclick',e=>{ const li=e.target.closest('[data-i]'); if(!li) return; const s=route.steps[+li.dataset.i]; if(s&&['grind','travel','custom'].includes(s.t)) openStepDialog(s.t,+li.dataset.i); });
+$('#steps').addEventListener('dblclick',async e=>{ const li=e.target.closest('[data-i]'); if(!li) return; const s=route.steps[+li.dataset.i];
+  if(s&&s.q&&!Q(s.q)&&s.t==='turnin'){ askUXP(s); return; } if(s&&['grind','travel','custom'].includes(s.t)) openStepDialog(s.t,+li.dataset.i); });
+async function askUXP(s){ { const v=await askText(`XP reward for ${s.qn||'quest '+s.q} (at your level):`,String(route.qxp?.[s.q]||'')); if(v==null) return; pushHistory(); route.qxp=route.qxp||{}; if(+v>0) route.qxp[s.q]=Math.round(+v); else delete route.qxp[s.q]; refresh(); } }
 let dragFrom=null;
 $('#steps').addEventListener('dragstart',e=>{ const li=e.target.closest('.step'); if(!li) return; dragFrom=+li.dataset.i; e.dataTransfer.effectAllowed='move'; e.dataTransfer.setData('text/plain',String(dragFrom)); });
 $('#steps').addEventListener('dragover',e=>{ const li=e.target.closest('.step'); if(!li||dragFrom===null) return; e.preventDefault(); $$('.step.dragover').forEach(x=>x.classList.remove('dragover')); li.classList.add('dragover'); });
@@ -1418,9 +1443,16 @@ $('#pickCancel').addEventListener('click',()=>{ const cb=picking; stopPick(); cb
 // dialog close via 'pick' should not add step: returnValue 'pick' != 'ok'
 $('#addGrind').addEventListener('click',()=>openStepDialog('grind'));
 $('#addTravel').addEventListener('click',()=>openStepDialog('travel'));
-const SOURCE_URL=''; // set to the project's GitHub address when it is published
+const SOURCE_URL='https://github.com/tyba-dev/WoWF-QRP'; // set to the project's GitHub address when it is published
 $('#aboutBtn').addEventListener('click',()=>{ $('#aboutSrc').innerHTML=SOURCE_URL?`Source code: <a href="${SOURCE_URL}" target="_blank" rel="noopener">${esc(SOURCE_URL)}</a>.`:'The full source is this page itself (View Source).'; $('#dlgAbout').showModal(); });
 $('#aboutClose').addEventListener('click',()=>$('#dlgAbout').close());
+$('#restoreBtn').addEventListener('click',async()=>{ const db=await rawDB(); const keys=(await kvKeys()).filter(k=>String(k).startsWith('backup:')).sort().reverse(); const list=$('#backupList');
+  if(!keys.length){ list.textContent='No backups yet.'; } else { const rows=[]; for(const k of keys){ const t=await kvGet(k); let st=null; try{ st=JSON.parse(t); }catch(e){} if(!st) continue; rows.push(`<div class="it" style="padding:6px 0;border-top:1px solid var(--line)"><b>${esc(k.slice(7))}</b>: ${st.routes.map(r=>esc(r.name)+' ('+(r.steps||[]).length+' steps)').join(', ')} <button class="btn sm" data-restore="${esc(k)}">Restore</button></div>`); } list.innerHTML=rows.join(''); }
+  $('#dlgBackup').showModal(); });
+$('#backupList').addEventListener('click',async e=>{ const b=e.target.closest('[data-restore]'); if(!b) return; const st=JSON.parse(await kvGet(b.dataset.restore)); let n=0;
+  for(const r of st.routes){ const nr=migrateRoute({...r,id:uid(),name:r.name+' (backup '+b.dataset.restore.slice(7)+')'}); for(const g of nr.guides||[]) if(g.raw) rawPut(g.id,g.raw); store.routes.push(nr); n++; }
+  route=store.routes[store.routes.length-1]; cursor=route.steps.length-1; history=[]; refresh(); $('#dlgBackup').close(); $('#dlgChar').close(); toast(`Restored ${n} route${n>1?'s':''} from ${b.dataset.restore.slice(7)}`); });
+$('#backupClose').addEventListener('click',()=>$('#dlgBackup').close());
 function renderHS(){ const b=$('#hsBtn'); if(!b||!SIM) return; const h=SIM.st.home;
   b.innerHTML=h?`Hearth → ${esc(h.label||'?')}`:'Hearth'; b.title=h?`Adds a "Use hearthstone" step after the selected step. At this point your hearthstone is set to ${h.label||'?'}${h.step!=null?' (set at step '+(h.step+1)+')':''}.`:'Adds a "Use hearthstone" step. Your hearthstone hasn\u2019t been set in this route yet by this point; add a "Set hearthstone" step (click an inn or town on the map) first.'; }
 $('#hsBtn').addEventListener('click',()=>{ const h=SIM.st.home; addStep({t:'travel',kind:'hs',text:h?.label||'Hearthstone'}); if(!h) toast('Hearthstone not set yet at this point: add a Set hearthstone step before it'); });
@@ -1472,7 +1504,7 @@ function buildRXP(){
       if(done.has(i)) return;
       let j=i; const run=[]; while(j<route.steps.length){ const t=route.steps[j]; const tg=t.src&&!t.src.auto?G(t.src.g):null; const tx=tg?.steps[t.src.i]; if(!tx||tg.id!==gg.id||tx.rx!==gsx.rx) break; run.push(t); done.add(j); j++; }
       if(seg.lastBlk&&seg.lastBlk.g===gg.id) for(let k=seg.lastBlk.rx+1;k<gsx.rx;k++){ const t=raw[k-1]; if(!t) continue; if(blkLines(t).slice(1).every(l=>/^\s*(#|--)/.test(l)) && condOK(blkHdrCond(t))) seg.items.push({rx:k,text:t,step:null}); } // label-only anchors
-      const runActs=new Set(run.filter(x=>x.q).map(x=>actKey(x.t,x.q))); const blkActs=new Set(blockSteps(gg,gsx.rx).filter(x=>x.cond&&x.q).map(x=>actKey(x.t,x.q)));
+      const runActs=new Set(run.filter(x=>x.q).map(x=>actKey(x.t,x.q))); const rm=new Set(gg.removed||[]); const blkActs=new Set(gg.steps.map((x,k)=>[x,k]).filter(([x,k])=>x.rx===gsx.rx&&x.cond&&x.q&&rm.has(k)).map(([x])=>actKey(x.t,x.q)));
       const out=[]; let cut=0; for(const ln of raw[gsx.rx-1].split('\n')){ const am=ln.match(/^\s*\.(accept|turnin|complete)\s+(\d+)/i); if(am){ const k=actKey(am[1].toLowerCase(),+am[2]); if(blkActs.has(k)&&!runActs.has(k)){ cut++; continue; } } out.push(ln); }
       if(run.some(x=>x.opt)&&!out.some(l=>/^\s*#optional\b/i.test(l))) out.splice(1,0,'    #optional');
       const txt=out.join('\n'); seg.items.push({rx:gsx.rx,text:txt,step:i,cut}); seg.lastBlk={g:gg.id,rx:gsx.rx}; seg.prevKey=null; return;
@@ -1518,6 +1550,7 @@ function buildRXP(){
       if(!ok){ const sn=x.step!=null?x.step+1:'?'; warns.push(`Step ${sn} (${gg.name}) uses “#completewith next”, so RestedXP shows it together with the step after it. In your route that is ${nx?(nx.rx==null?'your own step '+(nx.step+1):'a different guide step'):'nothing'} instead of the guide’s next step, so it may stay on screen longer or shorter than in the original.`); } });
     blocks.forEach(x=>{ if(x.cut) warns.push(`Step ${x.step+1} (${gg.name}): ${x.cut} quest line${x.cut>1?'s were':' was'} left out because you removed ${x.cut>1?'those steps':'that step'} from your route.`); });
   });
+  for(const gid of new Set(route.steps.filter(x=>x.src&&!x.src.auto).map(x=>x.src.g))){ const gg=G(gid); if(!gg) continue; const miss=fillGuide(gg,true); if(miss.length){ const fq=miss.filter(i=>gg.steps[i].q&&!Q(gg.steps[i].q)).length; warns.unshift(`${miss.length} step${miss.length>1?'s':''} of ${gg.name}${fq?` (including ${fq} for Forever quests)`:''} ${miss.length>1?'are':'is'} missing from your route, so ${miss.length>1?'they are':'it is'} not in this export. Open the guide in the Guides tab and click “Fill in missing steps in place”.`); } }
   const ag=route.steps.map((x,k)=>x.src&&x.src.auto?k+1:0).filter(Boolean); if(ag.length) warns.push(`${ag.length} catch-up grind step${ag.length>1?'s were':' was'} added by the planner and ${ag.length>1?'are':'is'} not in the original guides (step${ag.length>1?'s':''} ${ag.slice(0,12).join(', ')}${ag.length>12?'…':''}). Delete ${ag.length>1?'them':'it'} if you want the guide exactly as written.`);
   EXPORT_WARN=warns;
   const nm=k=>segs.length===1?name:`${name} ${k+1}${segs[k].gid?' - '+G(segs[k].gid).name:''}`;
@@ -1709,7 +1742,8 @@ function buildGuideSteps(g,convert){
 /* original guide text per block, kept in IndexedDB so exports can reproduce the guide verbatim */
 const rawCache=new Map(); let rawDBp=null;
 function rawDB(){ if(!rawDBp) rawDBp=new Promise((res)=>{ try{ const rq=indexedDB.open('frp-raw',2); rq.onupgradeneeded=()=>{ const d=rq.result; if(!d.objectStoreNames.contains('g')) d.createObjectStore('g'); if(!d.objectStoreNames.contains('kv')) d.createObjectStore('kv'); }; rq.onsuccess=()=>res(rq.result); rq.onerror=()=>res(null); }catch(e){ res(null); } }); return rawDBp; }
-function kvPut(k,v){ rawDB().then(db=>{ if(!db) return; try{ db.transaction('kv','readwrite').objectStore('kv').put(v,k); }catch(e){} }); }
+function kvPut(k,v){ return rawDB().then(db=>new Promise(res=>{ if(!db) return res(false); try{ const t=db.transaction('kv','readwrite'); t.objectStore('kv').put(v,k); t.oncomplete=()=>res(true); t.onerror=t.onabort=()=>res(false); }catch(e){ res(false); } })); }
+async function kvKeys(){ const db=await rawDB(); if(!db) return []; return new Promise(res=>{ try{ const rq=db.transaction('kv').objectStore('kv').getAllKeys(); rq.onsuccess=()=>res(rq.result||[]); rq.onerror=()=>res([]); }catch(e){ res([]); } }); }
 async function kvGet(k){ const db=await rawDB(); if(!db) return null; return new Promise(res=>{ try{ const rq=db.transaction('kv').objectStore('kv').get(k); rq.onsuccess=()=>res(rq.result??null); rq.onerror=()=>res(null); }catch(e){ res(null); } }); }
 function rawPut(id,blocks){ rawCache.set(id,blocks); rawDB().then(db=>{ if(!db) return; try{ db.transaction('g','readwrite').objectStore('g').put(blocks,id); }catch(e){} }); }
 async function rawLoad(ids){ const db=await rawDB(); await Promise.all([...new Set(ids)].filter(id=>!rawCache.has(id)).map(id=>new Promise(res=>{ if(!db) return res(); try{ const rq=db.transaction('g').objectStore('g').get(id); rq.onsuccess=()=>{ if(rq.result) rawCache.set(id,rq.result); res(); }; rq.onerror=()=>res(); }catch(e){ res(); } }))); }
@@ -1726,7 +1760,7 @@ function importGuides(text,convert){
       for(const r of store.routes){ r.steps=r.steps.filter(st=>{ if(!st.src||st.src.g!==ex.id) return true; const ni=map[st.src.i];
           if(ni==null||ni<0){ if(st.t==='travel'&&(st.kind==='note'||st.kind==='goto')&&!st.src.auto) return false; if(st.src.auto){ st.src={...st.src,i:Math.max(0,Math.min(steps.length-1,st.src.i))}; return true; } delete st.src; return true; } // unmatched guide notes are re-added in place by the fill below; other unmatched steps become your own steps
           st.src.i=ni; const ns=steps[ni]; for(const f of ['reqs','rx','qn','ride','gopt','cw','sticky','label','text','kind','loc']) if(ns[f]!=null) st[f]=ns[f]; return true; }); if(r===route) cursor=Math.min(cursor,r.steps.length-1); }
-      ex.excluded=(ex.excluded||[]).map(i=>map[i]).filter(i=>i>=0); ex.from=Math.max(0,map[ex.from]??0); ex.steps=steps; ex.to=steps.length-1; refreshed.push(ex); continue; }
+      ex.excluded=(ex.excluded||[]).map(i=>map[i]).filter(i=>i>=0); ex.removed=(ex.removed||[]).map(i=>map[i]).filter(i=>i>=0); ex.from=Math.max(0,map[ex.from]??0); ex.steps=steps; ex.to=steps.length-1; refreshed.push(ex); continue; }
     const g={id:uid(),name:pg.name||pg.group||'Imported guide',group:pg.group,cond:pg.cond,next:pg.next,ver:pg.ver||'',xprate:pg.xprate||'',color:GCOLORS[route.guides.length%GCOLORS.length],visible:false,from:0,to:steps.length-1,excluded:[],stopAtBlocked:false,includeNotes:true,includeXp:true,steps};
     route.guides.push(g); added.push(g); rawPut(g.id,pg.blocks.map(b=>(b.raw||[]).join('\n')));
   }
@@ -1780,19 +1814,19 @@ function ghostSim(g,keys,fromOverride,limit){
   });
   return {res};
 }
-function ghostToStep(g,i){ const s=g.steps[i]; const o={t:s.t,src:{g:g.id,i}}; for(const k of ['q','mode','level','xp','note','kind','text','counts','gopt','reqs','rx','qn','ride','cw','sticky','label']) if(s[k]!=null) o[k]=s[k]; if(s.loc) o.loc=s.loc; if(s.t==='grind') o.src.xpcheck=true; return o; }
+function ghostToStep(g,i){ if(g.removed) g.removed=g.removed.filter(k=>k!==i); const s=g.steps[i]; const o={t:s.t,src:{g:g.id,i}}; for(const k of ['q','mode','level','xp','note','kind','text','counts','gopt','reqs','rx','qn','ride','cw','sticky','label']) if(s[k]!=null) o[k]=s[k]; if(s.loc) o.loc=s.loc; if(s.t==='grind') o.src.xpcheck=true; return o; }
 // add this guide's steps that are missing from the part of the route you already took from it, each placed right after the guide step before it
-function fillGuide(g){
+function fillGuide(g,dry){
   const pos=new Map(); route.steps.forEach((s,k)=>{ if(s.src&&!s.src.auto&&s.src.g===g.id&&!pos.has(s.src.i)) pos.set(s.src.i,k); });
-  if(!pos.size) return 0; const idx=[...pos.keys()].sort((a,b)=>a-b); let lo=idx[0], hi=idx[idx.length-1];
+  if(!pos.size) return dry?[]:0; const idx=[...pos.keys()].sort((a,b)=>a-b); let lo=idx[0], hi=idx[idx.length-1]; const miss=[];
   // also take in the note/travel steps right before and after the stretch you follow (up to the neighbouring quest step)
   const soft=x=>!x.q||!x.cond||!dungeonOK(x).ok||!xrOK(x.xr); while(lo>0&&soft(g.steps[lo-1])) lo--; while(hi<g.steps.length-1&&soft(g.steps[hi+1])) hi++;
-  const other=new Set(route.steps.filter(s=>s.q&&!(s.src&&s.src.g===g.id)).map(s=>s.t+':'+s.q)); const excl=new Set(g.excluded||[]); let added=0; pushHistory();
+  const other=new Set(route.steps.filter(s=>s.q&&!(s.src&&s.src.g===g.id)).map(s=>s.t+':'+s.q)); const excl=new Set(g.excluded||[]); const rmv=new Set(g.removed||[]); let added=0; if(!dry) pushHistory();
   for(let i=lo;i<=hi;i++){ if(pos.has(i)) continue; const s=g.steps[i];
-    if(!s.cond||!xrOK(s.xr)||!dungeonOK(s).ok||excl.has(i)) continue; if(s.info&&!g.includeNotes) continue; if(s.t==='grind'&&!g.includeXp) continue;
+    if(!s.cond||!xrOK(s.xr)||!dungeonOK(s).ok||excl.has(i)) continue; if(s.info&&!g.includeNotes) continue; if(s.t==='grind'&&!g.includeXp) continue; if(dry){ if(!rmv.has(i)) miss.push(i); continue; }
     let pj=-1; for(const j of pos.keys()) if(j<i&&j>pj) pj=j; let at; if(pj>=0) at=pos.get(pj)+1; else { let nj=Infinity; for(const j of pos.keys()) if(j>i&&j<nj) nj=j; at=pos.get(nj); }
     route.steps.splice(at,0,ghostToStep(g,i)); if(cursor>=at) cursor++; for(const [k,v] of pos) if(v>=at) pos.set(k,v+1); pos.set(i,at); added++; }
-  if(!added) history.pop(); return added; }
+  if(dry) return miss; if(!added) history.pop(); return added; }
 // a catch-up grind must not split a guide step from the step it is shown together with (#completewith next)
 function addGrind(add,gr){ let p=add.length; while(p>0&&add[p-1].cw==='next') p--; add.splice(p,0,gr); }
 function connectGuide(g){
@@ -2065,7 +2099,7 @@ function ask(msg,okLabel){ $('#askIn').hidden=true; return new Promise(res=>{ co
   const done=v=>{ d.onclose=null; $('#askOk').onclick=null; $('#askNo').onclick=null; d.close(); res(v); };
   $('#askOk').onclick=()=>done(true); $('#askNo').onclick=()=>done(false); d.onclose=()=>res(false); d.showModal(); }); }
 
-function askText(msg,def){ return new Promise(res=>{ const d=$('#dlgAsk'), inp=$('#askIn'); $('#askMsg').textContent=msg; $('#askOk').textContent='Move'; inp.hidden=false; inp.value=def||'';
+function askText(msg,def,ok){ return new Promise(res=>{ const d=$('#dlgAsk'), inp=$('#askIn'); $('#askMsg').textContent=msg; $('#askOk').textContent=ok||'OK'; inp.hidden=false; inp.value=def||'';
   const done=v=>{ d.onclose=null; $('#askOk').onclick=null; $('#askNo').onclick=null; inp.onkeydown=null; d.close(); inp.hidden=true; res(v); };
   $('#askOk').onclick=()=>done(inp.value); $('#askNo').onclick=()=>done(null); inp.onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault(); done(inp.value); } }; d.onclose=()=>{ inp.hidden=true; res(null); }; d.showModal(); inp.select(); }); }
 

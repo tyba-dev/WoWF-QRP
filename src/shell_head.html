@@ -248,6 +248,7 @@ dialog textarea{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-
 <body>
 <div class="loading" id="loading">Unrolling the map…</div>
 <div class="app">
+<div id="saveWarn" hidden style="background:var(--danger);color:#fff;padding:6px 12px;font-weight:700">Your changes can't be saved in this browser right now. Use Export → Route file → Download to keep a copy.</div>
   <header class="top">
     <button class="btn icon mobile-only" id="openLeft" aria-label="Show route">Route</button>
     <div class="brand">Forever Route Planner<small>Questie data</small></div>
@@ -358,7 +359,7 @@ dialog textarea{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-
   <label class="inline"><input type="checkbox" name="event"> Show seasonal and event quests</label>
   <fieldset style="border:1px solid var(--line);border-radius:8px;padding:6px 10px"><legend class="note">Flight paths already known at the start</legend><label class="inline" style="margin-bottom:4px"><input type="checkbox" id="fpAll"> Assume every flight path is known</label><div class="dggrid" id="fpSettings" style="max-height:160px;overflow:auto"></div></fieldset>
   <fieldset style="border:1px solid var(--line);border-radius:8px;padding:6px 10px"><legend class="note">Dungeons you'll run (for guide <code>.dungeon</code> steps)</legend><div class="dggrid" id="dgSettings"></div></fieldset>
-  <div class="row" style="border-top:1px solid var(--line);padding-top:10px"><button type="button" class="btn" id="clearSteps">Remove all steps</button><button type="button" class="btn" id="clearAfter">Remove steps after the selected one</button><button type="button" class="btn danger" id="delRoute">Delete this route</button></div>
+  <div class="row" style="border-top:1px solid var(--line);padding-top:10px"><button type="button" class="btn" id="clearSteps">Remove all steps</button><button type="button" class="btn" id="clearAfter">Remove steps after the selected one</button><button type="button" class="btn" id="restoreBtn">Restore from a backup…</button><button type="button" class="btn danger" id="delRoute">Delete this route</button></div>
   <div class="actions"><button class="btn" value="cancel" formnovalidate>Cancel</button><button class="btn gold" value="ok">Save</button></div>
 </form></dialog>
 
@@ -431,6 +432,12 @@ dialog textarea{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-
   <label class="inline"><input type="checkbox" id="impConvert" checked> The guide uses Classic Era coordinates (adjust for Forever's resized Mulgore, Redridge, Eastern Plaguelands and Stormwind)</label>
   <p class="note" id="impMsg" style="margin:0"></p>
   <div class="actions"><button class="btn" id="impCancel">Cancel</button><button class="btn gold" id="impGo">Import</button></div>
+</div></dialog>
+<dialog id="dlgBackup"><div class="dl">
+  <h2>Restore from a backup</h2>
+  <p class="note" style="margin:0">The planner keeps a copy of your routes each day you open it (the last 7 days). Restoring adds the routes from that day as copies; nothing you have now is removed.</p>
+  <div id="backupList" class="note"></div>
+  <div class="actions"><button class="btn gold" id="backupClose">Close</button></div>
 </div></dialog>
 <dialog id="dlgAbout"><div class="dl">
   <h2>About the Forever Route Planner</h2>

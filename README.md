@@ -17,7 +17,7 @@ Open `index.html` in a browser, or host this folder on any static web host (see 
 2. In the repository, open **Settings → Pages**, choose **Deploy from a branch**, branch `main`, folder `/ (root)`, and save.
 3. After a minute the planner is live at `https://<your-username>.github.io/<repository-name>/`.
 
-The `tiles/` folder must sit next to `index.html`; it holds the close-up terrain shading.
+The `tiles/` folder must sit next to `index.html`; it holds the close-up terrain shading as WebP images. (The planner also accepts the same images packed as `tiles/terrain0.bin` and `tiles/terrain1.bin`, which it tries first.)
 
 ## Change it
 
