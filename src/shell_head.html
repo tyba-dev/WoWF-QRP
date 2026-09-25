@@ -1,0 +1,448 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Forever Route Planner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Alegreya+Sans:wght@400;500;700&family=Marcellus&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#17140f; --panel:#1f1b15; --panel2:#29231b; --panel3:#332b20; --line:#4a3c25; --bronze:#8f7040;
+  --text:#ece2cb; --muted:#a99a7c; --gold:#f2c54e; --gold-ink:#1b1408; --purple:#8a3fc4; --purple2:#5a2386;
+  --danger:#e5694f; --warn:#e9a441; --ok:#77c46f; --focus:#f2c54e;
+  --q-red:#ff5a4a; --q-orange:#ff9340; --q-yellow:#f5e04a; --q-green:#55c255; --q-grey:#8d8d8d;
+  --display:"Marcellus","Palatino Linotype",Palatino,"Book Antiqua",Georgia,serif;
+  --body:"Alegreya Sans","Gill Sans","Segoe UI",system-ui,sans-serif;
+  box-sizing:border-box; padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+  color-scheme:dark;
+}
+@media (prefers-color-scheme: light){
+  :root:not([data-theme="dark"]){
+    --bg:#e8dfcb; --panel:#f6f0e2; --panel2:#ece3cf; --panel3:#e2d6bd; --line:#c7b184; --bronze:#94733a;
+    --text:#2a2016; --muted:#6c5e45; --gold:#8a5f0c; --gold-ink:#fff8e4; --purple:#7a34b0; --purple2:#b98ad8;
+    --q-yellow:#b89a00; --q-green:#2f8f2f; --q-grey:#777; --focus:#8a5f0c; color-scheme:light;
+  }
+}
+:root[data-theme="light"]{
+  --bg:#e8dfcb; --panel:#f6f0e2; --panel2:#ece3cf; --panel3:#e2d6bd; --line:#c7b184; --bronze:#94733a;
+  --text:#2a2016; --muted:#6c5e45; --gold:#8a5f0c; --gold-ink:#fff8e4; --purple:#7a34b0; --purple2:#b98ad8;
+  --q-yellow:#b89a00; --q-green:#2f8f2f; --q-grey:#777; --focus:#8a5f0c; color-scheme:light;
+}
+*,*::before,*::after{box-sizing:inherit}
+[hidden]{display:none!important}
+html{scroll-padding-top:env(safe-area-inset-top,0px);height:100%}
+body{margin:0;height:100%;background:var(--bg);color:var(--text);font:15px/1.4 var(--body);overflow:hidden}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
+.app{display:grid;grid-template-rows:auto 1fr auto;height:100%}
+/* top bar */
+.top{display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--panel);border-bottom:1px solid var(--line);min-width:0}
+.brand{font-family:var(--display);font-size:19px;letter-spacing:.02em;white-space:nowrap;color:var(--gold)}
+.brand small{font-family:var(--body);color:var(--muted);font-size:13px;margin-left:6px;letter-spacing:0}
+.search{position:relative;flex:1;max-width:420px;min-width:120px}
+.search input{width:100%;padding:6px 10px;border-radius:6px;border:1px solid var(--line);background:var(--panel2)}
+.results{position:absolute;top:100%;left:0;right:0;z-index:40;margin-top:4px;background:var(--panel);border:1px solid var(--line);border-radius:6px;max-height:60vh;overflow:auto;box-shadow:0 8px 24px #0008}
+.results button{display:flex;gap:8px;width:100%;text-align:left;padding:6px 10px;border:0;background:none;cursor:pointer}
+.results button:hover,.results button.hi{background:var(--panel3)}
+.spacer{flex:1}
+.btn{border:1px solid var(--line);background:var(--panel2);padding:5px 11px;border-radius:6px;cursor:pointer;white-space:nowrap}
+.btn:hover{background:var(--panel3)}
+.btn.gold{background:var(--gold);color:var(--gold-ink);border-color:var(--gold);font-weight:700}
+.btn.gold:hover{filter:brightness(1.08)}
+.btn.danger{color:var(--danger);border-color:color-mix(in srgb,var(--danger) 55%,var(--line))}
+.btn.danger:hover{background:color-mix(in srgb,var(--danger) 18%,var(--panel2))}
+.btn.sm{padding:2px 8px;font-size:13px}
+.btn.icon{padding:4px 8px}
+.btn[aria-pressed="true"]{background:var(--panel3);border-color:var(--bronze)}
+.who{font-size:13px;color:var(--muted);white-space:nowrap}
+.who b{color:var(--text);font-weight:500}
+.mobile-only{display:none}
+/* main */
+.main{display:grid;grid-template-columns:var(--lw,340px) 1fr var(--rw,350px);min-height:0}
+.panel{position:relative}
+.resizer{position:absolute;top:0;bottom:0;width:7px;cursor:col-resize;z-index:6;touch-action:none}
+.resizer:hover,.resizer.on{background:color-mix(in srgb,var(--gold) 45%,transparent)}
+.left .resizer{right:-4px}.right .resizer{left:-4px}
+.panel{background:var(--panel);display:flex;flex-direction:column;min-height:0;min-width:0}
+.left{border-right:1px solid var(--line)} .right{border-left:1px solid var(--line)}
+.phead{padding:10px 12px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:8px}
+.row{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.phead h2{font-family:var(--display);font-weight:400;font-size:18px;margin:0}
+select{background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:4px 6px;max-width:100%}
+.scroll{overflow:auto;flex:1;min-height:0}
+/* steps */
+.steps{list-style:none;margin:0;padding:4px 0}
+.step{display:grid;grid-template-columns:22px 24px 1fr auto auto;gap:6px;align-items:start;padding:5px 10px 5px 6px;cursor:pointer;border-left:3px solid transparent;position:relative}
+.step:hover{background:var(--panel2)}
+.step.cur{background:var(--panel3);border-left-color:var(--gold)}
+.step.future{opacity:.62}
+.step .n{font-size:11px;color:var(--muted);text-align:right;padding-top:3px;cursor:grab;user-select:none}
+.step .ic{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:14px;background:var(--panel2);border:1px solid var(--line)}
+.ic.accept{color:#231800;background:#f2c54e;border-color:#b78d1d}
+.ic.turnin{color:#231800;background:#f2c54e;border-color:#b78d1d}
+.ic.complete{color:#fff;background:#3f6b35;border-color:#5c9a4e}
+.ic.grind{color:#fff;background:#7a2d2d;border-color:#a44}
+.ic.custom{color:#fff;background:#3a5d8a;border-color:#5a86be}
+.ic.travel{color:#fff;background:#5a4a78;border-color:#8472a8}
+.grp{display:flex;gap:6px;align-items:center;font-size:13px;color:var(--muted)}
+.ic.party{color:#fff;background:#2f6f6a;border-color:#4fa39b;font-size:12px}
+.ic.abandon{color:#fff;background:#555;border-color:#777}
+.step .t{min-width:0;font-size:14px}
+.sbtns{display:flex;gap:3px}
+.step .opt{border:1px solid var(--line);background:var(--panel2);border-radius:4px;height:22px;padding:0 4px;cursor:pointer;color:var(--muted);font-size:11px;opacity:.55}
+.step:hover .opt,.step .opt.on{opacity:1}
+.step .opt.on{background:#3a5d8a;border-color:#5a86be;color:#fff}
+.step .wh{border:1px solid var(--line);background:var(--panel2);border-radius:4px;height:22px;line-height:20px;padding:0 4px;color:var(--muted);font-size:11px;text-decoration:none;opacity:.55}
+.step:hover .wh{opacity:1}
+.step .wh:hover{color:var(--gold);border-color:var(--gold)}
+.step.optstep{border-left-style:dashed;border-left-color:#5a86be}
+.step.optstep .t::after{content:"optional";font-size:10px;font-weight:700;margin-left:6px;padding:0 4px;border-radius:3px;background:#3a5d8a;color:#fff;vertical-align:1px}
+.olist{display:block;margin-top:2px}.oitem{display:block;font-size:12px;color:var(--muted)}.oitem.done{color:var(--ok)}
+.ic.dq{background:#ff8a1f;border-color:#b85a00;color:#231200}
+.ic.complete.dq{background:#8a4a12;border-color:#ff8a1f;color:#fff}
+.step.dgstep{background:color-mix(in srgb,#ff8a1f 12%,transparent);border-left-color:#ff8a1f}
+.step.dgstep.cur{background:color-mix(in srgb,#ff8a1f 22%,var(--panel3))}
+.dgtag{font-size:11px;font-weight:700;padding:0 5px;margin-left:6px;border-radius:3px;background:#ff8a1f;color:#231200;vertical-align:1px;cursor:pointer}
+.dgtxt{color:#ff9a3c}
+.stk{font-size:11px;font-weight:700;padding:0 5px;margin-left:6px;border-radius:3px;background:#3a5d8a;color:#fff;vertical-align:1px;white-space:nowrap}
+.step .t .sub{display:block;font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.step .x{font-size:12px;text-align:right;color:var(--muted);white-space:nowrap}
+.step .x b{color:var(--text);font-weight:500}
+.step .err{color:var(--danger);font-size:12px;display:block}
+.step .wrn{color:var(--warn);font-size:12px;display:block}
+.step .del{border:1px solid var(--line);background:var(--panel2);border-radius:4px;width:22px;height:22px;padding:0;cursor:pointer;color:var(--muted);font-size:15px;line-height:1}
+.step .del:hover{color:var(--danger)}
+.step.dragover{box-shadow:inset 0 2px 0 var(--gold)}
+.step.msel{background:color-mix(in srgb,var(--gold) 18%,transparent);border-left-color:var(--gold)}
+.selbar{position:sticky;top:0;z-index:3;display:flex;flex-wrap:wrap;gap:4px;align-items:center;padding:6px 10px;background:var(--panel3);border-bottom:1px solid var(--gold);list-style:none}
+.selbar .note{flex-basis:100%;font-size:11px}
+.insert{margin:0 10px 4px 34px;font-size:12px;color:var(--gold);border-top:1px dashed var(--bronze);padding-top:2px}
+.start{padding:6px 10px 6px 34px;font-size:13px;color:var(--muted);cursor:pointer}
+.start.cur{background:var(--panel3);color:var(--text)}
+.pfoot{padding:8px 10px;border-top:1px solid var(--line);display:flex;gap:6px;flex-wrap:wrap}
+.empty{padding:18px 16px;color:var(--muted);font-size:14px}
+.empty b{color:var(--text)}
+/* right tabs */
+.tabs{display:flex;border-bottom:1px solid var(--line)}
+.tabs button{flex:1;border:0;background:none;padding:9px 4px;cursor:pointer;color:var(--muted);border-bottom:2px solid transparent;font-size:14px}
+.tabs button[aria-selected="true"]{color:var(--text);border-bottom-color:var(--gold)}
+.qgroup h3{margin:0;padding:8px 12px 3px;font-size:12px;color:var(--muted);font-weight:500;position:sticky;top:0;background:var(--panel)}
+.qrow{display:grid;grid-template-columns:30px 1fr auto;gap:6px;padding:4px 12px;align-items:center;cursor:pointer}
+.qrow .lk{color:var(--gold,#e0b64a);text-decoration:underline dotted}
+.qrow.locked .nm>span:first-child{opacity:.85}
+.qrow:hover,.qrow.sel{background:var(--panel2)}
+.qrow .lv{font-size:12px;text-align:right;font-variant-numeric:tabular-nums}
+.qrow .nm{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.qrow .meta{font-size:12px;color:var(--muted)}
+.c-red{color:var(--q-red)}.c-orange{color:var(--q-orange)}.c-yellow{color:var(--q-yellow)}.c-green{color:var(--q-green)}.c-grey{color:var(--q-grey)}
+.detail{padding:12px 14px}
+.detail h2{font-family:var(--display);font-weight:400;font-size:21px;margin:0 0 2px;line-height:1.2}
+.detail .facts{display:grid;grid-template-columns:auto 1fr;gap:3px 10px;font-size:14px;margin:10px 0}
+.detail .facts dt{color:var(--muted)} .detail .facts dd{margin:0}
+.detail p{margin:6px 0;font-size:14px}
+.detail ul{margin:4px 0;padding-left:18px;font-size:14px}
+.detail a{color:var(--gold)}
+.note{font-size:13px;color:var(--muted)}
+.reason{background:var(--panel2);border-left:3px solid var(--warn);padding:6px 10px;font-size:13px;margin:8px 0}
+.linkish{background:none;border:0;padding:0;color:var(--gold);cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+/* map */
+.mapwrap{position:relative;min-width:0;min-height:0;overflow:hidden;background:#243c45}
+canvas#map{position:absolute;inset:0;width:100%;height:100%;touch-action:none;cursor:grab}
+canvas#map.dragging{cursor:grabbing}
+canvas#map.picking{cursor:crosshair}
+.maptools{position:absolute;right:10px;top:10px;display:flex;flex-direction:column;gap:6px;z-index:5}
+.maptools .btn{background:color-mix(in srgb,var(--panel) 88%,transparent);min-width:34px}
+.layers{position:absolute;left:10px;top:10px;z-index:5;background:color-mix(in srgb,var(--panel) 92%,transparent);border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:13px;display:flex;flex-direction:column;gap:2px}
+.layers summary{cursor:pointer;color:var(--muted)}
+.layers label{display:flex;gap:6px;align-items:center;cursor:pointer}
+.tip{position:absolute;z-index:8;pointer-events:none;background:#140f09ee;color:#f3e7c9;border:1px solid #6e5a33;border-radius:6px;padding:5px 8px;font-size:13px;max-width:280px;display:none}
+.tip b{color:#ffd24a;font-weight:500}
+.pop{position:absolute;z-index:9;background:var(--panel);border:1px solid var(--bronze);border-radius:8px;box-shadow:0 10px 30px #000a;min-width:230px;max-width:320px;max-height:60%;overflow:auto;font-size:14px}
+.pop h4{margin:0;padding:8px 10px 4px;font-family:var(--display);font-weight:400;font-size:16px}
+.pop .it{padding:6px 10px;border-top:1px solid var(--line)}
+.pop .it .row{margin-top:4px}
+.pickbar{position:absolute;left:50%;top:12px;transform:translateX(-50%);z-index:10;background:var(--gold);color:var(--gold-ink);padding:6px 12px;border-radius:6px;font-weight:700;display:none;gap:10px;align-items:center}
+.status{position:absolute;left:10px;bottom:8px;font-size:12px;color:#e8dcc0;text-shadow:0 1px 2px #000;z-index:4;pointer-events:none}
+
+/* guides */
+.gbar{padding:10px 12px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:8px;font-size:13px}
+.gbar .row{gap:6px}
+.gbar label{display:flex;gap:5px;align-items:center;color:var(--muted)}
+.gchip{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:4px;vertical-align:middle;border:1px solid #0006}
+.gsum{font-size:13px;color:var(--muted)}
+.gsum b{color:var(--text);font-weight:500}
+.gstep{display:grid;grid-template-columns:18px 30px 20px 1fr 22px;gap:5px;padding:4px 10px 4px 8px;align-items:start;font-size:13px;cursor:pointer;border-left:3px solid transparent}
+.gstep:hover{background:var(--panel2)}
+.gstep.sel{background:var(--panel3);border-left-color:var(--gcol,var(--gold))}
+.gstep .gn{color:var(--muted);font-size:11px;text-align:right;padding-top:2px}
+.gstep .gi{width:18px;height:18px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:700;border:1px dashed var(--gcol,var(--gold));color:var(--text)}
+.gstep .gs{display:block;font-size:12px}
+.gstep.st-ok .gs{color:var(--ok)} .gstep.st-blocked .gs{color:var(--danger)} .gstep.st-route .gs,.gstep.st-done .gs{color:var(--muted)}
+.gstep.st-outside,.gstep.st-excl,.gstep.st-cond{opacity:.5}
+.gstep.st-route .gi,.gstep.st-done .gi{border-style:solid;background:var(--gcol,var(--gold));color:#111}
+.gstep input{margin:2px 0 0}
+.gstep .gdel{border:1px solid var(--line);background:var(--panel2);border-radius:4px;width:22px;height:22px;padding:0;cursor:pointer;color:var(--muted);font-size:15px;line-height:1}
+.gstep .gdel:hover,.step .del:hover{color:var(--danger);border-color:var(--danger)}
+.step.inactive .t{text-decoration:line-through;text-decoration-color:var(--muted)}
+.step.inactive{opacity:.5}
+.dgbox summary{cursor:pointer;color:var(--text)}
+.dggrid{display:grid;grid-template-columns:1fr 1fr;gap:2px 10px;font-size:13px}
+.dggrid label{display:flex;gap:5px;align-items:center;color:var(--text);flex-direction:row}
+.gstep.st-dungeon{opacity:.5}
+.gstep.st-unknown .gs{color:var(--warn)}
+.rxi{display:inline-flex;vertical-align:-2px;margin-right:3px}
+.rxi.item{width:13px;height:13px;border-radius:3px;background:linear-gradient(135deg,#6b5a3a,#2a2116);border:1px solid #b8963e}
+.rxi.q{font-weight:700;color:#ffd100;text-shadow:0 0 2px #000}
+.rxc-friendly{color:#1fd13b}.rxc-enemy{color:#ff6a3d}.rxc-loot{color:#1ec2d8}.rxc-warn{color:#f2d21b}.rxc-pick{color:#e05af2}.rxc-buy{color:#35b43a}
+:root[data-theme="light"] .rxc-friendly{color:#0d8a22} :root[data-theme="light"] .rxc-warn{color:#8a6d00} :root[data-theme="light"] .rxc-loot{color:#067b8c} :root[data-theme="light"] .rxc-enemy{color:#c23a12}
+@media (prefers-color-scheme: light){ :root:not([data-theme="dark"]) .rxc-friendly{color:#0d8a22} :root:not([data-theme="dark"]) .rxc-warn{color:#8a6d00} :root:not([data-theme="dark"]) .rxc-loot{color:#067b8c} :root:not([data-theme="dark"]) .rxc-enemy{color:#c23a12} }
+.rxnotes{display:block;font-size:12px;color:var(--muted);margin-top:1px}
+.rxnotes>span{display:block}
+.gmark{font-size:11px;padding:0 5px;border-radius:3px;background:var(--panel3);color:var(--gold);margin-left:4px}
+/* xp bar */
+.xpbar{background:var(--panel);border-top:1px solid var(--line);padding:6px 12px 8px;display:grid;grid-template-columns:auto 1fr auto auto;gap:12px;align-items:center}
+.lvl{font-family:var(--display);font-size:22px;color:var(--gold);min-width:74px}
+.lvl small{font-family:var(--body);font-size:12px;color:var(--muted);display:block;line-height:1}
+.bar{position:relative;height:18px;border-radius:3px;background:#0d0a07;border:1px solid #6b5630;overflow:hidden}
+.bar .fill{position:absolute;inset:0 auto 0 0;background:linear-gradient(#b06ae6,var(--purple) 45%,var(--purple2));transition:width .25s}
+.bar .ticks{position:absolute;inset:0;background:repeating-linear-gradient(90deg,transparent 0 calc(5% - 1px),#000a calc(5% - 1px) 5%)}
+.bar .lbl{position:absolute;inset:0;display:grid;place-items:center;font-size:12px;color:#fff;text-shadow:0 1px 2px #000,0 0 3px #000;font-variant-numeric:tabular-nums}
+.sum{font-size:13px;color:var(--muted);text-align:right;white-space:nowrap}
+.sum b{color:var(--text);font-weight:500}
+/* dialogs */
+dialog{border:1px solid var(--bronze);border-radius:10px;background:var(--panel);color:var(--text);padding:0;max-width:min(560px,94vw);width:100%;box-shadow:0 20px 60px #000c}
+dialog::backdrop{background:#0008}
+dialog form,dialog .dl{padding:16px 18px;display:flex;flex-direction:column;gap:10px}
+dialog h2{font-family:var(--display);font-weight:400;margin:0;font-size:22px}
+dialog label{display:flex;flex-direction:column;gap:3px;font-size:13px;color:var(--muted)}
+dialog label.inline{flex-direction:row;align-items:center;gap:8px;color:var(--text);font-size:14px}
+dialog input[type=text],dialog input[type=number],dialog textarea,dialog select{background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:6px 8px;color:var(--text);font-size:14px}
+dialog textarea{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px;min-height:280px;white-space:pre;resize:vertical}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+.actions{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:4px}
+.seg{display:flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.seg button{flex:1;border:0;background:var(--panel2);padding:6px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--gold);color:var(--gold-ink);font-weight:700}
+.est{background:var(--panel2);border-radius:8px;padding:8px 10px;font-size:13px;display:flex;flex-direction:column;gap:6px}
+.toast{position:fixed;left:50%;bottom:70px;transform:translateX(-50%);background:var(--gold);color:var(--gold-ink);padding:7px 14px;border-radius:6px;font-weight:700;z-index:100;display:none}
+.loading{position:fixed;inset:0;display:grid;place-items:center;background:var(--bg);z-index:200;font-family:var(--display);font-size:20px;color:var(--gold)}
+@media (max-width: 1100px){ .main{grid-template-columns:var(--lw,300px) 1fr var(--rw,310px)} }
+@media (max-width: 900px){
+  .mobile-only{display:inline-block}
+  .resizer{display:none}
+  .main{grid-template-columns:1fr}
+  .panel.left,.panel.right{position:fixed;top:env(safe-area-inset-top,0px);bottom:env(safe-area-inset-bottom,0px);width:min(360px,92vw);z-index:30;box-shadow:0 0 40px #000a;display:none}
+  .panel.left{left:0}.panel.right{right:0}
+  .panel.open{display:flex}
+  .who,.brand,#zoneJump,#themeBtn{display:none}
+  .top{gap:6px;padding:8px}
+  .xpbar{grid-template-columns:auto 1fr auto}.sum{display:none}
+}
+@media (prefers-reduced-motion: reduce){ .bar .fill{transition:none} }
+</style>
+</head>
+<body>
+<div class="loading" id="loading">Unrolling the map…</div>
+<div class="app">
+  <header class="top">
+    <button class="btn icon mobile-only" id="openLeft" aria-label="Show route">Route</button>
+    <div class="brand">Forever Route Planner<small>Questie data</small></div>
+    <div class="search">
+      <input id="search" type="search" placeholder="Find a quest by name or ID" autocomplete="off" aria-label="Find a quest">
+      <div class="results" id="results" hidden></div>
+    </div>
+    <select id="zoneJump" aria-label="Jump to zone"><option value="">Jump to zone…</option></select>
+    <div class="spacer"></div>
+    <button class="who linkish" id="whoBtn" style="text-decoration:none"></button>
+    <button class="btn" id="aboutBtn">About</button>
+    <button class="btn" id="themeBtn" aria-label="Toggle light or dark theme">Theme</button>
+    <button class="btn gold" id="exportBtn">Export</button>
+    <button class="btn icon mobile-only" id="openRight" aria-label="Show quests">Quests</button>
+  </header>
+  <div class="main">
+    <aside class="panel left" id="leftPanel"><div class="resizer" data-side="l" title="Drag to resize"></div>
+      <div class="phead">
+        <div class="row">
+          <select id="routeSel" aria-label="Route" style="flex:1"></select>
+          <button class="btn sm" id="newRoute">New</button>
+          <button class="btn sm" id="charBtn">Settings</button>
+        </div>
+        <div class="row note" id="routeInfo"></div>
+      </div>
+      <div class="scroll" id="stepScroll"><ul class="steps" id="steps"></ul></div>
+      <div class="pfoot">
+        <button class="btn sm" id="addGrind">Add grind</button>
+        <button class="btn sm" id="addTravel">Add travel or note</button>
+        <button class="btn sm" id="hsBtn">Hearth</button>
+        <button class="btn sm" id="addCustom">Add custom quest</button>
+        <span class="spacer"></span>
+        <button class="btn sm" id="undoBtn" title="Undo (Ctrl+Z)">Undo</button>
+      </div>
+    </aside>
+    <div class="mapwrap" id="mapwrap">
+      <canvas id="map" aria-label="Map of Azeroth. Drag to pan, scroll to zoom." tabindex="0"></canvas>
+      <details class="layers" id="layers" open>
+        <summary>Map layers</summary>
+        <label><input type="checkbox" data-l="avail" checked> Available quests</label>
+        <label><input type="checkbox" data-l="locked" checked> Quests needing a prerequisite</label>
+        <label><input type="checkbox" data-l="trivial"> Low-level quests</label>
+        <label><input type="checkbox" data-l="objectives" checked> Quest log objectives</label>
+        <label><input type="checkbox" data-l="route" checked> Route line</label>
+        <label><input type="checkbox" data-l="ghost" checked> Guide ghost routes</label>
+        <label><input type="checkbox" data-l="fp" checked> Flight paths</label>
+        <label><input type="checkbox" data-l="towns" checked> Towns</label>
+        <label><input type="checkbox" data-l="dungeons" checked> Dungeons</label>
+        <label><input type="checkbox" data-l="relief" checked> Terrain relief</label>
+        <button class="linkish" id="imgBtn" style="text-align:left;margin-top:4px">Zone map images…</button>
+      </details>
+      <div class="maptools">
+        <button class="btn" id="zin" aria-label="Zoom in">+</button>
+        <button class="btn" id="zout" aria-label="Zoom out">−</button>
+        <button class="btn" id="zfit" aria-label="Show all of Azeroth">All</button>
+        <button class="btn" id="zcur" aria-label="Center on the selected step">Step</button>
+      </div>
+      <div class="pickbar" id="pickbar">Click the map to place it <button class="btn sm" id="pickCancel">Cancel</button></div>
+      <div class="tip" id="tip"></div>
+      <div class="status" id="status"></div>
+    </div>
+    <aside class="panel right" id="rightPanel"><div class="resizer" data-side="r" title="Drag to resize"></div>
+      <div class="tabs" role="tablist">
+        <button role="tab" data-tab="avail" aria-selected="true">Available</button>
+        <button role="tab" data-tab="log" aria-selected="false">Quest log</button>
+        <button role="tab" data-tab="detail" aria-selected="false">Details</button>
+        <button role="tab" data-tab="guides" aria-selected="false">Guides</button>
+      </div>
+      <div class="phead" id="availHead">
+        <div class="row">
+          <input id="availFilter" type="search" placeholder="Filter" style="flex:1;min-width:0;padding:4px 8px;border:1px solid var(--line);border-radius:6px;background:var(--panel2)" aria-label="Filter available quests">
+          <select id="availZone" aria-label="Zone filter"><option value="">All zones</option><option value="near">Near this step</option></select>
+        </div>
+      </div>
+      <div class="scroll" id="rightBody"></div>
+    </aside>
+  </div>
+  <footer class="xpbar">
+    <div class="lvl" id="lvl"></div>
+    <div class="bar" aria-live="polite"><div class="fill" id="xpfill"></div><div class="ticks"></div><div class="lbl" id="xplbl"></div></div>
+    <label class="grp">Group<select id="groupSel" aria-label="Group size from the selected step"><option value="1">Solo</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select></label>
+    <div class="sum" id="xpsum"></div>
+  </footer>
+</div>
+
+<dialog id="dlgChar"><form method="dialog" id="charForm">
+  <h2>Route settings</h2>
+  <label>Route name<input type="text" name="name" required></label>
+  <div class="grid3">
+    <label>Faction<select name="faction"><option value="H">Horde</option><option value="A">Alliance</option></select></label>
+    <label>Race<select name="race"></select></label>
+    <label>Class<select name="cls"></select></label>
+  </div>
+  <div class="grid4">
+    <label>Start level<input type="number" name="level" min="1" max="60"></label>
+    <label>XP into level<input type="number" name="xp" min="0"></label>
+    <label>Starting group size<input type="number" name="party" min="1" max="5"></label>
+    <label>XP rate (×)<input type="number" name="xprate" min="0.5" max="5" step="0.05"></label>
+  </div>
+  <p class="note" style="margin:0">Group size only affects the mob-kill estimator; quest XP is the same for every member. To change it partway, use the Group control under the map, which adds a step at the selected point.</p>
+  <label>Dungeon quest XP multiplier (Forever placeholder)<input type="number" name="dqmult" min="0.1" max="10" step="0.1"></label>
+  <fieldset style="border:1px solid var(--line);border-radius:8px;padding:6px 10px;display:flex;flex-direction:column;gap:8px"><legend class="note">Kill XP while questing</legend>
+    <label class="inline"><input type="checkbox" name="killxp"> Add estimated kill XP to "complete objectives" steps</label>
+    <div class="grid3"><label>Quest item drop rate (%)<input type="number" name="droprate" min="5" max="100"></label><label>Count when the guide doesn't say<input type="number" name="defcount" min="1" max="50"></label><label>Dungeon mob XP: Era ÷<input type="number" name="dgdiv" min="0.1" max="20" step="0.1"></label></div>
+    <p class="note" style="margin:0">Uses your group size at each step. Dungeon mobs give their Era XP (elite ×2) divided by this number; 3.5 mirrors the dungeon quest boost and fits 20 XP per player from a level 16 mob in a 5-player group.</p></fieldset>
+  <label class="inline"><input type="checkbox" name="rep"> Show repeatable quests</label>
+  <label class="inline"><input type="checkbox" name="prof"> Show profession quests</label>
+  <label class="inline"><input type="checkbox" name="event"> Show seasonal and event quests</label>
+  <fieldset style="border:1px solid var(--line);border-radius:8px;padding:6px 10px"><legend class="note">Flight paths already known at the start</legend><label class="inline" style="margin-bottom:4px"><input type="checkbox" id="fpAll"> Assume every flight path is known</label><div class="dggrid" id="fpSettings" style="max-height:160px;overflow:auto"></div></fieldset>
+  <fieldset style="border:1px solid var(--line);border-radius:8px;padding:6px 10px"><legend class="note">Dungeons you'll run (for guide <code>.dungeon</code> steps)</legend><div class="dggrid" id="dgSettings"></div></fieldset>
+  <div class="row" style="border-top:1px solid var(--line);padding-top:10px"><button type="button" class="btn" id="clearSteps">Remove all steps</button><button type="button" class="btn" id="clearAfter">Remove steps after the selected one</button><button type="button" class="btn danger" id="delRoute">Delete this route</button></div>
+  <div class="actions"><button class="btn" value="cancel" formnovalidate>Cancel</button><button class="btn gold" value="ok">Save</button></div>
+</form></dialog>
+
+<dialog id="dlgGrind"><form method="dialog" id="grindForm">
+  <h2>Grind step</h2>
+  <div class="seg" id="grindMode"><button type="button" data-m="add" aria-pressed="true">Add an amount of XP</button><button type="button" data-m="to" aria-pressed="false">Grind to a level</button></div>
+  <div class="grid2" data-gm="add"><label>XP gained<input type="number" name="amount" min="0" step="10"></label><label>Source<select name="src"><option value="mobs">Mob kills</option><option value="explore">Exploration</option><option value="both">Mobs and exploration</option><option value="other">Other</option></select></label></div>
+  <div class="grid2" data-gm="to" hidden><label>Target level<input type="number" name="tlevel" min="2" max="60"></label><label>Plus XP into that level<input type="number" name="txp" min="0" step="10"></label></div>
+  <div class="est" data-gm="add">
+    <b>Estimate mob XP</b>
+    <div class="grid4"><label>Mob level<input type="number" name="mlevel" min="1" max="63"></label><label>Kills<input type="number" name="kills" min="0"></label><label class="inline" style="margin-top:16px"><input type="checkbox" name="elite"> Elite</label><label class="inline" style="margin-top:16px"><input type="checkbox" name="dgmob"> Dungeon mob</label></div>
+    <div class="row"><span id="estOut" class="note"></span><span class="spacer"></span><button type="button" class="btn sm" id="estUse">Use estimate</button></div>
+  </div>
+  <label>Note<input type="text" name="note" placeholder="e.g. Kill boars on the way to Bloodhoof"></label>
+  <div class="row"><button type="button" class="btn sm" id="grindPick">Set location on map</button><span class="note" id="grindLoc">No location</span></div>
+  <div class="actions"><button class="btn" value="cancel" formnovalidate>Cancel</button><button class="btn gold" value="ok">Add step</button></div>
+</form></dialog>
+
+<dialog id="dlgTravel"><form method="dialog" id="travelForm">
+  <h2>Travel or note</h2>
+  <label>Kind<select name="kind"><option value="fly">Fly to</option><option value="fp">Get flight path</option><option value="home">Set hearthstone</option><option value="hs">Use hearthstone</option><option value="goto">Go to</option><option value="note">Note</option></select></label>
+  <label id="travelNode">Flight path<select name="node"></select><span class="note">✓ = learned by this point. You take off from the nearest flight path you know; the export writes a RestedXP <code>.fly</code> line so the addon flies you automatically.</span></label>
+  <label id="travelText">Place or text<input type="text" name="text" placeholder="e.g. Crossroads"></label>
+  <div class="row"><button type="button" class="btn sm" id="travelPick">Set location on map</button><span class="note" id="travelLoc">No location</span></div>
+  <div class="actions"><button class="btn" value="cancel" formnovalidate>Cancel</button><button class="btn gold" value="ok">Add step</button></div>
+</form></dialog>
+
+<dialog id="dlgCustom"><form method="dialog" id="customForm">
+  <h2>Custom quest</h2>
+  <p class="note" style="margin:0">For quests that aren't in the Questie database yet, including most new Forever quests. The XP is added when the step is reached.</p>
+  <label>Quest name<input type="text" name="name" required></label>
+  <div class="grid2"><label>XP reward (at your level)<input type="number" name="xp" min="0" step="5"></label><label>Quest ID (optional)<input type="number" name="qid" min="1"></label></div>
+  <label>Action<select name="act"><option value="turnin">Turn in (gives XP)</option><option value="accept">Accept</option><option value="complete">Complete objectives</option></select></label>
+  <div class="row"><button type="button" class="btn sm" id="customPick">Set location on map</button><span class="note" id="customLoc">No location</span></div>
+  <div class="actions"><button class="btn" value="cancel" formnovalidate>Cancel</button><button class="btn gold" value="ok">Add step</button></div>
+</form></dialog>
+
+<dialog id="dlgExport"><div class="dl">
+  <h2>Export route</h2>
+  <div class="seg" id="expMode"><button type="button" data-m="rxp" aria-pressed="true">RestedXP guide</button><button type="button" data-m="json" aria-pressed="false">Route file (for sharing)</button></div>
+  <div class="grid2" data-exp="rxp"><label>Guide group<input type="text" id="expGroup"></label><label>Guide name<input type="text" id="expName"></label></div>
+  <div class="grid2" data-exp="rxp"><label>Next guide (optional)<input type="text" id="expNext"></label><label>Extra header lines<input type="text" id="expExtra" placeholder="e.g. #classic"></label></div>
+  <label class="inline" data-exp="rxp"><input type="checkbox" id="expMerge" checked> Merge accepts and turn-ins at the same NPC into one step</label>
+  <p class="note" id="expMsg" style="margin:0;color:var(--warn)"></p>
+  <textarea id="expText" spellcheck="false" aria-label="Exported text"></textarea>
+  <p class="note" data-exp="rxp" style="margin:0">Objective numbers in <code>.complete</code> follow Questie's order (kills, objects, items). Check them in-game on quests with mixed objectives.</p>
+  <p class="note" data-exp="json" style="margin:0" hidden>Paste a route file here and choose Import to load it as a new route.</p>
+  <div class="actions">
+    <button class="btn" id="expImport" data-exp="json" hidden>Import</button>
+    <button class="btn" id="expCopy">Copy</button>
+    <button class="btn" id="expSave">Download</button>
+    <button class="btn gold" id="expClose">Done</button>
+  </div>
+</div></dialog>
+
+<dialog id="dlgImg"><div class="dl">
+  <h2>Zone map images</h2>
+  <p class="note" style="margin:0">Add your own screenshots of the in-game zone maps and they'll be drawn in place when you zoom in. Crop each screenshot to the map artwork only, with no window frame, so it lines up with the zone's edges. Images stay in this browser.</p>
+  <div class="grid2"><label>Zone<select id="imgZone"></select></label><label>Image<input type="file" id="imgFile" accept="image/*"></label></div>
+  <label>Opacity<input type="range" id="imgOpacity" min="0.2" max="1" step="0.05"></label>
+  <div id="imgList" class="note"></div>
+  <div class="actions"><button class="btn gold" id="imgClose">Done</button></div>
+</div></dialog>
+
+<dialog id="dlgImport"><div class="dl">
+  <h2>Import a RestedXP guide</h2>
+  <p class="note" style="margin:0">Paste a guide or choose a .lua or .txt file. Files with several <code>RegisterGuide</code> blocks become separate guides. The guide is drawn as a ghost route you can join and leave from your own route.</p>
+  <label>Guide file<input type="file" id="impFile" accept=".lua,.txt,text/plain"></label>
+  <textarea id="impText" spellcheck="false" placeholder="RXPGuides.RegisterGuide(&quot;Group&quot;,[[&#10;#name 1-6 Mulgore&#10;step&#10;    .goto Mulgore,44.8,77.0&#10;    .accept 747&#10;]])" aria-label="Guide text" style="min-height:220px"></textarea>
+  <label class="inline"><input type="checkbox" id="impConvert" checked> The guide uses Classic Era coordinates (adjust for Forever's resized Mulgore, Redridge, Eastern Plaguelands and Stormwind)</label>
+  <p class="note" id="impMsg" style="margin:0"></p>
+  <div class="actions"><button class="btn" id="impCancel">Cancel</button><button class="btn gold" id="impGo">Import</button></div>
+</div></dialog>
+<dialog id="dlgAbout"><div class="dl">
+  <h2>About the Forever Route Planner</h2>
+  <p style="margin:0">Plan questing routes for WoW: Forever on a map, then export them as RestedXP guides.</p>
+  <p class="note" style="margin:0"><b>Licence:</b> this planner is free software under the <a href="https://www.gnu.org/licenses/gpl-3.0.html" target="_blank" rel="noopener">GNU GPL v3</a>. You can use, study, share and change it; if you share a changed version, it must stay GPL-3.0 with its source available. <span id="aboutSrc"></span></p>
+  <p class="note" style="margin:0"><b>Quest, NPC and object data</b> come from <a href="https://github.com/Questie/Questie" target="_blank" rel="noopener">Questie</a> via <a href="https://github.com/Questie/QuestieDB" target="_blank" rel="noopener">QuestieDB</a> (GPL-3.0). Thank you to their contributors.</p>
+  <p class="note" style="margin:0"><b>RestedXP guides</b> are not included. You import your own copies; they stay under RestedXP's licence (CC BY-NC-SA 4.0), and exported routes that contain their text carry that licence too.</p>
+  <p class="note" style="margin:0"><b>Map and terrain data</b> are derived from World of Warcraft game files and belong to Blizzard Entertainment; they are not covered by the GPL. Flight path connections and times are estimates.</p>
+  <p class="note" style="margin:0">Not affiliated with or endorsed by Blizzard Entertainment, RestedXP or WoW: Forever.</p>
+  <div class="actions"><button class="btn gold" id="aboutClose">Close</button></div>
+</div></dialog>
+<dialog id="dlgAsk"><div class="dl"><p id="askMsg" style="margin:0"></p><input id="askIn" type="number" min="0" hidden style="margin-top:8px;width:120px"><div class="actions"><button class="btn" id="askNo">Cancel</button><button class="btn gold" id="askOk">OK</button></div></div></dialog>
+<div class="toast" id="toast"></div>
+<script id="bundle" type="application/octet-stream">__BUNDLE__</script>
+<script>
