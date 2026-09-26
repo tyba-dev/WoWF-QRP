@@ -1520,7 +1520,7 @@ function showPop(h,x,y){
     const node=Object.entries(META.taxi.nodes).find(([id,n])=>n.fm===h.npc)?.[0]; const place=guessPlace(h.loc);
     html+=`<h4>${esc(h.label)}</h4><div class="it">${node?`<span class="note">${esc(META.taxi.nodes[node].n)}${SIM.st.fps.has(node)?' · learned':''}</span>`:''}<div class="row">${node?`<button class="btn sm gold" data-fpnode="${node}">Get flight path</button><button class="btn sm" data-flynode="${node}">Fly here</button>`:`<button class="btn sm gold" data-fp="${esc(place)}" ${locAttr(h.loc)}>Get flight path</button><button class="btn sm" data-fly="${esc(place)}" ${locAttr(h.loc)}>Fly here</button>`}</div></div>`;
   } else if(h.kind==='town'){
-    html+=`<h4>${esc(h.label)}</h4><div class="it"><div class="row"><button class="btn sm" data-home="${esc(h.label)}" ${locAttr(h.loc)}>Set hearthstone</button><button class="btn sm" data-hs="${esc(h.label)}" ${locAttr(h.loc)}>Hearth here</button><button class="btn sm" data-goto="${esc(h.label)}" ${locAttr(h.loc)}>Go here</button>${flyBtn(zp2plane(h.loc.z,h.loc.px,h.loc.py))}</div></div>`;
+    html+=townHTML(h);
   } else if(h.kind==='fq'){ const e=foreverQuests().get(h.q); const f=fqStatus(h.q);
     html+=`<h4>${esc(e.n)}</h4><div class="it"><span class="note">Forever quest (not in Questie yet) · from ${esc(e.g)}${e.tgtA?' · '+esc(e.tgtA):''}</span><div class="row">${f?'':`<button class="btn sm gold" data-fqa="accept:${e.q}">Accept</button>`}${f==='log'?`<button class="btn sm gold" data-fqa="complete:${e.q}">Complete</button>`:''}${f?`<button class="btn sm${f==='ready'?' gold':''}" data-fqa="turnin:${e.q}">Turn in</button>`:''}<a class="btn sm" href="${whURL(e.q,e.n)}" target="_blank" rel="noopener">Wowhead</a></div></div>`;
   } else if(h.kind==='vendor'){ const v=vendorOf(h.vid);
@@ -1534,10 +1534,12 @@ function showPop(h,x,y){
     if(!qs.length) html+=`<div class="it note">Dungeon entrance. Accept a quest with objectives inside and it will be listed here.</div>`;
     for(const q of qs){ const v=st.log.get(q); html+=`<div class="it"><b>${esc(Q(q).n)}</b> <span class="note">${v&&v.done?'objectives done':'objectives inside'}</span>${objChecklist(q,v)}<div class="row">${v&&!v.done?`<button class="btn sm gold" data-complete="${q}">All objectives done</button>`:''}${v?`<button class="btn sm" data-turnin="${q}">Turn in</button>`:''}<button class="btn sm" data-sel="${q}">Details</button>${whLink(q,true)}</div></div>`; }
   }
+  if(h.kind!=='town'){ const tw=hits.find(t=>t.kind==='town'&&Math.hypot(t.x-x,t.y-y)<=t.r+10); if(tw) html+=`<hr style="border:0;border-top:1px solid var(--line);margin:6px 0">`+townHTML(tw); }
   const div=document.createElement('div'); div.className='pop'; div.innerHTML=html; $('#mapwrap').appendChild(div);
   const w=div.offsetWidth, hh=div.offsetHeight; div.style.left=Math.max(6,Math.min(W-w-6,x+12))+'px'; div.style.top=Math.max(6,Math.min(H-hh-6,y+12))+'px';
   $('#tip').style.display='none';
 }
+function townHTML(h){ const locAttr=l=>`data-loc='${esc(JSON.stringify(l))}'`; return `<h4>${esc(h.label)}</h4><div class="it"><div class="row"><button class="btn sm" data-home="${esc(h.label)}" ${locAttr(h.loc)}>Set hearthstone</button><button class="btn sm" data-hs="${esc(h.label)}" ${locAttr(h.loc)}>Hearth here</button><button class="btn sm" data-goto="${esc(h.label)}" ${locAttr(h.loc)}>Go here</button>${flyBtn(zp2plane(h.loc.z,h.loc.px,h.loc.py))}</div></div>`; }
 function flyBtn(p){ if(!p||!META.taxi) return ''; const id=nearestNode(p); if(!id) return ''; return `<button class="btn sm" data-flynode="${id}" title="Adds a .fly step to the nearest flight path">Fly to ${esc(taxiShort(id))}</button>`; }
 function guessPlace(loc){ let best=null,bd=1e18; const p=zp2plane(loc.z,loc.px,loc.py); for(const [z,x,y,n] of META.towns){ const t=zp2plane(z,x,y); if(!t) continue; const d=(t.X-p.X)**2+(t.Y-p.Y)**2; if(d<bd){bd=d;best=n;} } for(const [z,Z] of Object.entries(META.zones)){ if(!Z.city) continue; const t=zp2plane(z,50,50); const d=(t.X-p.X)**2+(t.Y-p.Y)**2; if(d<bd){bd=d;best=Z.n;} } return bd<1200*1200?best:zoneName(loc.z); }
 
