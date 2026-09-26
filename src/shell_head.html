@@ -373,7 +373,7 @@ dialog textarea{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-
   <h2>Grind step</h2>
   <div class="seg" id="grindMode"><button type="button" data-m="add" aria-pressed="true">Add an amount of XP</button><button type="button" data-m="to" aria-pressed="false">Grind to a level</button></div>
   <div class="grid2" data-gm="add"><label>XP gained<input type="number" name="amount" min="0" step="10"></label><label>Source<select name="src"><option value="mobs">Mob kills</option><option value="explore">Exploration</option><option value="both">Mobs and exploration</option><option value="other">Other</option></select></label></div>
-  <div class="grid2" data-gm="to" hidden><label>Target level<input type="number" name="tlevel" min="2" max="60"></label><label>Plus XP into that level<input type="number" name="txp" min="0" step="10"></label></div>
+  <div class="grid2" data-gm="to" hidden><label>Target level<input type="number" name="tlevel" min="1" max="60"></label><label>Plus XP into that level<input type="number" name="txp" min="0" step="10"></label></div>
   <div class="est" data-gm="add">
     <b>Estimate mob XP</b>
     <div class="grid4"><label>Mob level<input type="number" name="mlevel" min="1" max="63"></label><label>Kills<input type="number" name="kills" min="0"></label><label class="inline" style="margin-top:16px"><input type="checkbox" name="elite"> Elite</label><label class="inline" style="margin-top:16px"><input type="checkbox" name="dgmob"> Dungeon mob</label></div>

@@ -1105,7 +1105,7 @@ function openStepDialog(kind,editIndex){
   d.querySelector('.gold').textContent=s?'Save step':'Add step';
   f.onsubmit=null;
   d.onclose=()=>{ if(d.returnValue!=='ok'||d._picking) return; let step;
-    if(kind==='grind'){ const m=$('#grindMode [aria-pressed="true"]').dataset.m; step=m==='to'?{t:'grind',mode:'to',level:Math.max(2,Math.min(60,+f.tlevel.value||lv+1)),xp:+f.txp.value||0,note:f.note.value}:{t:'grind',mode:'add',amount:Math.max(0,+f.amount.value||0),src:f.src.value,note:f.note.value}; }
+    if(kind==='grind'){ const m=$('#grindMode [aria-pressed="true"]').dataset.m; step=m==='to'?{t:'grind',mode:'to',level:Math.max(1,Math.min(60,+f.tlevel.value||lv+1)),xp:Math.max(0,+f.txp.value||0),note:f.note.value}:{t:'grind',mode:'add',amount:Math.max(0,+f.amount.value||0),src:f.src.value,note:f.note.value}; }
     if(kind==='travel'){ step={t:'travel',kind:f.kind.value,text:f.text.value}; if((step.kind==='fly'||step.kind==='fp')&&f.node.value){ step.node=f.node.value; step.text=taxiShort(step.node); loc=null; } }
     if(kind==='custom') step={t:'custom',name:f.name.value||'Custom quest',xp:+f.xp.value||0,qid:+f.qid.value||null,act:f.act.value};
     if(loc) step.loc=loc;

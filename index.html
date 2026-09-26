@@ -373,7 +373,7 @@ dialog textarea{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-
   <h2>Grind step</h2>
   <div class="seg" id="grindMode"><button type="button" data-m="add" aria-pressed="true">Add an amount of XP</button><button type="button" data-m="to" aria-pressed="false">Grind to a level</button></div>
   <div class="grid2" data-gm="add"><label>XP gained<input type="number" name="amount" min="0" step="10"></label><label>Source<select name="src"><option value="mobs">Mob kills</option><option value="explore">Exploration</option><option value="both">Mobs and exploration</option><option value="other">Other</option></select></label></div>
-  <div class="grid2" data-gm="to" hidden><label>Target level<input type="number" name="tlevel" min="2" max="60"></label><label>Plus XP into that level<input type="number" name="txp" min="0" step="10"></label></div>
+  <div class="grid2" data-gm="to" hidden><label>Target level<input type="number" name="tlevel" min="1" max="60"></label><label>Plus XP into that level<input type="number" name="txp" min="0" step="10"></label></div>
   <div class="est" data-gm="add">
     <b>Estimate mob XP</b>
     <div class="grid4"><label>Mob level<input type="number" name="mlevel" min="1" max="63"></label><label>Kills<input type="number" name="kills" min="0"></label><label class="inline" style="margin-top:16px"><input type="checkbox" name="elite"> Elite</label><label class="inline" style="margin-top:16px"><input type="checkbox" name="dgmob"> Dungeon mob</label></div>
@@ -1583,7 +1583,7 @@ function openStepDialog(kind,editIndex){
   d.querySelector('.gold').textContent=s?'Save step':'Add step';
   f.onsubmit=null;
   d.onclose=()=>{ if(d.returnValue!=='ok'||d._picking) return; let step;
-    if(kind==='grind'){ const m=$('#grindMode [aria-pressed="true"]').dataset.m; step=m==='to'?{t:'grind',mode:'to',level:Math.max(2,Math.min(60,+f.tlevel.value||lv+1)),xp:+f.txp.value||0,note:f.note.value}:{t:'grind',mode:'add',amount:Math.max(0,+f.amount.value||0),src:f.src.value,note:f.note.value}; }
+    if(kind==='grind'){ const m=$('#grindMode [aria-pressed="true"]').dataset.m; step=m==='to'?{t:'grind',mode:'to',level:Math.max(1,Math.min(60,+f.tlevel.value||lv+1)),xp:Math.max(0,+f.txp.value||0),note:f.note.value}:{t:'grind',mode:'add',amount:Math.max(0,+f.amount.value||0),src:f.src.value,note:f.note.value}; }
     if(kind==='travel'){ step={t:'travel',kind:f.kind.value,text:f.text.value}; if((step.kind==='fly'||step.kind==='fp')&&f.node.value){ step.node=f.node.value; step.text=taxiShort(step.node); loc=null; } }
     if(kind==='custom') step={t:'custom',name:f.name.value||'Custom quest',xp:+f.xp.value||0,qid:+f.qid.value||null,act:f.act.value};
     if(loc) step.loc=loc;
