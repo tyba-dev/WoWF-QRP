@@ -249,7 +249,10 @@ function migrateRoute(r){ r.guides=r.guides||[];
   for(const g of r.guides) for(const gs of g.steps||[]) if(gs.opt){ gs.gopt=true; delete gs.opt; }
   for(const st of r.steps||[]){ if(!st.src||st.src.auto||!st.opt) continue; const g=r.guides.find(x=>x.id===st.src.g); if(g&&g.steps&&g.steps[st.src.i]?.gopt){ st.gopt=true; delete st.opt; } }
   return r; }
-function initState(r){ return {level:+r.char.level||1,xp:+r.char.xp||0,party:Math.max(1,+r.char.party||1),log:new Map(),turned:new Set(),fps:new Set(r.char.fps||[]),home:null,fq:new Map()}; }
+function initState(r){ return {level:+r.char.level||1,xp:+r.char.xp||0,party:Math.max(1,+r.char.party||1),log:new Map(),turned:new Set(),fps:new Set(r.char.fps||[]),home:startHome(r),fq:new Map()}; }
+// a new character's hearthstone is bound to where they first spawn
+const START_NAME={Human:'Northshire Abbey',Dwarf:'Coldridge Valley',Gnome:'Coldridge Valley','Night Elf':'Shadowglen',Orc:'Valley of Trials',Troll:'Valley of Trials',Undead:'Deathknell',Tauren:'Camp Narache'};
+function startHome(r){ const s=START[r.char.race]; if(!s) return null; const p=zp2plane(...s); return p?{...p,label:START_NAME[r.char.race]||zoneName(s[0]),step:null,def:true}:null; }
 function cloneState(s){ return {level:s.level,xp:s.xp,party:s.party,log:new Map([...s.log].map(([k,v])=>[k,{...v,objs:v.objs?new Set(v.objs):undefined}])),turned:new Set(s.turned),fps:new Set(s.fps),home:s.home,fq:new Map(s.fq||[])}; }
 // Forever: quest log holds 40, but escort quests can't be started with 25+ quests in the log
 const LOGMAX=40, ESC_LIMIT=25, ESCORT=new Set([155,219,309,435,648,660,665,667,731,836,863,898,938,945,976,994,995,1144,1222,1249,1270,1393,1440,1560,1651,2742,2767,2845,2904,2969,3382,3525,3982,4121,4245,4261,4265,4322,4491,4770,4901,4904,4966,5203,5321,5713,5821,5943,5944,6132,6403,6482,6523,6544,6641,8736]);
@@ -1199,7 +1202,7 @@ $('#backupList').addEventListener('click',async e=>{ const b=e.target.closest('[
   route=store.routes[store.routes.length-1]; cursor=route.steps.length-1; history=[]; refresh(); $('#dlgBackup').close(); $('#dlgChar').close(); toast(`Restored ${n} route${n>1?'s':''} from ${b.dataset.restore.slice(7)}`); });
 $('#backupClose').addEventListener('click',()=>$('#dlgBackup').close());
 function renderHS(){ const b=$('#hsBtn'); if(!b||!SIM) return; const h=SIM.st.home;
-  b.innerHTML=h?`Hearth → ${esc(h.label||'?')}`:'Hearth'; b.title=h?`Adds a "Use hearthstone" step after the selected step. At this point your hearthstone is set to ${h.label||'?'}${h.step!=null?' (set at step '+(h.step+1)+')':''}.`:'Adds a "Use hearthstone" step. Your hearthstone hasn\u2019t been set in this route yet by this point; add a "Set hearthstone" step (click an inn or town on the map) first.'; }
+  b.innerHTML=h?`Hearth → ${esc(h.label||'?')}`:'Hearth'; b.title=h?`Adds a "Use hearthstone" step after the selected step. At this point your hearthstone is set to ${h.label||'?'}${h.def?' (where your character first spawned: add a Set hearthstone step to change it)':h.step!=null?' (set at step '+(h.step+1)+')':''}.`:'Adds a "Use hearthstone" step. Your hearthstone hasn\u2019t been set in this route yet by this point; add a "Set hearthstone" step (click an inn or town on the map) first.'; }
 $('#hsBtn').addEventListener('click',()=>{ const h=SIM.st.home; addStep({t:'travel',kind:'hs',text:h?.label||'Hearthstone'}); if(!h) toast('Hearthstone not set yet at this point: add a Set hearthstone step before it'); });
 $('#addCustom').addEventListener('click',()=>openStepDialog('custom'));
 $('#undoBtn').addEventListener('click',undo);
