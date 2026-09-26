@@ -794,11 +794,13 @@ function nearest(pts,ref){
 }
 /* ---------- Forever quests known only from your imported guides ---------- */
 function drawFQ(){ const s=view.s, st=SIM.st;
-  if(layers.avail&&s>=0.015) for(const a of fqAvail(st,true)){ if(a.lock.length&&!layers.locked) continue; const e=a.e; const L=a.f?(a.f==='ready'?e.tin:e.cmp.length?e.cmp:e.tin):e.acc; const l=L[0]; if(!l) continue; const p=zp2plane(l.z,l.px,l.py); if(!p) continue; const [x,y]=toS(p); if(x<-12||x>W+12||y<-12||y>H+12) continue;
-    const soon=!a.f&&st.level<e.minL; const ch=a.f==='ready'?'?':a.f?'◆':'!'; ctx.globalAlpha=soon?.55:1; ctx.fillStyle='#07363a'; ctx.beginPath(); ctx.arc(x,y,10,0,7); ctx.fill(); ctx.strokeStyle='#4fe3d0'; ctx.lineWidth=2; ctx.stroke();
+  if(layers.avail&&s>=0.015) for(const a of fqAvail(st,true)){ if(a.lock.length&&!layers.locked) continue; const e=a.e;
+    const marks=!a.f?[[e.acc[0],'!',1]]:[[e.tin[0],'?',a.f==='ready'?1:.6],...(a.f==='log'&&e.cmp.length?[[e.cmp[0],'◆',1]]:[])];
+    for(const [l,ch,al] of marks){ if(!l) continue; const p=zp2plane(l.z,l.px,l.py); if(!p) continue; const [x,y]=toS(p); if(x<-12||x>W+12||y<-12||y>H+12) continue;
+    const soon=!a.f&&st.level<e.minL; ctx.globalAlpha=soon?.55:al; ctx.fillStyle='#07363a'; ctx.beginPath(); ctx.arc(x,y,10,0,7); ctx.fill(); ctx.strokeStyle='#4fe3d0'; ctx.lineWidth=2; ctx.stroke();
     ctx.font='900 14px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillStyle='#4fe3d0'; ctx.fillText(ch,x,y+.5); ctx.globalAlpha=1;
     if(s>0.08) haloText(e.n,x,y-17,'11px "Alegreya Sans", sans-serif','#bff7ef','rgba(4,30,32,.9)',3);
-    hits.push({x,y,r:11,kind:'fq',q:e.q,label:e.n+(soon?` (from level ${e.minL})`:'')}); } }
+    hits.push({x,y,r:11,kind:'fq',q:e.q,label:e.n+(soon?` (from level ${e.minL})`:ch==='?'?' · turn in':ch==='◆'?' · objective':'')}); } } }
 
 const FQ={key:null,map:new Map()};
 function guideLevels(g){ const m=(g.name||'').match(/(\d+)\s*-\s*(\d+)/); return m?[+m[1],+m[2]]:[1,60]; }
@@ -1187,7 +1189,7 @@ canvas.addEventListener('contextmenu',e=>{ if(pathEdit==null) return; const h=pa
 canvas.addEventListener('pointerleave',()=>{$('#tip').style.display='none';});
 canvas.addEventListener('wheel',e=>{ e.preventDefault(); zoomAt(Math.exp(-e.deltaY*(e.deltaMode?0.05:0.0016)),e.offsetX,e.offsetY); },{passive:false});
 canvas.addEventListener('keydown',e=>{ const k=e.key; if(k==='+'||k==='=') zoomAt(1.3,W/2,H/2); else if(k==='-') zoomAt(1/1.3,W/2,H/2); else if(k.startsWith('Arrow')){ const d=60; if(k==='ArrowLeft')view.tx+=d; if(k==='ArrowRight')view.tx-=d; if(k==='ArrowUp')view.ty+=d; if(k==='ArrowDown')view.ty-=d; requestDraw(); } else return; e.preventDefault(); });
-const HIT_PRI={dgobj:0,quest:0,obj:1,route:1,ghost:2,fp:3,dungeon:3,town:4};
+const HIT_PRI={fq:0,dgobj:0,quest:0,obj:1,route:1,ghost:2,fp:3,dungeon:3,town:4};
 function hitAt(x,y){ let best=null,bd=1e9; for(const h of hits){ const d=Math.hypot(h.x-x,h.y-y); if(d>h.r+3) continue; const s=d+(HIT_PRI[h.kind]??3)*4; if(s<bd){ bd=s; best=h; } } return best; }
 function dungeonAt(p){ let best='Dungeon',bd=1e12; for(const d of Object.values(META.dungeons)) for(const [z,x0,y0] of d.l){ const t=zp2plane(z,x0,y0); if(!t) continue; const dd=(t.X-p.X)**2+(t.Y-p.Y)**2; if(dd<bd){bd=dd;best=d.n;} } return best; }
 function hover(x,y){
@@ -1397,7 +1399,7 @@ function renderXP(){
   $('#xplbl').textContent=st.level<MAXLVL?`${fmt(st.xp)} / ${fmt(need)} XP (${pct.toFixed(0)}%)`:'Level 60';
   const e=SIM.end; const quests=route.steps.filter(s=>s.t==='turnin').length; const endL=e.level+(e.level<MAXLVL?e.xp/XP_TABLE[e.level]:0);
   $('#groupSel').value=String(SIM.st.party||1);
-  $('#xpsum').innerHTML=`Route end: <b>level ${endL.toFixed(2)}</b> · ${quests} turn-ins · ${SIM.st.log.size}/${LOGMAX} in log`;
+  $('#xpsum').innerHTML=`Route end: <b>level ${endL.toFixed(2)}</b> · ${quests} turn-ins · ${SIM.st.log.size+[...(SIM.st.fq||new Map()).values()].filter(v=>v!=='done').length}/${LOGMAX} in log`;
 }
 function renderRouteHead(){
   $('#routeSel').innerHTML=store.routes.map(r=>`<option value="${r.id}" ${r.id===route.id?'selected':''}>${esc(r.name)}</option>`).join('');
@@ -1449,9 +1451,9 @@ function renderRight(){
     { const fl=fqAvail(SIM.st).filter(a=>!f||a.e.n.toLowerCase().includes(f)||String(a.e.q)===f).sort((a,b)=>a.e.l-b.e.l||a.e.n.localeCompare(b.e.n)); if(!foreverQuests().size) html=`<p class="note" style="margin:4px 0 8px">Forever quests (not in Questie yet) appear here and on the map once you import the RestedXP guide files for your zones.</p>`; else if(fl.length) html=`<div class="qgroup"><h3>Forever quests from your guides (${fl.length})</h3><p class="note" style="margin:2px 0 6px">Not in Questie yet: locations come from the guides you imported.</p>${fl.slice(0,150).map(fqRow).join('')}</div>`+html; }
     body.innerHTML=html||`<div class="empty">No quests match. Try another zone filter, or add a grind step to reach the next unlock level.</div>`;
   } else if(tab==='log'){
-    const st=SIM.st; const rows=[...st.log].map(([qid,v])=>{ const q=Q(qid); if(!q) return ''; const dc=diffClass(q.l,st.level);
+    const st=SIM.st; const fqRows=fqAvail(st).filter(a=>a.f).map(fqRow).join(''); const rows=[...st.log].map(([qid,v])=>{ const q=Q(qid); if(!q) return ''; const dc=diffClass(q.l,st.level);
       return `<div class="qrow ${selQuest===qid?'sel':''}" data-q="${qid}"><span class="lv c-${dc}">${q.l}</span><span class="nm"><span class="c-${dc}">${esc(q.n)}</span><br><span class="meta">${v.done?'Ready to turn in':'In progress'} · ${esc(areaLabel(q))}</span>${v.done?'':objChecklist(qid,v)}</span><span class="row" style="flex-wrap:nowrap">${v.done?'':`<button class="btn sm" data-complete="${qid}">Done</button>`}<button class="btn sm" data-turnin="${qid}">Turn in</button></span></div>`; });
-    body.innerHTML=`<div class="qgroup"><h3>Quest log at this step (${st.log.size}/${LOGMAX})</h3>${rows.join('')||'<div class="empty">Your quest log is empty at this step.</div>'}</div>`;
+    const nf=fqAvail(st).filter(a=>a.f).length; body.innerHTML=`<div class="qgroup"><h3>Quest log at this step (${st.log.size+nf}/${LOGMAX})</h3>${rows.join('')+fqRows||'<div class="empty">Your quest log is empty at this step.</div>'}</div>`;
   } else if(tab==='guides'){ body.innerHTML=renderGuides(); afterGuidesRender(); } else body.innerHTML=renderDetail();
 }
 function renderDetail(){
@@ -1529,8 +1531,7 @@ function showPop(h,x,y){
     html+=`<h4>${esc(h.label)}</h4><div class="it">${node?`<span class="note">${esc(META.taxi.nodes[node].n)}${SIM.st.fps.has(node)?' · learned':''}</span>`:''}<div class="row">${node?`<button class="btn sm gold" data-fpnode="${node}">Get flight path</button><button class="btn sm" data-flynode="${node}">Fly here</button>`:`<button class="btn sm gold" data-fp="${esc(place)}" ${locAttr(h.loc)}>Get flight path</button><button class="btn sm" data-fly="${esc(place)}" ${locAttr(h.loc)}>Fly here</button>`}</div></div>`;
   } else if(h.kind==='town'){
     html+=townHTML(h);
-  } else if(h.kind==='fq'){ const e=foreverQuests().get(h.q); const f=fqStatus(h.q);
-    html+=`<h4>${esc(e.n)}</h4><div class="it"><span class="note">Forever quest (not in Questie yet) · from ${esc(e.g)}${e.tgtA?' · '+esc(e.tgtA):''}</span><div class="row">${f?'':`<button class="btn sm gold" data-fqa="accept:${e.q}">Accept</button>`}${f==='log'?`<button class="btn sm gold" data-fqa="complete:${e.q}">Complete</button>`:''}${f?`<button class="btn sm${f==='ready'?' gold':''}" data-fqa="turnin:${e.q}">Turn in</button>`:''}<a class="btn sm" href="${whURL(e.q,e.n)}" target="_blank" rel="noopener">Wowhead</a></div></div>`;
+  } else if(h.kind==='fq'){ html+=fqPopHTML(h.q);
   } else if(h.kind==='trainer'){ const t=trainerOf(h.tid); html+=`<h4>${esc(t.name)}</h4><div class="it"><span class="note">${esc(t.cls)} trainer</span><div class="row"><button class="btn sm gold" data-train="${t.id}">Train class spells here</button></div></div>`;
   } else if(h.kind==='vendor'){ const v=vendorOf(h.vid);
     html+=`<h4>${esc(v.name)}</h4><div class="it"><span class="note">${esc(v.sub||'Vendor')}${v.items.length?' · sells '+v.items.slice(0,6).map(i=>esc(itemName(i))).join(', ')+(v.items.length>6?'…':''):''}</span><div class="row"><button class="btn sm gold" data-buyv="${v.id}">Buy from ${esc(v.name)}</button></div></div>`;
@@ -1543,11 +1544,13 @@ function showPop(h,x,y){
     if(!qs.length) html+=`<div class="it note">Dungeon entrance. Accept a quest with objectives inside and it will be listed here.</div>`;
     for(const q of qs){ const v=st.log.get(q); html+=`<div class="it"><b>${esc(Q(q).n)}</b> <span class="note">${v&&v.done?'objectives done':'objectives inside'}</span>${objChecklist(q,v)}<div class="row">${v&&!v.done?`<button class="btn sm gold" data-complete="${q}">All objectives done</button>`:''}${v?`<button class="btn sm" data-turnin="${q}">Turn in</button>`:''}<button class="btn sm" data-sel="${q}">Details</button>${whLink(q,true)}</div></div>`; }
   }
+  { const seen=new Set(h.kind==='fq'?[h.q]:[]); for(const t of hits) if(t.kind==='fq'&&!seen.has(t.q)&&Math.hypot(t.x-x,t.y-y)<=t.r+6){ seen.add(t.q); html+=`<hr style="border:0;border-top:1px solid var(--line);margin:6px 0">`+fqPopHTML(t.q); } }
   if(h.kind!=='town'){ const tw=hits.find(t=>t.kind==='town'&&Math.hypot(t.x-x,t.y-y)<=t.r+10); if(tw) html+=`<hr style="border:0;border-top:1px solid var(--line);margin:6px 0">`+townHTML(tw); }
   const div=document.createElement('div'); div.className='pop'; div.innerHTML=html; $('#mapwrap').appendChild(div);
   const w=div.offsetWidth, hh=div.offsetHeight; div.style.left=Math.max(6,Math.min(W-w-6,x+12))+'px'; div.style.top=Math.max(6,Math.min(H-hh-6,y+12))+'px';
   $('#tip').style.display='none';
 }
+function fqPopHTML(q){ const e=foreverQuests().get(q); const f=fqStatus(q); return `<h4>${esc(e.n)}</h4><div class="it"><span class="note">Forever quest (not in Questie yet) · from ${esc(e.g)}${e.tgtA?' · '+esc(e.tgtA):''}</span><div class="row">${f?'':`<button class="btn sm gold" data-fqa="accept:${e.q}">Accept</button>`}${f==='log'?`<button class="btn sm gold" data-fqa="complete:${e.q}">Complete</button>`:''}${f?`<button class="btn sm gold" data-fqa="turnin:${e.q}">Turn in${e.tgtT?' to '+esc(e.tgtT):''}</button>`:''}<a class="btn sm" href="${whURL(e.q,e.n)}" target="_blank" rel="noopener">Wowhead</a></div></div>`; }
 function townHTML(h){ const locAttr=l=>`data-loc='${esc(JSON.stringify(l))}'`; return `<h4>${esc(h.label)}</h4><div class="it"><div class="row"><button class="btn sm" data-home="${esc(h.label)}" ${locAttr(h.loc)}>Set hearthstone</button><button class="btn sm" data-hs="${esc(h.label)}" ${locAttr(h.loc)}>Hearth here</button><button class="btn sm" data-goto="${esc(h.label)}" ${locAttr(h.loc)}>Go here</button>${flyBtn(zp2plane(h.loc.z,h.loc.px,h.loc.py))}</div></div>`; }
 function flyBtn(p){ if(!p||!META.taxi) return ''; const id=nearestNode(p); if(!id) return ''; return `<button class="btn sm" data-flynode="${id}" title="Adds a .fly step to the nearest flight path">Fly to ${esc(taxiShort(id))}</button>`; }
 function guessPlace(loc){ let best=null,bd=1e18; const p=zp2plane(loc.z,loc.px,loc.py); for(const [z,x,y,n] of META.towns){ const t=zp2plane(z,x,y); if(!t) continue; const d=(t.X-p.X)**2+(t.Y-p.Y)**2; if(d<bd){bd=d;best=n;} } for(const [z,Z] of Object.entries(META.zones)){ if(!Z.city) continue; const t=zp2plane(z,50,50); const d=(t.X-p.X)**2+(t.Y-p.Y)**2; if(d<bd){bd=d;best=Z.n;} } return bd<1200*1200?best:zoneName(loc.z); }
