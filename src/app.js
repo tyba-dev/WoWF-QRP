@@ -270,9 +270,9 @@ function simulate(){
     if(!skip && route.optOff && s.opt && s.t==='accept') optQ.add(s.q);
     if(skip){ r.inactive=skip; }
     else if((s.t==='accept'||s.t==='complete'||s.t==='turnin'||s.t==='abandon') && !q){ // Forever quest Questie doesn't know yet: kept as written, tracked like a custom quest
-      const xp=+(route.qxp?.[s.q])||0; r.custom=true; if(!st.fq) st.fq=new Map(); if(s.t==='accept'&&!st.fq.has(s.q)) st.fq.set(s.q,'log'); else if(s.t==='complete'&&st.fq.get(s.q)==='log') st.fq.set(s.q,'ready'); else if(s.t==='turnin') st.fq.set(s.q,'done'); else if(s.t==='abandon') st.fq.delete(s.q);
+      const xpSet=+(route.qxp?.[s.q])||0, xp=xpSet||fqXpEst(s.q); r.custom=true; if(!st.fq) st.fq=new Map(); if(s.t==='accept'&&!st.fq.has(s.q)) st.fq.set(s.q,'log'); else if(s.t==='complete'&&st.fq.get(s.q)==='log') st.fq.set(s.q,'ready'); else if(s.t==='turnin') st.fq.set(s.q,'done'); else if(s.t==='abandon') st.fq.delete(s.q);
       if(s.t==='turnin'&&xp){ r.gained=xp; addXP(st,xp); }
-      r.warn.push(`Forever quest not in the Questie database${s.src?': kept exactly as the guide has it.':' (taken from your imported guides).'}${s.t==='turnin'?(xp?` Counting ${fmt(xp)} XP.`:' Set its XP reward below if you know it.'):''}`); }
+      r.warn.push(`Forever quest not in the Questie database${s.src?': kept exactly as the guide has it.':' (taken from your imported guides).'}${s.t==='turnin'?(xpSet?` Counting ${fmt(xp)} XP.`:xp?` Counting ≈${fmt(xp)} XP, estimated from its level (Wowhead): set it below if you know it.`:' Set its XP reward below if you know it.'):''}`); }
     else if(s.t==='accept'){
       const w=whyUnavailable(s.q,st,route); if(w) r.err.push(w.why);
       if(st.log.size>=LOGMAX) r.err.push(`Quest log is full (${LOGMAX})`); else if(ESCORT.has(s.q)&&st.log.size>=ESC_LIMIT) r.err.push(`Escort quest: you have ${st.log.size} quests in your log; drop below ${ESC_LIMIT} before accepting`);
@@ -322,11 +322,13 @@ function foreverQuests(){ const key=route.id+':'+(route.guides||[]).map(g=>g.id+
     let e=m.get(x.q); if(!e) m.set(x.q,e={q:x.q,n:null,acc:[],tin:[],cmp:[],g:g.name,l:l0,l1,tgtA:null,tgtT:null,cl:null});
     if(x.qn&&!e.n) e.n=x.qn; const L=x.loc&&x.loc.z!=null?{z:x.loc.z,px:+x.loc.px,py:+x.loc.py}:null;
     if(x.t==='accept'){ if(L) e.acc.push(L); if(!e.tgtA) e.tgtA=x.tgt||null; } else if(x.t==='turnin'){ if(L) e.tin.push(L); if(!e.tgtT) e.tgtT=x.tgt||null; } else { if(L) e.cmp.push(L); if(!e.cl&&x.cl?.length) e.cl=x.cl; } } }
-  for(const e of m.values()) if(!e.n) e.n='Quest '+e.q; FQ.key=key; FQ.map=m; return m; }
+  for(const e of m.values()){ const w=META.fqw?.[e.q]; if(w){ e.lv=w[0]||null; e.req=w[1]||null; e.prev=w[2]||[]; e.next=w[3]||[]; if(!e.n&&w[4]) e.n=w[4]; } if(!e.n) e.n='Quest '+e.q; e.minL=e.req||Math.max(1,Math.min(e.l,e.lv?e.lv-4:e.l)); } FQ.key=key; FQ.map=m; return m; }
+let xpMed=null; function fqXpEst(q){ const e=foreverQuests().get(q)||{lv:META.fqw?.[q]?.[0]}; if(!e.lv) return 0; if(!xpMed){ xpMed={}; const by={}; for(const k in DB.q){ const x=DB.q[k].xp; if(x&&x[1]) (by[x[0]]=by[x[0]]||[]).push(x[1]); } for(const L in by){ const a=by[L].sort((a,b)=>a-b); xpMed[L]=a[a.length>>1]; } } return xpMed[e.lv]||0; }
+function fqPrevMissing(e,st){ const miss=[]; for(const p of e.prev||[]){ if(Q(p)){ if(!st.turned.has(p)) miss.push(Q(p).n); } else if(foreverQuests().has(p)||META.fqw?.[p]){ if(fqStatus(p,st)!=='done') miss.push(foreverQuests().get(p)?.n||META.fqw?.[p]?.[4]||('Quest '+p)); } } return miss; }
 function fqStatus(q,st){ return (st||SIM.st).fq?.get(q)||null; }
-function fqAvail(st){ const out=[]; for(const e of foreverQuests().values()){ const f=fqStatus(e.q,st); if(f==='done') continue; if(!f&&!e.acc.length) continue; if(!f&&st.level<e.l-1) continue; out.push({e,f}); } return out; }
+function fqAvail(st){ const out=[]; for(const e of foreverQuests().values()){ const f=fqStatus(e.q,st); if(f==='done') continue; if(!f&&!e.acc.length) continue; if(!f&&st.level<e.minL) continue; const lock=f?[]:fqPrevMissing(e,st); out.push({e,f,lock}); } return out; }
 function fqStep(t,q){ const e=foreverQuests().get(+q); if(!e) return null; const loc=(t==='accept'?e.acc:t==='turnin'?e.tin:e.cmp)[0]||e.acc[0]||null; const s={t,q:e.q,qn:e.n}; if(loc) s.loc={...loc}; const tg=t==='accept'?e.tgtA:t==='turnin'?e.tgtT:null; if(tg) s.tgt=tg; if(t==='complete'&&e.cl) s.cl=[...e.cl]; return s; }
-function fqRow(a){ const e=a.e; const xp=+(route.qxp?.[e.q])||0; return `<div class="qrow" data-fq="${e.q}"><span class="lv">${e.l}</span><span class="nm"><span>${esc(e.n)}</span><br><span class="meta">${esc(e.g)} · ${a.f==='log'?'in your log':a.f==='ready'?'ready to turn in':'Forever quest'}${xp?' · +'+fmt(xp)+' XP':''}</span></span><span class="row" style="gap:3px">${a.f?'':`<button class="btn sm" data-fqa="accept:${e.q}">Accept</button>`}${a.f==='log'?`<button class="btn sm" data-fqa="complete:${e.q}">Complete</button>`:''}${a.f?`<button class="btn sm" data-fqa="turnin:${e.q}">Turn in</button>`:''}</span></div>`; }
+function fqRow(a){ const e=a.e; const xp=+(route.qxp?.[e.q])||0, est=xp?0:fqXpEst(e.q); const nx=(e.next||[]).map(n=>foreverQuests().get(n)?.n||META.fqw?.[n]?.[4]||Q(n)?.n).filter(Boolean); return `<div class="qrow" data-fq="${e.q}"><span class="lv">${e.lv||e.l}</span><span class="nm"><span>${a.lock.length?'🔒 ':''}${esc(e.n)}</span><br><span class="meta">${esc(e.g)} · ${a.f==='log'?'in your log':a.f==='ready'?'ready to turn in':'Forever quest'}${xp?' · +'+fmt(xp)+' XP':est?' · ≈'+fmt(est)+' XP (est.)':''}${e.req?' · needs level '+e.req:''}${a.lock.length?' · Needs: '+esc(a.lock.join(', ')):''}${nx.length?' · leads to '+esc(nx.join(', ')):''}</span></span><span class="row" style="gap:3px">${a.f?'':`<button class="btn sm" data-fqa="accept:${e.q}">Accept</button>`}${a.f==='log'?`<button class="btn sm" data-fqa="complete:${e.q}">Complete</button>`:''}${a.f?`<button class="btn sm" data-fqa="turnin:${e.q}">Turn in</button>`:''}</span></div>`; }
 /* ---------- vendors ---------- */
 function vendorOf(id){ const v=META.vend?.[id]; return v?{id:+id,name:v[0],sub:v[1],fac:v[2],sp:v[3],items:v[4]}:null; }
 function vendorOK(v){ const f=charInfo(route).fac; return !v.fac||v.fac.includes(f); }
@@ -600,7 +602,7 @@ const QCOL=['#ff6b6b','#5ec8ff','#ffd24a','#8ef08e','#ff9de2','#c49bff','#ffae57
 function qColor(qid){ return QCOL[qid%QCOL.length]; }
 function drawQuests(){
   const s=view.s; const st=SIM.st; const lv=st.level; const small=s<0.02;
-  if(layers.avail&&s>=0.02) for(const a of fqAvail(st)){ const e=a.e; const L=a.f?(a.f==='ready'?e.tin:e.cmp.length?e.cmp:e.tin):e.acc; const l=L[0]; if(!l) continue; const p=zp2plane(l.z,l.px,l.py); if(!p) continue; const [x,y]=toS(p); if(x<-10||x>W+10||y<-10||y>H+10) continue;
+  if(layers.avail&&s>=0.02) for(const a of fqAvail(st)){ if(a.lock.length&&!layers.locked) continue; const e=a.e; const L=a.f?(a.f==='ready'?e.tin:e.cmp.length?e.cmp:e.tin):e.acc; const l=L[0]; if(!l) continue; const p=zp2plane(l.z,l.px,l.py); if(!p) continue; const [x,y]=toS(p); if(x<-10||x>W+10||y<-10||y>H+10) continue;
     ctx.font='900 17px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.lineWidth=3.5; ctx.strokeStyle='#08262a'; const ch=a.f==='ready'?'?':a.f?'◆':'!'; ctx.strokeText(ch,x,y); ctx.fillStyle='#4fe3d0'; ctx.fillText(ch,x,y); hits.push({x,y,r:10,kind:'fq',q:e.q,label:e.n}); }
   // objectives for quests in log
   const dgAgg=new Map();
