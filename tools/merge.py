@@ -27,7 +27,7 @@ M['zones']['16591'].update(b=[-2208, -6758, -6533, -9566], ap=0)
 M['relief'] = json.load(open('relief.json'))
 try: M['fqw'] = json.load(open('fqw.json'))  # optional local Wowhead lookups, not shipped
 except FileNotFoundError: pass
-V = json.load(open('vend.json')); M['vend'] = V['vend']; M['vi'] = V['vi']
+V = json.load(open('vend.json')); M['vend'] = V['vend']; M['trn'] = V['trn']; M['vi'] = V['vi']
 M['taxi'] = json.load(open('taxi_q.json')); M['taxiMig'] = json.load(open('taxi_mig.json'))
 flat = code.ravel().astype(int); ch = np.flatnonzero(np.diff(flat)) + 1
 st = np.r_[0, ch]; ln = np.diff(np.r_[st, len(flat)])

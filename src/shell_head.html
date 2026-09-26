@@ -281,6 +281,7 @@ dialog textarea{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-
         <button class="btn sm" id="addGrind">Add grind</button>
         <button class="btn sm" id="addTravel">Add travel or note</button>
         <button class="btn sm" id="hsBtn">Hearth</button>
+        <button class="btn sm" id="trainBtn" title="Train class spells at the nearest trainer for your class">Train</button>
         <button class="btn sm" id="buyBtn" title="Buy items from a vendor (sets the RestedXP target to them)">Buy</button>
         <button class="btn sm" id="addCustom">Add custom quest</button>
         <span class="spacer"></span>
@@ -300,7 +301,7 @@ dialog textarea{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-
         <label><input type="checkbox" data-l="fp" checked> Flight paths</label>
         <label><input type="checkbox" data-l="towns" checked> Towns</label>
         <label><input type="checkbox" data-l="dungeons" checked> Dungeons</label>
-        <label><input type="checkbox" data-l="vendors" checked> Vendors (zoomed in)</label>
+        <label><input type="checkbox" data-l="vendors" checked> Vendors &amp; trainers (zoomed in)</label>
         <label><input type="checkbox" data-l="relief" checked> Terrain relief</label>
         <button class="linkish" id="imgBtn" style="text-align:left;margin-top:4px">Zone map images…</button>
       </details>
@@ -471,7 +472,7 @@ dialog textarea{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-
   <label>XP this step gives<input type="number" id="edXp" min="0" style="width:140px"></label>
   <p class="note" id="edXpHint" style="margin:0"></p>
   <div class="actions"><button class="btn" id="edReset">Clear edits</button><button class="btn" id="edNo">Cancel</button><button class="btn gold" id="edOk">Save</button></div></div></dialog>
-<dialog id="dlgAsk"><div class="dl"><p id="askMsg" style="margin:0"></p><input id="askIn" type="number" min="0" hidden style="margin-top:8px;width:120px"><div class="actions"><button class="btn" id="askNo">Cancel</button><button class="btn gold" id="askOk">OK</button></div></div></dialog>
+<dialog id="dlgAsk"><div class="dl"><p id="askMsg" style="margin:0;white-space:pre-line"></p><input id="askIn" type="number" min="0" hidden style="margin-top:8px;width:120px"><div class="actions"><button class="btn" id="askNo">Cancel</button><button class="btn gold" id="askOk">OK</button></div></div></dialog>
 <div class="toast" id="toast"></div>
 <script id="bundle" type="application/octet-stream">__BUNDLE__</script>
 <script>

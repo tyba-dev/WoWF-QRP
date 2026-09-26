@@ -36,7 +36,20 @@ for nid,f in rows(Q+'foreverNpcDB.lua'):
             if float(x)>=0: sp.append([int(z),round(float(x),1),round(float(y),1)])
     if not sp: continue
     vend[nid]=[s(f[0]), s(f[13]) if len(f)>13 else None, s(f[12]) if len(f)>12 else None, sp[:4], sorted(sells.get(nid,[]))]
+CLS=('Warrior','Paladin','Hunter','Rogue','Priest','Shaman','Mage','Warlock','Druid')
+trn={}
+for nid,f in rows(Q+'foreverNpcDB.lua'):
+    sub=s(f[13]) if len(f)>13 else None
+    if not sub: continue
+    m=re.match(r'^(?:\w+ )?(%s) Trainer$'%'|'.join(CLS), sub)
+    if not m: continue
+    sp=[]
+    for z,pts in re.findall(r'\[(\d+)\]=\{((?:\{[-\d.]+,[-\d.]+\},?)*)\}', f[6] or ''):
+        for x,y in re.findall(r'\{([-\d.]+),([-\d.]+)\}', pts):
+            if float(x)>=0: sp.append([int(z),round(float(x),1),round(float(y),1)])
+    if sp: trn[nid]=[s(f[0]), m.group(1), s(f[12]) if len(f)>12 else None, sp[:4]]
+print('trainers',len(trn))
 used={i for v in vend.values() for i in v[4]}
-json.dump(dict(vend=vend, vi={i:items[i] for i in used}), open('vend.json','w'), separators=(',',':'))
+json.dump(dict(vend=vend, trn=trn, vi={i:items[i] for i in used}), open('vend.json','w'), separators=(',',':'))
 print('vendors',len(vend),'with stock',sum(1 for v in vend.values() if v[4]),'items',len(used))
 print(vend.get(2115))

@@ -340,8 +340,13 @@ function fqRow(a){ const e=a.e; const xp=+(route.qxp?.[e.q])||0, est=xp?0:fqXpEs
 function vendorOf(id){ const v=META.vend?.[id]; return v?{id:+id,name:v[0],sub:v[1],fac:v[2],sp:v[3],items:v[4]}:null; }
 function vendorOK(v){ const f=charInfo(route).fac; return !v.fac||v.fac.includes(f); }
 function vendorPts(v){ return v.sp.map(([z,x,y])=>{ const p=zp2plane(z,x,y); return p?{...p,label:v.name,npc:v.id}:null; }).filter(Boolean); }
+function trainerOf(id){ const v=META.trn?.[id]; return v?{id:+id,name:v[0],cls:v[1],fac:v[2],sp:v[3]}:null; }
+function myTrainers(){ const c=route.char.cls; return Object.keys(META.trn||{}).map(trainerOf).filter(t=>t.cls===c&&vendorOK(t)); }
+function trainerPts(t){ return t.sp.map(([z,x,y])=>{ const p=zp2plane(z,x,y); return p?{...p,label:t.name,npc:t.id}:null; }).filter(Boolean); }
+function nearestTrainer(ref){ let best=null,bd=1e18; for(const t of myTrainers()) for(const p of trainerPts(t)){ const d=ref?Math.hypot(p.X-ref.X,p.Y-ref.Y):0; if(d<bd){bd=d;best=t;} } return best; }
 function itemName(id){ return META.vi?.[id]||DB.i?.[id]?.n||('Item '+id); }
 function stepPoint(s,ref){
+  if(s.t==='train'){ const t=trainerOf(s.npc); return t?nearest(trainerPts(t),ref):null; }
   if(s.t==='buy'){ const v=vendorOf(s.npc); return v?nearest(vendorPts(v),ref):(s.loc?zp2plane(s.loc.z,s.loc.px,s.loc.py):null); }
   if(s.loc) return zp2plane(s.loc.z,s.loc.px,s.loc.py);
   if(!s.q||!Q(s.q)) return null;
@@ -568,7 +573,8 @@ function drawPOIs(){
   if(layers.vendors && s>=0.3 && META.vend){ ctx.font='700 10px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
     for(const id in META.vend){ const v=vendorOf(id); if(!vendorOK(v)) continue; for(const p of vendorPts(v)){ const [x,y]=toS(p); if(x<-10||x>W+10||y<-10||y>H+10) continue;
       ctx.fillStyle='#5a3d0a'; ctx.beginPath(); ctx.arc(x,y,5.5,0,7); ctx.fill(); ctx.strokeStyle='#ffd24a'; ctx.lineWidth=1.3; ctx.stroke(); ctx.fillStyle='#ffd24a'; ctx.fillText('¤',x,y+.5);
-      hits.push({x,y,r:7,kind:'vendor',vid:v.id,label:v.name}); } } }
+      hits.push({x,y,r:7,kind:'vendor',vid:v.id,label:v.name}); } }
+    for(const t of myTrainers()) for(const p of trainerPts(t)){ const [x,y]=toS(p); if(x<-10||x>W+10||y<-10||y>H+10) continue; ctx.fillStyle='#1d2a55'; ctx.beginPath(); ctx.arc(x,y,6.5,0,7); ctx.fill(); ctx.strokeStyle='#9fc0ff'; ctx.lineWidth=1.4; ctx.stroke(); ctx.fillStyle='#cfe0ff'; ctx.font='700 9px sans-serif'; ctx.fillText('✦',x,y+.5); hits.push({x,y,r:8,kind:'trainer',tid:t.id,label:t.name+' ('+t.cls+' trainer)'}); } }
   if(layers.dungeons && s>=0.03){ const seen=[];
     for(const [aid,d] of Object.entries(META.dungeons)){ for(const [z,x0,y0] of d.l){ const p=zp2plane(z,x0,y0); if(!p) continue; const [x,y]=toS(p);
       ctx.save(); ctx.translate(x,y); ctx.fillStyle='#2a1030'; ctx.beginPath(); ctx.arc(0,0,7,0,7); ctx.fill(); ctx.strokeStyle='#c68bf0'; ctx.lineWidth=1.6; ctx.beginPath(); for(let a=0;a<9;a+=0.3){ const r=0.6*a; ctx.lineTo(Math.cos(a)*r,Math.sin(a)*r);} ctx.stroke(); ctx.restore();
@@ -737,6 +743,7 @@ function stepText(s){
     case 'complete': { const ob=s.obj&&q?objectives(s.q).find(o=>o.rx===s.obj):null; return {ic:'✓',cls:'complete',t:ob?`${qn}: ${ob.text}`:'Complete '+qn,sub:ob?'One objective':(q?objectives(s.q).map(o=>o.text).join('; '):'')}; }
     case 'turnin': return {ic:'?',cls:'turnin',t:'Turn in '+qn,sub:q?locSub(s):''};
     case 'abandon': return {ic:'×',cls:'abandon',t:'Abandon '+qn,sub:''};
+    case 'train': { const t=trainerOf(s.npc); return {ic:'✦',cls:'travel',t:'Train class spells',sub:(t?.name||s.npcName||'class trainer')+(t?' · '+zoneName(t.sp[0][0]):'')}; }
     case 'buy': { const v=vendorOf(s.npc); return {ic:'¤',cls:'travel',t:'Buy from '+(v?.name||s.npcName||'vendor'),sub:(s.items||[]).map(it=>`${it.c}× ${it.n||itemName(it.id)}`).join(', ')+(v?.sub?' · '+v.sub:'')}; }
     case 'grind': return {ic:'⚔',cls:'grind',t:s.mode==='to'?`Grind to level ${s.level}${s.xp?' + '+fmt(s.xp)+' XP':''}`:`Grind ${fmt(s.amount||0)} XP`,sub:[s.note,{mobs:'Mob kills',explore:'Exploration',both:'Mobs and exploration',other:''}[s.src]||''].filter(Boolean).join(' · ')};
     case 'party': return {ic:s.size>1?String(s.size):'1',cls:'party',t:s.size>1?`Group up: ${s.size} players`:'Go solo',sub:'Affects mob-kill XP estimates from here on'};
@@ -872,7 +879,7 @@ $('#steps').addEventListener('click',e=>{
   const s=route.steps[i]; if(s&&s.q&&Q(s.q)){ selQuest=s.q; renderRight(); requestDraw(); }
 });
 $('#steps').addEventListener('dblclick',async e=>{ const li=e.target.closest('[data-i]'); if(!li) return; const s=route.steps[+li.dataset.i];
-  if(s&&s.q&&!Q(s.q)&&s.t==='turnin'){ askUXP(s); return; } if(s&&s.t==='buy'){ openBuy(+li.dataset.i); return; } if(s&&['grind','travel','custom'].includes(s.t)) openStepDialog(s.t,+li.dataset.i); });
+  if(s&&s.q&&!Q(s.q)&&s.t==='turnin'){ askUXP(s); return; } if(s&&s.t==='buy'){ openBuy(+li.dataset.i); return; } if(s&&s.t==='train'){ pickTrainer(+li.dataset.i); return; } if(s&&['grind','travel','custom'].includes(s.t)) openStepDialog(s.t,+li.dataset.i); });
 let pathEdit=null, pathDrag=null, pathHits=[];
 function ownPath(s){ if(!s.path) s.path=(pathOf(s)||[]).map(l=>({...l})); delete s.loopRaw; s.pathSrc='edited'; return s.path; }
 function pathDelPt(k){ const s=route.steps[pathEdit]; if(pathOf(s).length<=2) return toast('A path needs at least 2 points: use Remove path instead'); pushHistory(); ownPath(s).splice(k,1); refresh(); }
@@ -1046,6 +1053,7 @@ function showPop(h,x,y){
     html+=townHTML(h);
   } else if(h.kind==='fq'){ const e=foreverQuests().get(h.q); const f=fqStatus(h.q);
     html+=`<h4>${esc(e.n)}</h4><div class="it"><span class="note">Forever quest (not in Questie yet) · from ${esc(e.g)}${e.tgtA?' · '+esc(e.tgtA):''}</span><div class="row">${f?'':`<button class="btn sm gold" data-fqa="accept:${e.q}">Accept</button>`}${f==='log'?`<button class="btn sm gold" data-fqa="complete:${e.q}">Complete</button>`:''}${f?`<button class="btn sm${f==='ready'?' gold':''}" data-fqa="turnin:${e.q}">Turn in</button>`:''}<a class="btn sm" href="${whURL(e.q,e.n)}" target="_blank" rel="noopener">Wowhead</a></div></div>`;
+  } else if(h.kind==='trainer'){ const t=trainerOf(h.tid); html+=`<h4>${esc(t.name)}</h4><div class="it"><span class="note">${esc(t.cls)} trainer</span><div class="row"><button class="btn sm gold" data-train="${t.id}">Train class spells here</button></div></div>`;
   } else if(h.kind==='vendor'){ const v=vendorOf(h.vid);
     html+=`<h4>${esc(v.name)}</h4><div class="it"><span class="note">${esc(v.sub||'Vendor')}${v.items.length?' · sells '+v.items.slice(0,6).map(i=>esc(itemName(i))).join(', ')+(v.items.length>6?'…':''):''}</span><div class="row"><button class="btn sm gold" data-buyv="${v.id}">Buy from ${esc(v.name)}</button></div></div>`;
   } else if(h.kind==='dock'){
@@ -1122,6 +1130,11 @@ function renderBuy(){ const ref=routeRefBefore(buyCtx.i!=null?buyCtx.i:cursor+1)
   for(const [k,it] of buyCtx.items) if(!v||!v.items.includes(+k)) rows.push(`<label class="buyi"><input type="checkbox" data-bi="${esc(k)}" checked> <span style="flex:1">${esc(it.n||itemName(it.id))}${it.id?'':' <span class="note">(no item ID: shown as text only)</span>'}</span> <input type="number" min="1" data-bn="${esc(k)}" value="${it.c}"></label>`);
   $('#buyItems').innerHTML=v?(`<div class="note">${v.items.length?'Items this vendor sells (from Questie):':'Questie lists no items for this vendor: add them below.'}</div>`+rows.join('')):(rows.join('')||'<div class="note">Pick a vendor.</div>'); }
 $('#buyBtn').addEventListener('click',()=>openBuy(null,null));
+function addTrain(id){ const t=id!=null?trainerOf(id):nearestTrainer(routeRefBefore(cursor+1)); if(!t) return toast(`No ${route.char.cls} trainer found for your faction`); addStep({t:'train',npc:t.id,npcName:t.name}); if(id==null) toast(`Train at ${t.name} (${zoneName(t.sp[0][0])}), the nearest ${t.cls} trainer. Double-click the step to pick another.`,4500); }
+$('#trainBtn').addEventListener('click',()=>addTrain(null));
+document.addEventListener('click',e=>{ const b=e.target.closest('[data-train]'); if(!b) return; hidePop(); addTrain(+b.dataset.train); });
+async function pickTrainer(i){ const s=route.steps[i]; const ref=routeRefBefore(i); const L=myTrainers().map(t=>({t,d:ref?Math.min(...trainerPts(t).map(p=>Math.hypot(p.X-ref.X,p.Y-ref.Y))):0})).sort((a,b)=>a.d-b.d).slice(0,9);
+  const v=await askText('Pick a trainer by number:\n'+L.map((x,k)=>`${k+1}. ${x.t.name} · ${zoneName(x.t.sp[0][0])}${ref?' · '+fmt(Math.round(x.d))+' yd':''}`).join('\n'),'1','Use'); const k=parseInt(v)-1; if(!(k>=0&&k<L.length)) return; pushHistory(); s.npc=L[k].t.id; s.npcName=L[k].t.name; refresh(); }
 $('#buyFind').addEventListener('input',renderBuy);
 $('#buyVendors').addEventListener('click',e=>{ const b=e.target.closest('[data-bv]'); if(!b) return; buyCtx.vid=+b.dataset.bv; renderBuy(); });
 $('#buyItems').addEventListener('change',e=>{ const c=e.target.closest('[data-bi]'), n=e.target.closest('[data-bn]'); const k=(c||n)?.dataset.bi||(c||n)?.dataset.bn; if(!k) return;
@@ -1219,6 +1232,7 @@ function buildRXP(){
     if(s.t==='accept'){ lines.push(`    .accept ${s.q} >>Accept ${q.on||q.n}`); if(s.tgt) lines.push(`    .target ${s.tgt}`); if(ESCORT.has(s.q)) lines.push(`    >>|cRXP_WARN_${ESC_NOTE}|r`); }
     else if(s.t==='turnin'){ lines.push(`    .turnin ${s.q} >>Turn in ${q.on||q.n}`); if(s.tgt) lines.push(`    .target ${s.tgt}`); }
     else if(s.t==='abandon') lines.push(`    .abandon ${s.q} >>Abandon ${q.on||q.n}`);
+    else if(s.t==='train'){ const nm=trainerOf(s.npc)?.name||s.npcName||'your class trainer'; lines.push(`    >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_${nm}|r`); lines.push('    .trainer >> Train your class spells'); lines.push(`    .target ${nm}`); }
     else if(s.t==='buy'){ const v=vendorOf(s.npc), nm=v?.name||s.npcName||'the vendor'; lines.push(`    >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_${nm}|r`);
       for(const it of s.items||[]) lines.push(`    >>|cRXP_BUY_Buy|r ${it.c>1?it.c+' ':''}[${it.n||itemName(it.id)}] |cRXP_BUY_from|r |cRXP_FRIENDLY_${nm}|r`);
       for(const it of s.items||[]) if(it.id) lines.push(`    .collect ${it.id},${it.c} --Collect ${it.n||itemName(it.id)} (${it.c})`);
@@ -1649,6 +1663,7 @@ function ghostIcon(s){ return {accept:'!',turnin:'?',complete:'✓',grind:'⚔',
 function ghostText(s){ const q=s.q&&Q(s.q); const qn=q?q.n:(s.q?(s.qn||'Quest '+s.q):'');
   switch(s.t){ case 'accept': return 'Accept '+qn; case 'turnin': return 'Turn in '+qn; case 'complete': return 'Complete '+qn;
     case 'grind': return `Reach level ${s.level}${s.xp?' + '+fmt(s.xp)+' XP':''}`;
+    case 'train': return 'Train class spells';
     case 'buy': return 'Buy from '+(vendorOf(s.npc)?.name||'vendor');
     case 'travel': return ({fly:'Fly to ',fp:'Get flight path: ',home:'Set hearthstone: ',hs:'Hearth to ',goto:'',note:''})[s.kind]+rxpPlain(s.text||''); }
   return s.text||''; }
