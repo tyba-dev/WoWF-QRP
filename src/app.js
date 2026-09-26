@@ -853,7 +853,17 @@ function removeStep(i){ pushHistory(); markRemoved(route.steps[i]); route.steps.
 function moveStep(from,to){ if(from===to) return; pushHistory(); const [s]=route.steps.splice(from,1); if(to>from) to--; route.steps.splice(to,0,s); cursor=to; refresh(); }
 function setCursor(i){ cursor=i; refresh(); scrollCursor(); const p=SIM.res[i]?.pt; if(p){ const [x,y]=toS(p); if(x<40||y<40||x>W-40||y>H-40) flyTo(p.X,p.Y); } }
 function scrollCursor(){ const el=$('#steps .cur'); el&&el.scrollIntoView({block:'nearest'}); }
-function refresh(){ simulate(); computeGhosts(); renderSteps(); renderRight(); renderXP(); renderRouteHead(); renderHS(); requestDraw(); save(); }
+// guides imported by an older planner version are re-read from their saved original text, so new details (objectives, targets, loops) appear without re-importing
+let upgrading=false;
+async function upgradeGuides(){ if(upgrading) return; const old=(route.guides||[]).filter(g=>(g.pv||0)<3); if(!old.length) return; upgrading=true; const rid=route.id;
+  try{ await rawLoad(old.map(g=>g.id)); if(route.id!==rid) return; let n=0;
+    for(const g of old){ const bl=rawCache.get(g.id); if(!bl||!bl.length){ g.pv=3; continue; }
+      const txt=`RXPGuides.RegisterGuide(${JSON.stringify(g.group||'')},[[\n`+(g.cond?`<< ${g.cond}\n`:'')+`#name ${g.name}\n`+(g.xprate?`#xprate ${g.xprate}\n`:'')+bl.join('\n')+'\n]])';
+      const r=importGuides(txt,false); if(r.added?.length){ const ids=new Set(r.added.map(x=>x.id)); route.guides=route.guides.filter(x=>!ids.has(x.id)); }
+      for(const x of r.refreshed||[]){ x.pv=3; n++; } g.pv=3; }
+    if(n){ refresh(); toast(`Updated ${n} imported guide${n>1?'s':''} with the latest details`); } else save();
+  }catch(e){} finally{ upgrading=false; } }
+function refresh(){ if(route.guides?.some(g=>(g.pv||0)<3)) setTimeout(upgradeGuides,0); simulate(); computeGhosts(); renderSteps(); renderRight(); renderXP(); renderRouteHead(); renderHS(); requestDraw(); save(); }
 
 function renderSteps(){
   const ul=$('#steps'); const parts=[];
@@ -1538,7 +1548,7 @@ async function kvKeys(){ const db=await rawDB(); if(!db) return []; return new P
 async function kvGet(k){ const db=await rawDB(); if(!db) return null; return new Promise(res=>{ try{ const rq=db.transaction('kv').objectStore('kv').get(k); rq.onsuccess=()=>res(rq.result??null); rq.onerror=()=>res(null); }catch(e){ res(null); } }); }
 function rawPut(id,blocks){ rawCache.set(id,blocks); rawDB().then(db=>{ if(!db) return; try{ db.transaction('g','readwrite').objectStore('g').put(blocks,id); }catch(e){} }); }
 async function rawLoad(ids){ const db=await rawDB(); await Promise.all([...new Set(ids)].filter(id=>!rawCache.has(id)).map(id=>new Promise(res=>{ if(!db) return res(); try{ const rq=db.transaction('g').objectStore('g').get(id); rq.onsuccess=()=>{ if(rq.result) rawCache.set(id,rq.result); res(); }; rq.onerror=()=>res(); }catch(e){ res(); } }))); }
-function importGuides(text,convert){
+function importGuides(text,convert){ FQ.key=null;
   const parsed=parseRXP(text); if(!parsed.length) return {err:'No RestedXP steps found. Paste the whole guide, including the step lines.'};
   route.guides=route.guides||[]; const added=[], refreshed=[]; const unknown=new Set();
   for(const pg of parsed){
@@ -1551,8 +1561,8 @@ function importGuides(text,convert){
       for(const r of store.routes){ r.steps=r.steps.filter(st=>{ if(!st.src||st.src.g!==ex.id) return true; const ni=map[st.src.i];
           if(ni==null||ni<0){ if(st.t==='travel'&&(st.kind==='note'||st.kind==='goto')&&!st.src.auto) return false; if(st.src.auto){ st.src={...st.src,i:Math.max(0,Math.min(steps.length-1,st.src.i))}; return true; } delete st.src; return true; } // unmatched guide notes are re-added in place by the fill below; other unmatched steps become your own steps
           st.src.i=ni; const ns=steps[ni]; for(const f of ['reqs','rx','qn','ride','gopt','cw','sticky','label','text','kind','loc']) if(ns[f]!=null) st[f]=ns[f]; return true; }); if(r===route) cursor=Math.min(cursor,r.steps.length-1); }
-      ex.excluded=(ex.excluded||[]).map(i=>map[i]).filter(i=>i>=0); ex.removed=(ex.removed||[]).map(i=>map[i]).filter(i=>i>=0); ex.from=Math.max(0,map[ex.from]??0); ex.steps=steps; ex.pv=2; ex.to=steps.length-1; refreshed.push(ex); continue; }
-    const g={id:uid(),pv:2,name:pg.name||pg.group||'Imported guide',group:pg.group,cond:pg.cond,next:pg.next,ver:pg.ver||'',xprate:pg.xprate||'',color:GCOLORS[route.guides.length%GCOLORS.length],visible:false,from:0,to:steps.length-1,excluded:[],stopAtBlocked:false,includeNotes:true,includeXp:true,steps};
+      ex.excluded=(ex.excluded||[]).map(i=>map[i]).filter(i=>i>=0); ex.removed=(ex.removed||[]).map(i=>map[i]).filter(i=>i>=0); ex.from=Math.max(0,map[ex.from]??0); ex.steps=steps; ex.pv=3; ex.to=steps.length-1; refreshed.push(ex); continue; }
+    const g={id:uid(),pv:3,name:pg.name||pg.group||'Imported guide',group:pg.group,cond:pg.cond,next:pg.next,ver:pg.ver||'',xprate:pg.xprate||'',color:GCOLORS[route.guides.length%GCOLORS.length],visible:false,from:0,to:steps.length-1,excluded:[],stopAtBlocked:false,includeNotes:true,includeXp:true,steps};
     route.guides.push(g); added.push(g); rawPut(g.id,pg.blocks.map(b=>(b.raw||[]).join('\n')));
   }
   const vis=added.find(x=>guideOK(x))||added[0]; if(vis) vis.visible=true;
