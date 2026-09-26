@@ -110,6 +110,8 @@ function objectives(qid){
   if(o.r) list.push({kind:'rep',text:'Reach reputation '+o.r[1]+' with faction '+o.r[0],pts:[]});
   if(q.te){ const pts=q.te[1].map(([z,x,y])=>zp2plane(z,x,y)).filter(Boolean).map(p=>({...p,kind:'event',label:q.te[0]})); list.push({kind:'event',text:q.te[0],pts}); }
   { let n=1; for(const ob of list){ if(ob.kind==='rep'||(ob.kind==='event'&&!ob.pts.length&&!q.te)) continue; ob.rx=n++; } }
+  // items you must loot first (Questie requiredSourceItems), e.g. Samuel's Remains from Samuel Fipps: shown and routed, but not numbered (RestedXP .complete numbers stay Questie's)
+  for(const id of q.rs||[]){ if((o.i||[]).some(([i])=>i===id)) continue; const pts=itemSourcePts(id,'loot'); if(pts.length) list.push({kind:'loot',text:(DB.i[id]?.n||('Item '+id))+' (loot first)',pts,pre:true}); }
   for(const ob of list){ if(ob.pts.length>160){ const st=ob.pts.length/160; ob.pts=Array.from({length:160},(_,i)=>ob.pts[Math.floor(i*st)]); } }
   objCache.set(qid,list); return list;
 }
@@ -120,7 +122,7 @@ function isDungeonQuest(qid){ if(dqCache.has(qid)) return dqCache.get(qid); cons
 function objNums(qid){ return objectives(qid).filter(o=>o.rx).map(o=>o.rx); }
 const hasObjectives=qid=>{ const q=Q(qid); return !!(q.o||q.te); };
 function objPoint(qid,rx,ref){
-  let all=objectives(qid).filter(o=>!rx||o.rx===rx).flatMap(o=>o.pts); if(!all.length) return rx?objPoint(qid,null,ref):null;
+  let all=objectives(qid).filter(o=>!o.pre&&(!rx||o.rx===rx)).flatMap(o=>o.pts); if(!all.length) return rx?objPoint(qid,null,ref):null;
   let pts=all.filter(p=>!p.dg); if(!pts.length) pts=all;
   // cluster points ~300 yd grid, pick the densest cluster weighted by distance from the previous step
   const cl=new Map(); for(const p of pts){ const k=Math.round(p.X/300)+','+Math.round(p.Y/300); if(!cl.has(k)) cl.set(k,[]); cl.get(k).push(p); }
@@ -349,6 +351,7 @@ function trainerPts(t){ return t.sp.map(([z,x,y])=>{ const p=zp2plane(z,x,y); re
 function nearestTrainer(ref){ let best=null,bd=1e18; for(const t of myTrainers()) for(const p of trainerPts(t)){ const d=ref?Math.hypot(p.X-ref.X,p.Y-ref.Y):0; if(d<bd){bd=d;best=t;} } return best; }
 function itemName(id){ return META.vi?.[id]||DB.i?.[id]?.n||('Item '+id); }
 function stepPoint(s,ref){
+  if(s.t==='collect'){ return s.loc?zp2plane(s.loc.z,s.loc.px,s.loc.py):nearest(itemSourcePts(s.item,'loot'),ref); }
   if(s.t==='train'){ const t=trainerOf(s.npc); return t?nearest(trainerPts(t),ref):null; }
   if(s.t==='buy'){ const v=vendorOf(s.npc); return v?nearest(vendorPts(v),ref):(s.loc?zp2plane(s.loc.z,s.loc.px,s.loc.py):null); }
   if(s.loc) return zp2plane(s.loc.z,s.loc.px,s.loc.py);
@@ -746,6 +749,7 @@ function stepText(s){
     case 'complete': { const ob=s.obj&&q?objectives(s.q).find(o=>o.rx===s.obj):null; return {ic:'✓',cls:'complete',t:ob?`${qn}: ${ob.text}`:'Complete '+qn,sub:ob?'One objective':(q?objectives(s.q).map(o=>o.text).join('; '):'')}; }
     case 'turnin': return {ic:'?',cls:'turnin',t:'Turn in '+qn,sub:q?locSub(s):''};
     case 'abandon': return {ic:'×',cls:'abandon',t:'Abandon '+qn,sub:''};
+    case 'collect': { const src=[...new Set(itemSourcePts(s.item,'loot').map(p=>p.label))].slice(0,2).join(', '); return {ic:'✚',cls:'complete',t:`Loot ${DB.i[s.item]?.n||'item'}${s.c>1?' ×'+s.c:''}`,sub:(src?'from '+src+' · ':'')+'needed for '+(Q(s.q)?.n||'quest')}; }
     case 'train': { const t=trainerOf(s.npc); return {ic:'✦',cls:'travel',t:'Train class spells',sub:(t?.name||s.npcName||'class trainer')+(t?' · '+zoneName(t.sp[0][0]):'')}; }
     case 'buy': { const v=vendorOf(s.npc); return {ic:'¤',cls:'travel',t:'Buy from '+(v?.name||s.npcName||'vendor'),sub:(s.items||[]).map(it=>`${it.c}× ${it.n||itemName(it.id)}`).join(', ')+(v?.sub?' · '+v.sub:'')}; }
     case 'grind': return {ic:'⚔',cls:'grind',t:s.mode==='to'?`Grind to level ${s.level}${s.xp?' + '+fmt(s.xp)+' XP':''}`:`Grind ${fmt(s.amount||0)} XP`,sub:[s.note,{mobs:'Mob kills',explore:'Exploration',both:'Mobs and exploration',other:''}[s.src]||''].filter(Boolean).join(' · ')};
@@ -774,7 +778,7 @@ function pathOf(s){ return s.path!==undefined?s.path:(stepGuide(s)?.path||null);
 function pathPts(path){ return (path||[]).map(l=>zp2plane(l.z,l.px,l.py)).filter(Boolean); }
 function guidePathFor(q){ for(const g of route.guides||[]) for(const x of g.steps||[]) if(x.q===q&&x.t==='complete'&&x.cond&&x.path&&x.path.length>=2) return {path:x.path.map(l=>({...l})),raw:x.loopRaw?[...x.loopRaw]:null,g:g.name}; return null; }
 function genPath(qid,obj,ref){
-  if(!Q(qid)) return null; const obs=objectives(qid).filter(o=>(!obj||o.rx===obj)&&['kill','loot','obj'].includes(o.kind));
+  if(!Q(qid)) return null; const obs=objectives(qid).filter(o=>!o.pre&&(!obj||o.rx===obj)&&['kill','loot','obj'].includes(o.kind));
   let pts=obs.flatMap(o=>o.pts).filter(p=>p&&!p.dg&&p.z!=null); if(pts.length<4) return null;
   const cl=new Map(); for(const p of pts){ const k=Math.round(p.X/300)+','+Math.round(p.Y/300); if(!cl.has(k)) cl.set(k,[]); cl.get(k).push(p); }
   let best=null,bs=-1e18; for(const g of cl.values()){ const mx=g.reduce((a,p)=>a+p.X,0)/g.length, my=g.reduce((a,p)=>a+p.Y,0)/g.length; const d=ref?Math.hypot(mx-ref.X,my-ref.Y):0; const sc=g.length*400-d; if(sc>bs){ bs=sc; best={mx,my}; } }
@@ -795,7 +799,11 @@ function genPath(qid,obj,ref){
 function routeRefBefore(i){ for(let k=Math.min(i,route.steps.length)-1;k>=0;k--) if(SIM.res[k]?.pt&&!SIM.res[k].stk) return SIM.res[k].pt; return null; }
 function defaultPath(step,at){ if(step.src||step.t!=='complete'||!step.q||step.path) return null; const gp=guidePathFor(step.q); if(gp){ step.path=gp.path; if(gp.raw) step.loopRaw=gp.raw; step.pathSrc=gp.g; return 'guide'; }
   const p=genPath(step.q,step.obj,routeRefBefore(at)); if(p){ step.path=p; step.pathSrc='generated'; return 'gen'; } return null; }
-function addStep(step){ const pk=defaultPath(step,cursor+1); const msgs=[]; if(pk) msgs.push(pk==='guide'?`Path copied from ${step.pathSrc}.`:`Rough path generated through the spawns (${step.path.length} points): click 🔁 on the step to adjust it.`);
+function preLootSteps(step){ const q=step.q&&Q(step.q); if(!q||step.t!=='complete'||!q.rs||step.src) return [];
+  const have=new Set(route.steps.slice(0,cursor+1).filter(x=>x.t==='collect'&&x.q===step.q).map(x=>x.item)); const o=q.o||{};
+  return q.rs.filter(i=>!have.has(i)&&!(o.i||[]).some(([j])=>j===i)&&itemSourcePts(i,'loot').length).map(i=>({t:'collect',item:i,c:1,q:step.q})); }
+function addStep(step){ const pre=preLootSteps(step); if(pre.length){ pushHistory(); route.steps.splice(cursor+1,0,...pre); cursor+=pre.length; toast(`Added a step to loot ${pre.map(x=>DB.i[x.item]?.n).join(', ')} first: the objective needs it.`,4500); }
+  const pk=defaultPath(step,cursor+1); const msgs=[]; if(pk) msgs.push(pk==='guide'?`Path copied from ${step.pathSrc}.`:`Rough path generated through the spawns (${step.path.length} points): click 🔁 on the step to adjust it.`);
   let d=null; if(!step.src&&step.q&&['accept','complete','turnin'].includes(step.t)&&step.stk===undefined){ d=guideStickyDefault(step.t,step.q); if(d) step.stk=d.stk; }
   if(d) msgs.push(`Made sticky (${d.stk==='next'?'done with the next step':'stays on screen until done'}) as in ${d.g}: click 📌 to change.`);
   if(msgs.length) setTimeout(()=>toast(msgs.join(' '),5000),0);
@@ -1236,6 +1244,9 @@ function buildRXP(){
     if(s.t==='accept'){ lines.push(`    .accept ${s.q} >>Accept ${q.on||q.n}`); if(s.tgt) lines.push(`    .target ${s.tgt}`); if(ESCORT.has(s.q)) lines.push(`    >>|cRXP_WARN_${ESC_NOTE}|r`); }
     else if(s.t==='turnin'){ lines.push(`    .turnin ${s.q} >>Turn in ${q.on||q.n}`); if(s.tgt) lines.push(`    .target ${s.tgt}`); }
     else if(s.t==='abandon') lines.push(`    .abandon ${s.q} >>Abandon ${q.on||q.n}`);
+    else if(s.t==='collect'){ const it=DB.i[s.item]; const nm=it?.n||('item '+s.item); const mobs=[...new Set((it?.d||[]).map(n=>entName('n',n)))], ob=[...new Set((it?.od||[]).map(n=>entName('o',n)))];
+      lines.push(mobs.length?`    >>Kill |cRXP_ENEMY_${mobs.join('|r and |cRXP_ENEMY_')}|r. Loot ${mobs.length>1?'them':'it'} for |cRXP_LOOT_${nm}|r`:`    >>Loot |cRXP_LOOT_${nm}|r${ob.length?' from the '+ob.join(', '):''}`);
+      lines.push(`    .collect ${s.item},${s.c||1}${s.q?','+s.q+',1':''} --${nm} (${s.c||1})`); for(const m of mobs.slice(0,3)) lines.push(`    .mob ${m}`); }
     else if(s.t==='train'){ const nm=trainerOf(s.npc)?.name||s.npcName||'your class trainer'; lines.push(`    >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_${nm}|r`); lines.push('    .trainer >> Train your class spells'); lines.push(`    .target ${nm}`); }
     else if(s.t==='buy'){ const v=vendorOf(s.npc), nm=v?.name||s.npcName||'the vendor'; lines.push(`    >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_${nm}|r`);
       for(const it of s.items||[]) lines.push(`    >>|cRXP_BUY_Buy|r ${it.c>1?it.c+' ':''}[${it.n||itemName(it.id)}] |cRXP_BUY_from|r |cRXP_FRIENDLY_${nm}|r`);
@@ -1667,6 +1678,7 @@ function ghostIcon(s){ return {accept:'!',turnin:'?',complete:'✓',grind:'⚔',
 function ghostText(s){ const q=s.q&&Q(s.q); const qn=q?q.n:(s.q?(s.qn||'Quest '+s.q):'');
   switch(s.t){ case 'accept': return 'Accept '+qn; case 'turnin': return 'Turn in '+qn; case 'complete': return 'Complete '+qn;
     case 'grind': return `Reach level ${s.level}${s.xp?' + '+fmt(s.xp)+' XP':''}`;
+    case 'collect': return 'Loot '+(DB.i[s.item]?.n||'item');
     case 'train': return 'Train class spells';
     case 'buy': return 'Buy from '+(vendorOf(s.npc)?.name||'vendor');
     case 'travel': return ({fly:'Fly to ',fp:'Get flight path: ',home:'Set hearthstone: ',hs:'Hearth to ',goto:'',note:''})[s.kind]+rxpPlain(s.text||''); }

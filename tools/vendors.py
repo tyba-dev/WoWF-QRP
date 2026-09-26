@@ -48,8 +48,8 @@ for nid,f in rows(Q+'foreverNpcDB.lua'):
         for x,y in re.findall(r'\{([-\d.]+),([-\d.]+)\}', pts):
             if float(x)>=0: sp.append([int(z),round(float(x),1),round(float(y),1)])
     if sp: trn[nid]=[s(f[0]), m.group(1), s(f[12]) if len(f)>12 else None, sp[:4]]
-print('trainers',len(trn))
+if __name__=="__main__": print('trainers',len(trn))
 used={i for v in vend.values() for i in v[4]}
 json.dump(dict(vend=vend, trn=trn, vi={i:items[i] for i in used}), open('vend.json','w'), separators=(',',':'))
-print('vendors',len(vend),'with stock',sum(1 for v in vend.values() if v[4]),'items',len(used))
-print(vend.get(2115))
+if __name__=="__main__": print('vendors',len(vend),'with stock',sum(1 for v in vend.values() if v[4]),'items',len(used))
+if __name__=="__main__": print(vend.get(2115))
