@@ -1,3 +1,4 @@
+const BUILD='__BUILD__'; // stamped at build time
 'use strict';
 const $ = s => document.querySelector(s);
 const $$ = s => Array.from(document.querySelectorAll(s));
@@ -1873,3 +1874,5 @@ function fillNodeSel(f,sel){ const list=taxiNodes().sort((x,y)=>x.n.localeCompar
 
 function fillFpSettings(c){ const list=taxiNodes(c.faction).sort((x,y)=>taxiShort(x.id).localeCompare(taxiShort(y.id))); const set=new Set(c.fps||[]);
   $('#fpSettings').innerHTML=list.map(n=>`<label><input type="checkbox" data-fpk="${n.id}" ${set.has(n.id)?'checked':''}> ${esc(taxiShort(n.id))}</label>`).join(''); $('#fpAll').checked=!!c.allfps; }
+
+try{ const b=document.querySelector('.brand small'); if(b){ b.textContent='Questie data · v'+BUILD; b.title='Planner version (build time, UK)'; } }catch(e){}
