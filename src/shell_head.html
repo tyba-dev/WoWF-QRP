@@ -112,6 +112,7 @@ select{background:var(--panel2);border:1px solid var(--line);border-radius:6px;p
 .step .x b{color:var(--text);font-weight:500}
 .step .err{color:var(--danger);font-size:12px;display:block}
 .step .wrn{color:var(--warn);font-size:12px;display:block}
+.step .ed{border:1px solid var(--line);background:var(--panel2);border-radius:4px;width:22px;height:22px;padding:0;cursor:pointer;color:var(--muted);font-size:12px;opacity:.55}.step:hover .ed,.step .ed.on{opacity:1}.step .ed.on{color:var(--gold,#e0b85a)}.unote{display:block;color:var(--gold,#e0b85a);font-size:12px;margin-top:2px}
 .step .del{border:1px solid var(--line);background:var(--panel2);border-radius:4px;width:22px;height:22px;padding:0;cursor:pointer;color:var(--muted);font-size:15px;line-height:1}
 .step .del:hover{color:var(--danger)}
 .step.dragover{box-shadow:inset 0 2px 0 var(--gold)}
@@ -450,6 +451,12 @@ dialog textarea{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-
   <p class="note" style="margin:0">Not affiliated with or endorsed by Blizzard Entertainment, RestedXP or WoW: Forever.</p>
   <div class="actions"><button class="btn gold" id="aboutClose">Close</button></div>
 </div></dialog>
+<dialog id="dlgEdit"><div class="dl"><h2 id="edTitle" style="margin:0 0 6px">Edit step</h2>
+  <label id="edTextL">Step text<input type="text" id="edText"></label>
+  <label>Note (shown on this step; one line per note)<textarea id="edNote" rows="3" placeholder="e.g. Kill the boars on the way"></textarea></label>
+  <label>XP this step gives<input type="number" id="edXp" min="0" style="width:140px"></label>
+  <p class="note" id="edXpHint" style="margin:0"></p>
+  <div class="actions"><button class="btn" id="edReset">Clear edits</button><button class="btn" id="edNo">Cancel</button><button class="btn gold" id="edOk">Save</button></div></div></dialog>
 <dialog id="dlgAsk"><div class="dl"><p id="askMsg" style="margin:0"></p><input id="askIn" type="number" min="0" hidden style="margin-top:8px;width:120px"><div class="actions"><button class="btn" id="askNo">Cancel</button><button class="btn gold" id="askOk">OK</button></div></div></dialog>
 <div class="toast" id="toast"></div>
 <script id="bundle" type="application/octet-stream">__BUNDLE__</script>

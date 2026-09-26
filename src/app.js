@@ -296,6 +296,7 @@ function simulate(){
     } else if(s.t==='custom'){
       if(s.act==='turnin'){ r.gained=+s.xp||0; addXP(st,r.gained); }
     }
+    if(s.xpo!=null&&!r.inactive){ r.xpCalc=r.gained; st.level=r.before.level; st.xp=r.before.xp; r.gained=+s.xpo; addXP(st,r.gained); }
     r.after={level:st.level,xp:st.xp}; r.logSize=st.log.size; r.party=st.party;
     if(r.inactive) r.pt=null; else if(!travelGeo(s,r,st,lastPt)) r.pt=stepPoint(s,lastPt);
     r.from=lastPt; if(r.pt) lastPt=r.pt;
@@ -727,9 +728,9 @@ function renderSteps(){
     const lvl=r.after.level+(r.after.level<MAXLVL?r.after.xp/XP_TABLE[r.after.level]:0);
     parts.push(`<li tabindex="-1" class="step ${i===cursor?'cur':''} ${i>cursor?'future':''} ${r.inactive?'inactive':''} ${dgTags.length?'dgstep':''} ${s.opt?'optstep':''} ${selSteps.has(i)?'msel':''}" data-i="${i}" draggable="true">
       <span class="n" title="Drag to reorder">${i+1}</span><span class="ic ${tx.cls} ${dq?'dq':''}" aria-hidden="true">${tx.ic}</span>
-      <span class="t">${''}${s.src&&s.t==='travel'&&(s.kind==='note'||s.kind==='goto')?rxpHTML(tx.t):esc(rxpPlain(tx.t))}${(()=>{const gs=s.src&&!s.src.auto?G(s.src.g)?.steps[s.src.i]:null; return gs?notesHTML(gs,s.t==='travel'&&(s.kind==='note'||s.kind==='goto')?(s.text||''):''):'';})()}${s.t==='grind'&&r.party>1?`<span class="sub">in a group of ${r.party}</span>`:''}${r.kill?`<span class="sub kx">≈${fmt(r.kill.kills)} kills${r.kill.guessed?' (some counts guessed)':''}${r.party>1?` · group of ${r.party}`:''}${r.kill.dg?' · dungeon mobs':''}</span>`:''}${stickyChip(s,i)}${s.t==='accept'&&ESCORT.has(s.q)?`<span class="sub" style="color:var(--warn)">⚠ ${esc(ESC_NOTE)}</span>`:''}${allTags.map(t=>`<span class="dgtag" data-dgsel="${esc(t)}" title="${dgTags.includes(t)?`Only because you're running ${esc(dgName(t))}`:`${esc(dgName(t))} quest`}. Click to select every ${esc(t)} step">${esc(t)}</span>`).join('')}${tx.sub?`<span class="sub">${esc(tx.sub)}</span>`:''}${r.inactive?`<span class="wrn">${esc(r.inactive)}</span>`:''}${r.err.map(e=>{ const m=e.match(/^Requires level (\d+)/); return `<span class="err">${esc(e)}${m?` <button class="linkish" data-fixgrind="${i}:${m[1]}">Add a grind to level ${m[1]} before this</button>`:''}</span>`; }).join('')}${r.warn.map(e=>`<span class="wrn">${esc(e)}</span>`).join('')}${r.custom&&s.t==='turnin'?`<button class="linkish" data-uxp="${i}">${route.qxp?.[s.q]?'Change XP reward':'Set XP reward'}</button>`:''}</span>
-      <span class="x">${r.gained?`<b>+${fmt(r.gained)}</b><br>`:''}${lvl.toFixed(1)}</span>
-      <span class="sbtns">${s.q?`<a class="wh" href="${whURL(s.q,s.qn)}" target="_blank" rel="noopener" title="Open this quest on Wowhead">wh↗</a>`:''}<button class="opt ${s.opt?'on':''}" data-opt="${i}" title="${s.opt?'Optional (click to make required)':'Mark as optional'}" aria-pressed="${!!s.opt}">opt</button><button class="del" data-del="${i}" aria-label="Delete step ${i+1}">×</button></span></li>`);
+      <span class="t">${''}${s.src&&s.t==='travel'&&(s.kind==='note'||s.kind==='goto')?rxpHTML(tx.t):esc(rxpPlain(tx.t))}${(()=>{const gs=s.src&&!s.src.auto?G(s.src.g)?.steps[s.src.i]:null; return gs?notesHTML(gs,s.t==='travel'&&(s.kind==='note'||s.kind==='goto')?(s.text||''):''):'';})()}${s.t==='grind'&&r.party>1?`<span class="sub">in a group of ${r.party}</span>`:''}${r.kill?`<span class="sub kx">≈${fmt(r.kill.kills)} kills${r.kill.guessed?' (some counts guessed)':''}${r.party>1?` · group of ${r.party}`:''}${r.kill.dg?' · dungeon mobs':''}</span>`:''}${s.unote?`<span class="unote">${s.unote.split('\n').map(esc).join('<br>')}</span>`:''}${stickyChip(s,i)}${s.t==='accept'&&ESCORT.has(s.q)?`<span class="sub" style="color:var(--warn)">⚠ ${esc(ESC_NOTE)}</span>`:''}${allTags.map(t=>`<span class="dgtag" data-dgsel="${esc(t)}" title="${dgTags.includes(t)?`Only because you're running ${esc(dgName(t))}`:`${esc(dgName(t))} quest`}. Click to select every ${esc(t)} step">${esc(t)}</span>`).join('')}${tx.sub?`<span class="sub">${esc(tx.sub)}</span>`:''}${r.inactive?`<span class="wrn">${esc(r.inactive)}</span>`:''}${r.err.map(e=>{ const m=e.match(/^Requires level (\d+)/); return `<span class="err">${esc(e)}${m?` <button class="linkish" data-fixgrind="${i}:${m[1]}">Add a grind to level ${m[1]} before this</button>`:''}</span>`; }).join('')}${r.warn.map(e=>`<span class="wrn">${esc(e)}</span>`).join('')}${r.custom&&s.t==='turnin'?`<button class="linkish" data-uxp="${i}">${route.qxp?.[s.q]?'Change XP reward':'Set XP reward'}</button>`:''}</span>
+      <span class="x">${r.gained||s.xpo!=null?`<b${s.xpo!=null?' title="XP set by you"':''}>+${fmt(r.gained)}${s.xpo!=null?'*':''}</b><br>`:''}${lvl.toFixed(1)}</span>
+      <span class="sbtns">${s.q?`<a class="wh" href="${whURL(s.q,s.qn)}" target="_blank" rel="noopener" title="Open this quest on Wowhead">wh↗</a>`:''}<button class="opt ${s.opt?'on':''}" data-opt="${i}" title="${s.opt?'Optional (click to make required)':'Mark as optional'}" aria-pressed="${!!s.opt}">opt</button><button class="ed ${s.unote||s.xpo!=null?'on':''}" data-edit="${i}" title="Edit step: note, XP${s.src?'':', text'}" aria-label="Edit step ${i+1}">✎</button><button class="del" data-del="${i}" aria-label="Delete step ${i+1}">×</button></span></li>`);
     if(i===cursor && i<route.steps.length-1) parts.push(`<li class="insert">New steps are added here</li>`);
   });
   if(selSteps.size>1) parts.unshift(`<li class="selbar"><b>${selSteps.size} steps selected</b> <button class="btn sm" data-blk="up" title="Move the block up one step">▲ Up</button><button class="btn sm" data-blk="down" title="Move the block down one step">▼ Down</button><button class="btn sm" data-blk="cursor" title="Move the block to just after the highlighted step">Move after step…</button><button class="btn sm" data-blk="del">Delete</button><button class="btn sm" data-blk="clear">Clear</button><span class="note">Drag any selected step to move them all</span></li>`);
@@ -773,6 +774,7 @@ async function askMoveAfter(idx){ const v=await askText(`Move the ${idx.length} 
   if(idx.includes(n-1)&&!idx.includes(n)) return; moveBlock(idx,n); }
 $('#steps').addEventListener('click',e=>{
   if(e.target.closest('a.wh')){ e.stopPropagation(); return; }
+  const ed=e.target.closest('[data-edit]'); if(ed){ e.stopPropagation(); editStep(+ed.dataset.edit); return; }
   const ux=e.target.closest('[data-uxp]'); if(ux){ e.stopPropagation(); askUXP(route.steps[+ux.dataset.uxp]); return; }
   const bb=e.target.closest('[data-blk]'); if(bb){ e.stopPropagation(); blockAction(bb.dataset.blk); return; }
   const dgs=e.target.closest('[data-dgsel]'); if(dgs){ e.stopPropagation(); selectDungeon(dgs.dataset.dgsel,e.ctrlKey||e.metaKey||e.shiftKey); return; }
@@ -788,6 +790,15 @@ $('#steps').addEventListener('click',e=>{
 });
 $('#steps').addEventListener('dblclick',async e=>{ const li=e.target.closest('[data-i]'); if(!li) return; const s=route.steps[+li.dataset.i];
   if(s&&s.q&&!Q(s.q)&&s.t==='turnin'){ askUXP(s); return; } if(s&&['grind','travel','custom'].includes(s.t)) openStepDialog(s.t,+li.dataset.i); });
+function editStep(i){ const s=route.steps[i], r=SIM.res[i]||{}; const d=$('#dlgEdit');
+  const own=!s.src&&s.t==='travel'&&(s.kind==='note'||s.kind==='goto'); $('#edTextL').hidden=!own; $('#edText').value=own?(s.text||''):'';
+  $('#edTitle').textContent='Edit step '+(i+1); $('#edNote').value=s.unote||''; $('#edXp').value=s.xpo!=null?s.xpo:'';
+  const calc=s.xpo!=null?r.xpCalc:r.gained; $('#edXp').placeholder=String(calc||0); $('#edXpHint').textContent=`Planner's estimate: ${fmt(calc||0)} XP. Leave empty to use it.`+(s.t==='grind'&&s.mode==='to'?' Setting XP here replaces the level target with that amount of XP.':'');
+  const done=v=>{ d.close(); if(!v) return; pushHistory();
+    if(v==='reset'){ delete s.unote; delete s.xpo; }
+    else { const n=$('#edNote').value.replace(/\s+$/,''); if(n) s.unote=n; else delete s.unote; const x=$('#edXp').value.trim(); if(x!==''&&+x>=0) s.xpo=Math.round(+x); else delete s.xpo; if(own){ const t=$('#edText').value.trim(); if(t) s.text=t; } }
+    refresh(); };
+  $('#edOk').onclick=()=>done('ok'); $('#edNo').onclick=()=>done(null); $('#edReset').onclick=()=>done('reset'); d.showModal(); setTimeout(()=>$('#edNote').focus(),0); }
 async function askUXP(s){ { const v=await askText(`XP reward for ${s.qn||'quest '+s.q} (at your level):`,String(route.qxp?.[s.q]||'')); if(v==null) return; pushHistory(); route.qxp=route.qxp||{}; if(+v>0) route.qxp[s.q]=Math.round(+v); else delete route.qxp[s.q]; refresh(); } }
 let dragFrom=null;
 $('#steps').addEventListener('dragstart',e=>{ const li=e.target.closest('.step'); if(!li) return; dragFrom=+li.dataset.i; e.dataTransfer.effectAllowed='move'; e.dataTransfer.setData('text/plain',String(dragFrom)); });
@@ -1063,6 +1074,7 @@ function buildRXP(){
       const out=[]; let cut=0; for(const ln of raw[gsx.rx-1].split('\n')){ const am=ln.match(/^\s*\.(accept|turnin|complete)\s+(\d+)/i); if(am){ const k=actKey(am[1].toLowerCase(),+am[2]); if(blkActs.has(k)&&!runActs.has(k)){ cut++; continue; } } out.push(ln); }
       for(let k=out.length-1;k>=0;k--){ const am=out[k].match(/^\s*\.accept\s+(\d+)/i); if(am&&ESCORT.has(+am[1])&&!out.some(l=>l.includes('Forever bug'))) out.splice(k+1,0,`    >>|cRXP_WARN_${ESC_NOTE}|r`); }
       if(run.some(x=>x.opt)&&!out.some(l=>/^\s*#optional\b/i.test(l))) out.splice(1,0,'    #optional');
+      const un=run.map(x=>x.unote).filter(Boolean); if(un.length){ let e=out.length; while(e>1&&!out[e-1].trim()) e--; out.splice(e,0,...un.flatMap(n=>n.split('\n')).filter(l=>l.trim()).map(l=>'    >>'+l.trim())); }
       const txt=out.join('\n'); seg.items.push({rx:gsx.rx,text:txt,step:i,cut}); seg.lastBlk={g:gg.id,rx:gsx.rx}; seg.prevKey=null; return;
     }
     const r=SIM.res[i]; const p=r.pt; const q=s.q?(Q(s.q)||{n:s.qn||('Quest '+s.q)}):null; const lines=[];
@@ -1083,6 +1095,7 @@ function buildRXP(){
     else if(s.t==='travel'&&s.kind==='ride'&&r.ride){ const rd=r.ride, z=rxpZone(rd.zone); if(!cont&&r.dep) lines.push(gotoLine(r.dep)+',40'+(rd.kind==='Zeppelin'?' >>Go up the Zeppelin Tower':'')); lines.push(`    .zone ${z} >>${rd.text}`); lines.push(`    .zoneskip ${z}`); }
     else if(s.t==='travel'&&s.kind==='hs'){ lines.push(`    .hs >>Hearth to ${r.pt?.label||rxpPlain(s.text||'')}`); lines.push('    .use 6948'); }
     else if(s.t==='travel'){ const t=s.text||''; lines.push(({fly:`    .fly ${t} >>Fly to ${t}`,fp:`    .fp ${t} >>Get the ${t} flight path`,home:`    .home >>Set your Hearthstone to ${t}`,hs:`    .hs >>Hearth to ${t}`,goto:`    >>Go to ${t}`,note:`    >>${t}`})[s.kind]); }
+    if(s.unote) lines.push(...s.unote.split('\n').filter(l=>l.trim()).map(l=>'    >>'+l.trim()));
     L.push(...lines); if(!cont) L.push(...dgl);
     seg.items.push({rx:null,step:i,text:L.join('\n')});
   });
