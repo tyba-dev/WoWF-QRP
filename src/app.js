@@ -1259,7 +1259,17 @@ $('#routeSel').addEventListener('change',e=>{ route=store.routes.find(r=>r.id===
 
 /* ---------- export ---------- */
 function rxpZone(z){ return zoneName(z); }
-function gotoLine(p){ return p?`    .goto ${rxpZone(p.z)},${(+p.px).toFixed(1)},${(+p.py).toFixed(1)}`:null; }
+function gotoLine(p){ if(!p||p.z==null) return null; const Z=META.zones[p.z]; if(Z&&Z.ui&&Z.b){ const [L,R,T,B]=Z.b; const a=L-(+p.px)/100*(L-R), b=T-(+p.py)/100*(T-B); return `    .goto ${Z.ui}/${Z.m},${a.toFixed(2)},${b.toFixed(2)}`; } return `    .goto ${rxpZone(p.z)},${(+p.px).toFixed(1)},${(+p.py).toFixed(1)}`; }
+function talkLines(p,tgt){ const ent=p?.ent||''; const name=tgt||(ent?entName(ent[0],+ent.slice(1)):null); if(!name) return {pre:[],post:[]}; if(!tgt&&ent[0]==='o') return {pre:[`    >>Click the |cRXP_PICK_${name}|r`],post:[]};
+  return {pre:[`    >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_${name}|r`],post:[`    .target ${name}`]}; }
+function objLines(qid,obj){ const out=[], mobs=new Set(); if(!Q(qid)) return {pre:out,mobs:[]}; const uniq=a=>[...new Set(a)].slice(0,3);
+  for(const o of objectives(qid)){ if(o.pre||(obj&&o.rx!==obj)) continue; const names=uniq(o.pts.map(p=>p.label).filter(Boolean));
+    if(o.kind==='kill'){ if(names.length){ out.push(`    >>Kill |cRXP_ENEMY_${names.join('|r and |cRXP_ENEMY_')}|r`); names.forEach(n=>mobs.add(n)); } }
+    else if(o.kind==='loot'){ const src=uniq(o.pts.filter(p=>p.ent?.[0]==='n').map(p=>p.label)), ob=uniq(o.pts.filter(p=>p.ent?.[0]==='o').map(p=>p.label)); const it=o.text.replace(/ \(loot first\)$/,'');
+      if(src.length){ out.push(`    >>Kill |cRXP_ENEMY_${src.join('|r and |cRXP_ENEMY_')}|r. Loot them for |cRXP_LOOT_${it}|r`); src.forEach(n=>mobs.add(n)); } else if(ob.length) out.push(`    >>Loot the |cRXP_PICK_${ob.join('|r and |cRXP_PICK_')}|r for |cRXP_LOOT_${it}|r`); else out.push(`    >>Collect |cRXP_LOOT_${it}|r`); }
+    else if(o.kind==='obj'){ out.push(`    >>Click the |cRXP_PICK_${names[0]||o.text}|r`); }
+    else if(o.kind==='event') out.push(`    >>${o.text}`); }
+  return {pre:out,mobs:[...mobs].slice(0,4)}; }
 function objIndexList(qid){ const q=Q(qid); if(!q) return []; const o=q.o||{}; const out=[]; let i=1; const add=(txt)=>out.push([i++,txt]);
   (o.c||[]).forEach(([id,t])=>add(t||entName('n',id))); (o.o||[]).forEach(([id,t])=>add(t||entName('o',id))); (o.i||[]).forEach(([id,t])=>add(t||DB.i[id]?.n||'item')); (o.k||[]).forEach(k=>add(k[2]||entName('n',k[1]||k[0][0]))); if(q.te) add(q.te[0]); return out; }
 let EXPORT_WARN=[];
@@ -1304,8 +1314,7 @@ function buildRXP(){
     const cont=merge&&key&&key===seg.prevKey; seg.prevKey=key;
     const gp=s.t==='travel'&&(s.kind==='fly'||s.kind==='ride')?r.dep:p;
     const own=s.path||null; if(!cont){ L.push('step'); if(stl) L.push(stl); if(optl) L.push(optl); if(xrl) L.push(xrl); if(own&&own.length>=2){ if(s.loopRaw) L.push(...s.loopRaw); else { L.push('    #loop'); L.push(gotoLine(own[0])+',0'); for(const w of own) L.push(gotoLine(w)+',30,0'); } } const gl=own&&own.length>=2?null:gotoLine(gp); if(gl&&s.t!=='deathskip'&&!(s.t==='travel'&&(s.kind==='hs'||s.kind==='note'||s.kind==='ride'))&&(s.t!=='grind'||s.loc)) L.push(gl); }
-    if(s.t==='accept'){ lines.push(`    .accept ${s.q} >>Accept ${q.on||q.n}`); if(s.tgt) lines.push(`    .target ${s.tgt}`); if(ESCORT.has(s.q)) lines.push(`    >>|cRXP_WARN_${ESC_NOTE}|r`); }
-    else if(s.t==='turnin'){ lines.push(`    .turnin ${s.q} >>Turn in ${q.on||q.n}`); if(s.tgt) lines.push(`    .target ${s.tgt}`); }
+    if(s.t==='accept'||s.t==='turnin'){ const tk=cont?{pre:[],post:[]}:talkLines(p,s.tgt); lines.push(...tk.pre); lines.push(s.t==='accept'?`    .accept ${s.q} >>Accept ${q.on||q.n}`:`    .turnin ${s.q} >>Turn in ${q.on||q.n}`); lines.push(...tk.post); if(s.t==='accept'&&ESCORT.has(s.q)) lines.push(`    >>|cRXP_WARN_${ESC_NOTE}|r`); }
     else if(s.t==='abandon') lines.push(`    .abandon ${s.q} >>Abandon ${q.on||q.n}`);
     else if(s.t==='prof'){ if(s.act==='craft'){ lines.push(`    >>Craft ${s.n>1?s.n+' ':''}[${s.item}]`); if(s.itemId) lines.push(`    .collect ${s.itemId},${s.n||1} --${s.item} (${s.n||1})`); }
       else { const nm=ptrainerOf(s.npc)?.name||s.npcName||'the trainer'; lines.push(`    >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_${nm}|r`); if(s.act==='learn'&&PSPELL[s.prof]) lines.push(`    .train ${PSPELL[s.prof]} >> Train [${s.prof}]`); else lines.push(`    .trainer >> Train ${s.prof}`); lines.push(`    .target ${nm}`); } }
@@ -1319,7 +1328,7 @@ function buildRXP(){
       for(const it of s.items||[]) if(it.id) lines.push(`    .collect ${it.id},${it.c} --Collect ${it.n||itemName(it.id)} (${it.c})`);
       lines.push(`    .target ${nm}`); }
     else if(s.t==='complete'&&s.cl?.length&&!Q(s.q)) lines.push(...s.cl);
-    else if(s.t==='complete'){ const obs=objIndexList(s.q).filter(([n])=>!s.obj||n===s.obj); if(obs.length) obs.forEach(([n,t])=>lines.push(`    .complete ${s.q},${n} --${t}`)); else lines.push(`    >>Complete ${q.on||q.n}`); }
+    else if(s.t==='complete'){ const ol=objLines(s.q,s.obj); lines.push(...ol.pre); const obs=objIndexList(s.q).filter(([n])=>!s.obj||n===s.obj); if(obs.length) obs.forEach(([n,t])=>lines.push(`    .complete ${s.q},${n} --${t}`)); else lines.push(`    >>Complete ${q.on||q.n}`); ol.mobs.forEach(m=>lines.push(`    .mob ${m}`)); }
     else if(s.t==='grind'){ const a=r.after; lines.push(`    .xp ${a.level}${a.xp?'+'+a.xp:''} >>Grind to ${a.level<MAXLVL&&a.xp?fmt(a.xp)+' XP into ':''}level ${a.level}${s.note?' ('+s.note+')':''}`); }
     else if(s.t==='custom'){ const verb={turnin:'Turn in',accept:'Accept',complete:'Complete'}[s.act||'turnin']; if(s.qid&&s.act!=='complete') lines.push(`    .${s.act==='accept'?'accept':'turnin'} ${s.qid} >>${verb} ${s.name}`); else lines.push(`    >>${verb} ${s.name}${s.xp&&s.act==='turnin'?' (+'+s.xp+' XP)':''}`); }
     else if(s.t==='party') lines.push(s.size>1?`    >>Group up with ${s.size-1} other player${s.size>2?'s':''}`:'    >>Continue solo');
