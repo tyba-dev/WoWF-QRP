@@ -246,8 +246,8 @@ function migrateRoute(r){ r.guides=r.guides||[];
   for(const g of r.guides) for(const gs of g.steps||[]) if(gs.opt){ gs.gopt=true; delete gs.opt; }
   for(const st of r.steps||[]){ if(!st.src||st.src.auto||!st.opt) continue; const g=r.guides.find(x=>x.id===st.src.g); if(g&&g.steps&&g.steps[st.src.i]?.gopt){ st.gopt=true; delete st.opt; } }
   return r; }
-function initState(r){ return {level:+r.char.level||1,xp:+r.char.xp||0,party:Math.max(1,+r.char.party||1),log:new Map(),turned:new Set(),fps:new Set(r.char.fps||[]),home:null}; }
-function cloneState(s){ return {level:s.level,xp:s.xp,party:s.party,log:new Map([...s.log].map(([k,v])=>[k,{...v,objs:v.objs?new Set(v.objs):undefined}])),turned:new Set(s.turned),fps:new Set(s.fps),home:s.home}; }
+function initState(r){ return {level:+r.char.level||1,xp:+r.char.xp||0,party:Math.max(1,+r.char.party||1),log:new Map(),turned:new Set(),fps:new Set(r.char.fps||[]),home:null,fq:new Map()}; }
+function cloneState(s){ return {level:s.level,xp:s.xp,party:s.party,log:new Map([...s.log].map(([k,v])=>[k,{...v,objs:v.objs?new Set(v.objs):undefined}])),turned:new Set(s.turned),fps:new Set(s.fps),home:s.home,fq:new Map(s.fq||[])}; }
 // Forever: quest log holds 40, but escort quests can't be started with 25+ quests in the log
 const LOGMAX=40, ESC_LIMIT=25, ESCORT=new Set([155,219,309,435,648,660,665,667,731,836,863,898,938,945,976,994,995,1144,1222,1249,1270,1393,1440,1560,1651,2742,2767,2845,2904,2969,3382,3525,3982,4121,4245,4261,4265,4322,4491,4770,4901,4904,4966,5203,5321,5713,5821,5943,5944,6132,6403,6482,6523,6544,6641,8736]);
 const ESC_NOTE=`Escort quest: have fewer than ${ESC_LIMIT} quests in your log before accepting (Forever bug)`;
@@ -270,9 +270,9 @@ function simulate(){
     if(!skip && route.optOff && s.opt && s.t==='accept') optQ.add(s.q);
     if(skip){ r.inactive=skip; }
     else if((s.t==='accept'||s.t==='complete'||s.t==='turnin'||s.t==='abandon') && !q){ // Forever quest Questie doesn't know yet: kept as written, tracked like a custom quest
-      const xp=+(route.qxp?.[s.q])||0; r.custom=true;
+      const xp=+(route.qxp?.[s.q])||0; r.custom=true; if(!st.fq) st.fq=new Map(); if(s.t==='accept'&&!st.fq.has(s.q)) st.fq.set(s.q,'log'); else if(s.t==='complete'&&st.fq.get(s.q)==='log') st.fq.set(s.q,'ready'); else if(s.t==='turnin') st.fq.set(s.q,'done'); else if(s.t==='abandon') st.fq.delete(s.q);
       if(s.t==='turnin'&&xp){ r.gained=xp; addXP(st,xp); }
-      r.warn.push(`Forever quest not in the Questie database: kept exactly as the guide has it.${s.t==='turnin'?(xp?` Counting ${fmt(xp)} XP.`:' Set its XP reward below if you know it.'):''}`); }
+      r.warn.push(`Forever quest not in the Questie database${s.src?': kept exactly as the guide has it.':' (taken from your imported guides).'}${s.t==='turnin'?(xp?` Counting ${fmt(xp)} XP.`:' Set its XP reward below if you know it.'):''}`); }
     else if(s.t==='accept'){
       const w=whyUnavailable(s.q,st,route); if(w) r.err.push(w.why);
       if(st.log.size>=LOGMAX) r.err.push(`Quest log is full (${LOGMAX})`); else if(ESCORT.has(s.q)&&st.log.size>=ESC_LIMIT) r.err.push(`Escort quest: you have ${st.log.size} quests in your log; drop below ${ESC_LIMIT} before accepting`);
@@ -314,6 +314,19 @@ function nearest(pts,ref){
   if(!pts.length) return null; if(!ref) return pts[0];
   let b=pts[0],bd=1e18; for(const p of pts){ const d=(p.X-ref.X)**2+(p.Y-ref.Y)**2; if(d<bd){bd=d;b=p;} } return b;
 }
+/* ---------- Forever quests known only from your imported guides ---------- */
+const FQ={key:null,map:new Map()};
+function guideLevels(g){ const m=(g.name||'').match(/(\d+)\s*-\s*(\d+)/); return m?[+m[1],+m[2]]:[1,60]; }
+function foreverQuests(){ const key=route.id+':'+(route.guides||[]).map(g=>g.id+'/'+g.steps.length).join(','); if(FQ.key===key) return FQ.map; const m=new Map();
+  for(const g of route.guides||[]){ const [l0,l1]=guideLevels(g); for(const x of g.steps||[]){ if(!x.q||Q(x.q)||!x.cond||!['accept','turnin','complete'].includes(x.t)) continue;
+    let e=m.get(x.q); if(!e) m.set(x.q,e={q:x.q,n:null,acc:[],tin:[],cmp:[],g:g.name,l:l0,l1,tgtA:null,tgtT:null,cl:null});
+    if(x.qn&&!e.n) e.n=x.qn; const L=x.loc&&x.loc.z!=null?{z:x.loc.z,px:+x.loc.px,py:+x.loc.py}:null;
+    if(x.t==='accept'){ if(L) e.acc.push(L); if(!e.tgtA) e.tgtA=x.tgt||null; } else if(x.t==='turnin'){ if(L) e.tin.push(L); if(!e.tgtT) e.tgtT=x.tgt||null; } else { if(L) e.cmp.push(L); if(!e.cl&&x.cl?.length) e.cl=x.cl; } } }
+  for(const e of m.values()) if(!e.n) e.n='Quest '+e.q; FQ.key=key; FQ.map=m; return m; }
+function fqStatus(q,st){ return (st||SIM.st).fq?.get(q)||null; }
+function fqAvail(st){ const out=[]; for(const e of foreverQuests().values()){ const f=fqStatus(e.q,st); if(f==='done') continue; if(!f&&!e.acc.length) continue; if(!f&&st.level<e.l-1) continue; out.push({e,f}); } return out; }
+function fqStep(t,q){ const e=foreverQuests().get(+q); if(!e) return null; const loc=(t==='accept'?e.acc:t==='turnin'?e.tin:e.cmp)[0]||e.acc[0]||null; const s={t,q:e.q,qn:e.n}; if(loc) s.loc={...loc}; const tg=t==='accept'?e.tgtA:t==='turnin'?e.tgtT:null; if(tg) s.tgt=tg; if(t==='complete'&&e.cl) s.cl=[...e.cl]; return s; }
+function fqRow(a){ const e=a.e; const xp=+(route.qxp?.[e.q])||0; return `<div class="qrow" data-fq="${e.q}"><span class="lv">${e.l}</span><span class="nm"><span>${esc(e.n)}</span><br><span class="meta">${esc(e.g)} · ${a.f==='log'?'in your log':a.f==='ready'?'ready to turn in':'Forever quest'}${xp?' · +'+fmt(xp)+' XP':''}</span></span><span class="row" style="gap:3px">${a.f?'':`<button class="btn sm" data-fqa="accept:${e.q}">Accept</button>`}${a.f==='log'?`<button class="btn sm" data-fqa="complete:${e.q}">Complete</button>`:''}${a.f?`<button class="btn sm" data-fqa="turnin:${e.q}">Turn in</button>`:''}</span></div>`; }
 /* ---------- vendors ---------- */
 function vendorOf(id){ const v=META.vend?.[id]; return v?{id:+id,name:v[0],sub:v[1],fac:v[2],sp:v[3],items:v[4]}:null; }
 function vendorOK(v){ const f=charInfo(route).fac; return !v.fac||v.fac.includes(f); }
@@ -587,6 +600,8 @@ const QCOL=['#ff6b6b','#5ec8ff','#ffd24a','#8ef08e','#ff9de2','#c49bff','#ffae57
 function qColor(qid){ return QCOL[qid%QCOL.length]; }
 function drawQuests(){
   const s=view.s; const st=SIM.st; const lv=st.level; const small=s<0.02;
+  if(layers.avail&&s>=0.02) for(const a of fqAvail(st)){ const e=a.e; const L=a.f?(a.f==='ready'?e.tin:e.cmp.length?e.cmp:e.tin):e.acc; const l=L[0]; if(!l) continue; const p=zp2plane(l.z,l.px,l.py); if(!p) continue; const [x,y]=toS(p); if(x<-10||x>W+10||y<-10||y>H+10) continue;
+    ctx.font='900 17px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.lineWidth=3.5; ctx.strokeStyle='#08262a'; const ch=a.f==='ready'?'?':a.f?'◆':'!'; ctx.strokeText(ch,x,y); ctx.fillStyle='#4fe3d0'; ctx.fillText(ch,x,y); hits.push({x,y,r:10,kind:'fq',q:e.q,label:e.n}); }
   // objectives for quests in log
   const dgAgg=new Map();
   if(layers.objectives){
@@ -939,6 +954,7 @@ function renderRight(){
     let html=''; let n=0;
     for(const k of order){ const list=groups[k].sort((a,b)=>(!!a.locked-!!b.locked)||Q(a.qid).l-Q(b.qid).l||Q(a.qid).n.localeCompare(Q(b.qid).n)); n+=list.length;
       html+=`<div class="qgroup"><h3>${esc(k)} (${list.length})</h3>${list.slice(0,150).map(a=>a.ok?qRow(a.qid):a.locked?lockRow(a):qRow(a.qid,'Unlocks at level '+a.level,a.level)).join('')}</div>`; }
+    { const fl=fqAvail(SIM.st).filter(a=>!f||a.e.n.toLowerCase().includes(f)||String(a.e.q)===f).sort((a,b)=>a.e.l-b.e.l||a.e.n.localeCompare(b.e.n)); if(fl.length) html=`<div class="qgroup"><h3>Forever quests from your guides (${fl.length})</h3><p class="note" style="margin:2px 0 6px">Not in Questie yet: locations come from the guides you imported.</p>${fl.slice(0,150).map(fqRow).join('')}</div>`+html; }
     body.innerHTML=html||`<div class="empty">No quests match. Try another zone filter, or add a grind step to reach the next unlock level.</div>`;
   } else if(tab==='log'){
     const st=SIM.st; const rows=[...st.log].map(([qid,v])=>{ const q=Q(qid); if(!q) return ''; const dc=diffClass(q.l,st.level);
@@ -1021,6 +1037,8 @@ function showPop(h,x,y){
     html+=`<h4>${esc(h.label)}</h4><div class="it">${node?`<span class="note">${esc(META.taxi.nodes[node].n)}${SIM.st.fps.has(node)?' · learned':''}</span>`:''}<div class="row">${node?`<button class="btn sm gold" data-fpnode="${node}">Get flight path</button><button class="btn sm" data-flynode="${node}">Fly here</button>`:`<button class="btn sm gold" data-fp="${esc(place)}" ${locAttr(h.loc)}>Get flight path</button><button class="btn sm" data-fly="${esc(place)}" ${locAttr(h.loc)}>Fly here</button>`}</div></div>`;
   } else if(h.kind==='town'){
     html+=`<h4>${esc(h.label)}</h4><div class="it"><div class="row"><button class="btn sm" data-home="${esc(h.label)}" ${locAttr(h.loc)}>Set hearthstone</button><button class="btn sm" data-hs="${esc(h.label)}" ${locAttr(h.loc)}>Hearth here</button><button class="btn sm" data-goto="${esc(h.label)}" ${locAttr(h.loc)}>Go here</button>${flyBtn(zp2plane(h.loc.z,h.loc.px,h.loc.py))}</div></div>`;
+  } else if(h.kind==='fq'){ const e=foreverQuests().get(h.q); const f=fqStatus(h.q);
+    html+=`<h4>${esc(e.n)}</h4><div class="it"><span class="note">Forever quest (not in Questie yet) · from ${esc(e.g)}${e.tgtA?' · '+esc(e.tgtA):''}</span><div class="row">${f?'':`<button class="btn sm gold" data-fqa="accept:${e.q}">Accept</button>`}${f==='log'?`<button class="btn sm gold" data-fqa="complete:${e.q}">Complete</button>`:''}${f?`<button class="btn sm${f==='ready'?' gold':''}" data-fqa="turnin:${e.q}">Turn in</button>`:''}<a class="btn sm" href="${whURL(e.q,e.n)}" target="_blank" rel="noopener">Wowhead</a></div></div>`;
   } else if(h.kind==='vendor'){ const v=vendorOf(h.vid);
     html+=`<h4>${esc(v.name)}</h4><div class="it"><span class="note">${esc(v.sub||'Vendor')}${v.items.length?' · sells '+v.items.slice(0,6).map(i=>esc(itemName(i))).join(', ')+(v.items.length>6?'…':''):''}</span><div class="row"><button class="btn sm gold" data-buyv="${v.id}">Buy from ${esc(v.name)}</button></div></div>`;
   } else if(h.kind==='dock'){
@@ -1105,6 +1123,7 @@ $('#buyNo').addEventListener('click',()=>$('#dlgBuy').close());
 $('#buyOk').addEventListener('click',()=>{ if(buyCtx.vid==null){ $('#buyMsg').textContent='Pick a vendor first.'; return; } if(!buyCtx.items.size){ $('#buyMsg').textContent='Tick at least one item.'; return; }
   const v=vendorOf(buyCtx.vid); const step={t:'buy',npc:v.id,npcName:v.name,items:[...buyCtx.items.values()].map(it=>({id:it.id||null,n:it.n||itemName(it.id),c:it.c}))}; $('#dlgBuy').close();
   if(buyCtx.i!=null){ pushHistory(); Object.assign(route.steps[buyCtx.i],step); refresh(); } else addStep(step); });
+document.addEventListener('click',e=>{ const b=e.target.closest('[data-fqa]'); if(!b) return; e.stopPropagation(); hidePop(); const [t,q]=b.dataset.fqa.split(':'); const st=fqStep(t,+q); if(st){ addStep(st); if(t==='turnin'&&!route.qxp?.[+q]) toast('Set its XP reward with “Set XP” on the step if you know it.',4000); } });
 document.addEventListener('click',e=>{ const b=e.target.closest('[data-buyv]'); if(!b) return; hidePop(); openBuy(null,+b.dataset.buyv); });
 $('#pathDone').addEventListener('click',stopPathEdit); document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&pathEdit!=null) stopPathEdit(); });
 $('#pickCancel').addEventListener('click',()=>{ const cb=picking; stopPick(); cb&&cb(null); });
@@ -1188,13 +1207,14 @@ function buildRXP(){
     const cont=merge&&key&&key===seg.prevKey; seg.prevKey=key;
     const gp=s.t==='travel'&&(s.kind==='fly'||s.kind==='ride')?r.dep:p;
     const own=s.path||null; if(!cont){ L.push('step'); if(stl) L.push(stl); if(optl) L.push(optl); if(xrl) L.push(xrl); if(own&&own.length>=2){ if(s.loopRaw) L.push(...s.loopRaw); else { L.push('    #loop'); L.push(gotoLine(own[0])+',0'); for(const w of own) L.push(gotoLine(w)+',30,0'); } } const gl=own&&own.length>=2?null:gotoLine(gp); if(gl&&!(s.t==='travel'&&(s.kind==='hs'||s.kind==='note'||s.kind==='ride'))&&(s.t!=='grind'||s.loc)) L.push(gl); }
-    if(s.t==='accept'){ lines.push(`    .accept ${s.q} >>Accept ${q.on||q.n}`); if(ESCORT.has(s.q)) lines.push(`    >>|cRXP_WARN_${ESC_NOTE}|r`); }
-    else if(s.t==='turnin') lines.push(`    .turnin ${s.q} >>Turn in ${q.on||q.n}`);
+    if(s.t==='accept'){ lines.push(`    .accept ${s.q} >>Accept ${q.on||q.n}`); if(s.tgt) lines.push(`    .target ${s.tgt}`); if(ESCORT.has(s.q)) lines.push(`    >>|cRXP_WARN_${ESC_NOTE}|r`); }
+    else if(s.t==='turnin'){ lines.push(`    .turnin ${s.q} >>Turn in ${q.on||q.n}`); if(s.tgt) lines.push(`    .target ${s.tgt}`); }
     else if(s.t==='abandon') lines.push(`    .abandon ${s.q} >>Abandon ${q.on||q.n}`);
     else if(s.t==='buy'){ const v=vendorOf(s.npc), nm=v?.name||s.npcName||'the vendor'; lines.push(`    >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_${nm}|r`);
       for(const it of s.items||[]) lines.push(`    >>|cRXP_BUY_Buy|r ${it.c>1?it.c+' ':''}[${it.n||itemName(it.id)}] |cRXP_BUY_from|r |cRXP_FRIENDLY_${nm}|r`);
       for(const it of s.items||[]) if(it.id) lines.push(`    .collect ${it.id},${it.c} --Collect ${it.n||itemName(it.id)} (${it.c})`);
       lines.push(`    .target ${nm}`); }
+    else if(s.t==='complete'&&s.cl?.length&&!Q(s.q)) lines.push(...s.cl);
     else if(s.t==='complete'){ const obs=objIndexList(s.q).filter(([n])=>!s.obj||n===s.obj); if(obs.length) obs.forEach(([n,t])=>lines.push(`    .complete ${s.q},${n} --${t}`)); else lines.push(`    >>Complete ${q.on||q.n}`); }
     else if(s.t==='grind'){ const a=r.after; lines.push(`    .xp ${a.level}${a.xp?'+'+a.xp:''} >>Grind to ${a.level<MAXLVL&&a.xp?fmt(a.xp)+' XP into ':''}level ${a.level}${s.note?' ('+s.note+')':''}`); }
     else if(s.t==='custom'){ const verb={turnin:'Turn in',accept:'Accept',complete:'Complete'}[s.act||'turnin']; if(s.qid&&s.act!=='complete') lines.push(`    .${s.act==='accept'?'accept':'turnin'} ${s.qid} >>${verb} ${s.name}`); else lines.push(`    >>${verb} ${s.name}${s.xp&&s.act==='turnin'?' (+'+s.xp+' XP)':''}`); }
@@ -1374,7 +1394,7 @@ function convertLoc(z,px,py,convert){ const cv=META.zones[z]?.cv; if(convert&&cv
 function buildGuideSteps(g,convert){
   const steps=[]; let unknownZones=new Set();
   g.blocks.forEach((b,bi)=>{
-    const bOK=condOK(b.cond)&&!b.ver; let loc=null, firstLoc=null; const pend=[]; const notes=[]; const seenC=new Set(); const dg=[], dgs=[]; let lmin=0, lmax=0; const startN=steps.length; const disp=[]; const reqs=[]; let gotoTxt=''; const gl=[];
+    const bOK=condOK(b.cond)&&!b.ver; let loc=null, firstLoc=null; const pend=[]; const notes=[]; const seenC=new Set(); const dg=[], dgs=[]; let lmin=0, lmax=0; const startN=steps.length; const disp=[]; const reqs=[]; let gotoTxt=''; const gl=[]; const tgts=[];
     for(const line of b.lines){
       const [main,econd]=line.split('<<'); const ok=bOK&&condOK(econd||''); const txt=(main.match(/>>\s*(.*)$/)||[])[1]||''; const cmd=main.replace(/>>.*$/,'').trim();
       if(txt&&ok&&!/^\.(accept|turnin|complete|goto|xp)\b/i.test(cmd)) disp.push(txt.trim());
@@ -1385,6 +1405,7 @@ function buildGuideSteps(g,convert){
       if((m=cmd.match(/^\.maxlevel\s+(\d+)/i))){ if(ok){ const L=+m[1]+1; lmax=lmax?Math.min(lmax,L):L; } continue; }
       if((m=cmd.match(/^\.dungeon\s+(!?)\s*([^\s>]+)/i))){ const tag=dgTag(m[2]); (m[1]?dgs:dg).push(tag); continue; }
       if(/^\.goto\b/i.test(cmd)&&txt&&ok&&!gotoTxt) gotoTxt=txt.trim();
+      { const tm=cmd.match(/^\.target\s+(.+)$/i); if(tm&&ok) tgts.push(tm[1].replace(/^\+/,'').trim()); }
       if((m=cmd.match(/^\.goto\s+(\d+)\/(\d+)\s*,\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)/i))){ if(!ok) continue; // "uiMapId/continent, worldY, worldX" (Forever guides)
         const z=zoneFromName(m[1]); const Z=z!=null?META.zones[z]:null; if(!Z){ unknownZones.add(m[1]+'/'+m[2]); continue; } const [Lb,Rb,Tb,Bb]=Z.b; const px=(Lb-(+m[3]))/(Lb-Rb)*100, py=(Tb-(+m[4]))/(Tb-Bb)*100;
         loc=convertLoc(z,px,py,false); if(loc) gl.push(loc); if(!firstLoc) firstLoc=loc; for(const p of pend) if(!p.loc) p.loc=loc; continue; }
@@ -1408,6 +1429,7 @@ function buildGuideSteps(g,convert){
     const nt=dj?{txt:dj,ok:true}:gotoTxt?{txt:gotoTxt,ok:true}:(notes[0]||(mobs.length?{txt:'Kill '+mobs.slice(0,3).join(', '),ok:true}:firstLoc?{txt:'Go to '+zoneName(firstLoc.z),ok:true}:hasCmd?{txt:'Guide step',ok:true}:null));
     if(!pend.length && nt){ steps.push({t:'travel',kind:firstLoc?'goto':'note',text:nt.txt,loc:firstLoc,cond:bOK&&nt.ok,rx:bi+1,info:true}); }
     if(reqs.length) for(let k=startN;k<steps.length;k++) steps[k].reqs=reqs;
+    for(let k=startN;k<steps.length;k++){ const x=steps[k]; if(!x.q||Q(x.q)) continue; if((x.t==='accept'||x.t==='turnin')&&tgts.length) x.tgt=tgts[0]; if(x.t==='complete'){ const re=new RegExp('^\\s*\\.complete\\s+'+x.q+'\\b','i'); x.cl=(b.raw||[]).filter(l=>re.test(l)).map(l=>'    '+l.trim()); } }
     if(b.loop&&gl.length>=2){ const lr=['    #loop',...(b.raw||[]).filter(l=>/^\s*\.goto\b/i.test(l))]; for(let k=startN;k<steps.length;k++){ steps[k].path=gl.map(l=>({z:l.z,px:+l.px,py:+l.py})); steps[k].loopRaw=lr; } }
     for(let k=startN;k<steps.length;k++){ if(b.completewith) steps[k].cw=b.completewith; if(b.sticky||b.completewith) steps[k].sticky=true; if(b.label) steps[k].label=b.label; }
     if(b.optional) for(let k=startN;k<steps.length;k++) steps[k].gopt=true;
