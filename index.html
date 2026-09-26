@@ -307,6 +307,7 @@ dialog textarea{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-
         <button class="btn" id="zfit" aria-label="Show all of Azeroth">All</button>
         <button class="btn" id="zcur" aria-label="Center on the selected step">Step</button>
       </div>
+      <div class="pickbar" id="pathbar" style="max-width:90%;font-weight:600"><span id="pathMsg"></span> <button class="btn sm" id="pathDone">Done</button></div>
       <div class="pickbar" id="pickbar">Click the map to place it <button class="btn sm" id="pickCancel">Cancel</button></div>
       <div class="tip" id="tip"></div>
       <div class="status" id="status"></div>
@@ -454,6 +455,7 @@ dialog textarea{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-
 <dialog id="dlgEdit"><div class="dl"><h2 id="edTitle" style="margin:0 0 6px">Edit step</h2>
   <label id="edTextL">Step text<input type="text" id="edText"></label>
   <label>Note (shown on this step; one line per note)<textarea id="edNote" rows="3" placeholder="e.g. Kill the boars on the way"></textarea></label>
+  <div id="edPathRow" class="row" style="gap:6px;align-items:center;flex-wrap:wrap"><span class="note" id="edPathInfo"></span><button class="btn sm" id="edPathEdit" type="button">Edit on map</button><button class="btn sm" id="edPathGen" type="button">Regenerate</button><button class="btn sm" id="edPathRm" type="button">Remove path</button></div>
   <label>XP this step gives<input type="number" id="edXp" min="0" style="width:140px"></label>
   <p class="note" id="edXpHint" style="margin:0"></p>
   <div class="actions"><button class="btn" id="edReset">Clear edits</button><button class="btn" id="edNo">Cancel</button><button class="btn gold" id="edOk">Save</button></div></div></dialog>
@@ -762,6 +764,7 @@ function simulate(){
     if(s.xpo!=null&&!r.inactive){ r.xpCalc=r.gained; st.level=r.before.level; st.xp=r.before.xp; r.gained=+s.xpo; addXP(st,r.gained); }
     r.after={level:st.level,xp:st.xp}; r.logSize=st.log.size; r.party=st.party;
     if(r.inactive) r.pt=null; else if(!travelGeo(s,r,st,lastPt)) r.pt=stepPoint(s,lastPt);
+    if(!r.inactive){ const P=pathOf(s); if(P&&P.length>=2){ r.path=pathPts(P); if(r.path.length) r.pt=Object.assign({},r.pt||{},r.path[0]); } }
     r.from=lastPt; r.stk=isSticky(s); if(r.pt&&!r.stk) lastPt=r.pt;
     res.push(r);
     if(i===cursor) atCursor=cloneState(st);
@@ -1093,6 +1096,10 @@ function drawRoute(){
     if(!P){ walkStyle(f); if(P===undefined){ ctx.globalAlpha=.45; ctx.setLineDash([2,6]); } poly([a,b]); ctx.globalAlpha=1; return; }
     for(const sg of P.segs){ if(sg.k==='ship'){ ctx.strokeStyle=f?'rgba(120,200,255,.45)':'rgba(120,200,255,.95)'; ctx.lineWidth=2; ctx.setLineDash([3,5]); poly(sg.pts); } else { walkStyle(f); poly(sg.pts); } } };
   const lp=pts.filter(x=>!x.r.stk);
+  pathHits=[]; SIM.res.forEach((r,i)=>{ if(!r.path||r.path.length<2) return; const f=i>cursor, ed=pathEdit===i; const P=r.path.map(toS);
+    ctx.strokeStyle=ed?'rgba(120,255,160,.95)':f?'rgba(140,230,170,.4)':'rgba(120,235,160,.85)'; ctx.lineWidth=ed?2.5:1.8; ctx.setLineDash(ed?[]:[6,4]); ctx.beginPath(); P.forEach(([x,y],k)=>k?ctx.lineTo(x,y):ctx.moveTo(x,y)); ctx.closePath(); ctx.stroke(); ctx.setLineDash([]);
+    P.forEach(([x,y],k)=>{ ctx.fillStyle=ed?'#fff':ctx.strokeStyle; ctx.beginPath(); ctx.arc(x,y,ed?6:2.5,0,7); ctx.fill(); if(ed){ ctx.strokeStyle='#1b6b3a'; ctx.lineWidth=2; ctx.stroke(); ctx.fillStyle='#1b6b3a'; ctx.font='700 9px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(String(k+1),x,y+.5); ctx.strokeStyle='rgba(120,255,160,.95)'; } });
+    if(ed) pathHits=P.map(([x,y],k)=>({x,y,k})); });
   for(const {i,p,r} of pts) if(r.stk){ const [x,y]=toS(p); ctx.strokeStyle=i>cursor?'rgba(255,230,160,.45)':'rgba(255,205,70,.9)'; ctx.lineWidth=1.5; ctx.setLineDash([2,3]); ctx.beginPath(); ctx.arc(x,y,9,0,7); ctx.stroke(); ctx.setLineDash([]); }
   for(let k=1;k<lp.length;k++){ const {i,p,r}=lp[k]; const prev=lp[k-1].p; const f=i>cursor; const lt=r.leg?.type;
     if(lt==='hs') continue;
@@ -1110,18 +1117,22 @@ function drawRoute(){
 }
 /* pointer interaction */
 const ptrs=new Map(); let dragStart=null, moved=false, pinch=null, picking=null;
-canvas.addEventListener('pointerdown',e=>{ canvas.setPointerCapture(e.pointerId); ptrs.set(e.pointerId,{x:e.offsetX,y:e.offsetY}); moved=false; dragStart={x:e.offsetX,y:e.offsetY,tx:view.tx,ty:view.ty};
+canvas.addEventListener('pointerdown',e=>{ if(pathEdit!=null&&e.button===0){ const h=pathHits.find(h=>Math.hypot(h.x-e.offsetX,h.y-e.offsetY)<10); if(h){ canvas.setPointerCapture(e.pointerId); pathDrag={k:h.k,moved:false}; e.preventDefault(); return; } }
+  canvas.setPointerCapture(e.pointerId); ptrs.set(e.pointerId,{x:e.offsetX,y:e.offsetY}); moved=false; dragStart={x:e.offsetX,y:e.offsetY,tx:view.tx,ty:view.ty};
   if(ptrs.size===2){ const [a,b]=[...ptrs.values()]; pinch={d:Math.hypot(a.x-b.x,a.y-b.y),s:view.s}; } hidePop(); });
 canvas.addEventListener('pointermove',e=>{
+  if(pathDrag){ const s=route.steps[pathEdit]; const r=SIM.res[pathEdit]; if(!pathDrag.moved){ pushHistory(); pathDrag.moved=true; if(!s.path){ s.path=pathOf(s).map(l=>({...l})); } delete s.loopRaw; s.pathSrc='edited'; }
+    const X=(e.offsetX-view.tx)/view.s, Y=(e.offsetY-view.ty)/view.s; const z=s.path[pathDrag.k].z; s.path[pathDrag.k]=planeToZp(z,X,Y); if(r.path) r.path[pathDrag.k]={...r.path[pathDrag.k],X,Y}; requestDraw(); return; }
   if(ptrs.has(e.pointerId)){ ptrs.set(e.pointerId,{x:e.offsetX,y:e.offsetY});
     if(ptrs.size===2&&pinch){ const [a,b]=[...ptrs.values()]; const d=Math.hypot(a.x-b.x,a.y-b.y); zoomAt((pinch.s*d/pinch.d)/view.s,(a.x+b.x)/2,(a.y+b.y)/2); moved=true; return; }
     const dx=e.offsetX-dragStart.x, dy=e.offsetY-dragStart.y; if(Math.abs(dx)+Math.abs(dy)>4) moved=true;
     if(moved){ canvas.classList.add('dragging'); view.tx=dragStart.tx+dx; view.ty=dragStart.ty+dy; requestDraw(); } $('#tip').style.display='none'; return; }
   hover(e.offsetX,e.offsetY);
 });
-function endPtr(e){ ptrs.delete(e.pointerId); if(ptrs.size<2) pinch=null; canvas.classList.remove('dragging');
+function endPtr(e){ if(pathDrag){ const m=pathDrag.moved; pathDrag=null; if(m) refresh(); return; } ptrs.delete(e.pointerId); if(ptrs.size<2) pinch=null; canvas.classList.remove('dragging');
   if(!moved && e.type==='pointerup') click(e.offsetX,e.offsetY); }
 canvas.addEventListener('pointerup',endPtr); canvas.addEventListener('pointercancel',endPtr);
+canvas.addEventListener('contextmenu',e=>{ if(pathEdit==null) return; const h=pathHits.find(h=>Math.hypot(h.x-e.offsetX,h.y-e.offsetY)<10); if(!h) return; e.preventDefault(); pathDelPt(h.k); });
 canvas.addEventListener('pointerleave',()=>{$('#tip').style.display='none';});
 canvas.addEventListener('wheel',e=>{ e.preventDefault(); zoomAt(Math.exp(-e.deltaY*(e.deltaMode?0.05:0.0016)),e.offsetX,e.offsetY); },{passive:false});
 canvas.addEventListener('keydown',e=>{ const k=e.key; if(k==='+'||k==='=') zoomAt(1.3,W/2,H/2); else if(k==='-') zoomAt(1/1.3,W/2,H/2); else if(k.startsWith('Arrow')){ const d=60; if(k==='ArrowLeft')view.tx+=d; if(k==='ArrowRight')view.tx-=d; if(k==='ArrowUp')view.ty+=d; if(k==='ArrowDown')view.ty-=d; requestDraw(); } else return; e.preventDefault(); });
@@ -1142,7 +1153,9 @@ function hover(x,y){
   tip.innerHTML=html; tip.style.display='block';
   const tw=tip.offsetWidth; tip.style.left=Math.min(W-tw-8,x+14)+'px'; tip.style.top=(y+14)+'px';
 }
-function click(x,y){
+function click(x,y){ if(pathEdit!=null&&pathClick(x,y)) return;
+  return click0(x,y); }
+function click0(x,y){
   if(picking){ const X=(x-view.tx)/view.s, Y=(y-view.ty)/view.s; const z=plane2zone(X,Y); if(!z){ toast('That spot is outside every zone'); return; } const cb=picking; stopPick(); cb({z:z.z,px:z.px,py:z.py}); return; }
   const h=hitAt(x,y); if(!h){ hidePop(); return; }
   if(h.kind==='route'){ setCursor(h.step); return; }
@@ -1177,8 +1190,37 @@ function undo(){ selSteps.clear(); const h=history.pop(); if(!h) return toast('N
 function stepGuide(s){ return s.src&&!s.src.auto&&typeof G==='function'?G(s.src.g)?.steps[s.src.i]:null; }
 function isSticky(s){ const gs=stepGuide(s); return gs?!!(gs.sticky||gs.cw):!!s.stk; }
 function guideStickyDefault(t,q){ for(const g of route.guides||[]) for(const x of g.steps||[]) if(x.q===q&&x.t===t&&x.cond&&(x.sticky||x.cw)) return {stk:x.cw==='next'?'next':'sticky',g:g.name}; return null; }
-function addStep(step){ let d=null; if(!step.src&&step.q&&['accept','complete','turnin'].includes(step.t)&&step.stk===undefined){ d=guideStickyDefault(step.t,step.q); if(d) step.stk=d.stk; }
-  if(d) setTimeout(()=>toast(`Made sticky (${d.stk==='next'?'done with the next step':'stays on screen until done'}) as in ${d.g}. Click 📌 on the step to change.`,4000),0);
+/* ---------- objective paths (#loop): the arrow walks you round the spawns ---------- */
+function planeToZp(z,X,Y){ const Z=META.zones[z]; const [L,R,T,B]=Z.b; const off=META.off[Z.m]; const wy=-(X-off[0]), wx=-(Y-off[1]); return {z:+z,px:+((L-wy)/(L-R)*100).toFixed(2),py:+((T-wx)/(T-B)*100).toFixed(2)}; }
+function pathOf(s){ return s.path!==undefined?s.path:(stepGuide(s)?.path||null); }
+function pathPts(path){ return (path||[]).map(l=>zp2plane(l.z,l.px,l.py)).filter(Boolean); }
+function guidePathFor(q){ for(const g of route.guides||[]) for(const x of g.steps||[]) if(x.q===q&&x.t==='complete'&&x.cond&&x.path&&x.path.length>=2) return {path:x.path.map(l=>({...l})),raw:x.loopRaw?[...x.loopRaw]:null,g:g.name}; return null; }
+function genPath(qid,obj,ref){
+  if(!Q(qid)) return null; const obs=objectives(qid).filter(o=>(!obj||o.rx===obj)&&['kill','loot','obj'].includes(o.kind));
+  let pts=obs.flatMap(o=>o.pts).filter(p=>p&&!p.dg&&p.z!=null); if(pts.length<4) return null;
+  const cl=new Map(); for(const p of pts){ const k=Math.round(p.X/300)+','+Math.round(p.Y/300); if(!cl.has(k)) cl.set(k,[]); cl.get(k).push(p); }
+  let best=null,bs=-1e18; for(const g of cl.values()){ const mx=g.reduce((a,p)=>a+p.X,0)/g.length, my=g.reduce((a,p)=>a+p.Y,0)/g.length; const d=ref?Math.hypot(mx-ref.X,my-ref.Y):0; const sc=g.length*400-d; if(sc>bs){ bs=sc; best={mx,my}; } }
+  const sel=pts.filter(p=>Math.hypot(p.X-best.mx,p.Y-best.my)<=420); if(sel.length<4) return null;
+  const cells=new Map(); for(const p of sel){ const k=Math.floor(p.X/70)+','+Math.floor(p.Y/70); if(!cells.has(k)) cells.set(k,[]); cells.get(k).push(p); }
+  let W=[...cells.values()].map(g=>({X:g.reduce((a,p)=>a+p.X,0)/g.length,Y:g.reduce((a,p)=>a+p.Y,0)/g.length,n:g.length}));
+  if(W.length>10){ let C=[...W].sort((a,b)=>b.n-a.n).slice(0,10).map(w=>({X:w.X,Y:w.Y}));
+    for(let it=0;it<10;it++){ const acc=C.map(()=>({X:0,Y:0,n:0})); for(const p of sel){ let bi=0,bd=1e18; C.forEach((c,k)=>{ const d=(c.X-p.X)**2+(c.Y-p.Y)**2; if(d<bd){bd=d;bi=k;} }); acc[bi].X+=p.X; acc[bi].Y+=p.Y; acc[bi].n++; } C=acc.filter(a=>a.n).map(a=>({X:a.X/a.n,Y:a.Y/a.n,n:a.n})); }
+    W=C; }
+  if(W.length<3) return null;
+  // tour: nearest neighbour from the point closest to where you arrive, then 2-opt on the closed loop
+  let start=0; if(ref){ let bd=1e18; W.forEach((w,k)=>{ const d=Math.hypot(w.X-ref.X,w.Y-ref.Y); if(d<bd){bd=d;start=k;} }); }
+  const left=new Set(W.keys()); left.delete(start); const T=[start]; while(left.size){ const a=W[T[T.length-1]]; let bk=-1,bd=1e18; for(const k of left){ const d=Math.hypot(W[k].X-a.X,W[k].Y-a.Y); if(d<bd){bd=d;bk=k;} } T.push(bk); left.delete(bk); }
+  const D=(a,b)=>Math.hypot(W[a].X-W[b].X,W[a].Y-W[b].Y); let imp=true, guard=0;
+  while(imp&&guard++<50){ imp=false; for(let a=1;a<T.length-1;a++) for(let b=a+1;b<T.length;b++){ const p=T[a-1],q=T[a],r=T[b],t=T[(b+1)%T.length]; if(D(p,r)+D(q,t)<D(p,q)+D(r,t)-0.01){ T.splice(a,b-a+1,...T.slice(a,b+1).reverse()); imp=true; } } }
+  return T.map(k=>{ const w=W[k]; let bz=sel[0], bd=1e18; for(const p of sel){ const d=(p.X-w.X)**2+(p.Y-w.Y)**2; if(d<bd){bd=d;bz=p;} } return planeToZp(bz.z,w.X,w.Y); });
+}
+function routeRefBefore(i){ for(let k=Math.min(i,route.steps.length)-1;k>=0;k--) if(SIM.res[k]?.pt&&!SIM.res[k].stk) return SIM.res[k].pt; return null; }
+function defaultPath(step,at){ if(step.src||step.t!=='complete'||!step.q||step.path) return null; const gp=guidePathFor(step.q); if(gp){ step.path=gp.path; if(gp.raw) step.loopRaw=gp.raw; step.pathSrc=gp.g; return 'guide'; }
+  const p=genPath(step.q,step.obj,routeRefBefore(at)); if(p){ step.path=p; step.pathSrc='generated'; return 'gen'; } return null; }
+function addStep(step){ const pk=defaultPath(step,cursor+1); const msgs=[]; if(pk) msgs.push(pk==='guide'?`Path copied from ${step.pathSrc}.`:`Rough path generated through the spawns (${step.path.length} points): click 🔁 on the step to adjust it.`);
+  let d=null; if(!step.src&&step.q&&['accept','complete','turnin'].includes(step.t)&&step.stk===undefined){ d=guideStickyDefault(step.t,step.q); if(d) step.stk=d.stk; }
+  if(d) msgs.push(`Made sticky (${d.stk==='next'?'done with the next step':'stays on screen until done'}) as in ${d.g}: click 📌 to change.`);
+  if(msgs.length) setTimeout(()=>toast(msgs.join(' '),5000),0);
   pushHistory(); route.steps.splice(cursor+1,0,step); cursor++; refresh(); scrollCursor(); }
 function markRemoved(st){ if(!st?.src||st.src.auto) return; const g=G(st.src.g); if(!g) return; g.removed=g.removed||[]; if(!g.removed.includes(st.src.i)) g.removed.push(st.src.i); }
 function removeStep(i){ pushHistory(); markRemoved(route.steps[i]); route.steps.splice(i,1); if(cursor>=i) cursor--; refresh(); }
@@ -1199,7 +1241,7 @@ function renderSteps(){
     const lvl=r.after.level+(r.after.level<MAXLVL?r.after.xp/XP_TABLE[r.after.level]:0);
     parts.push(`<li tabindex="-1" class="step ${i===cursor?'cur':''} ${i>cursor?'future':''} ${r.inactive?'inactive':''} ${dgTags.length?'dgstep':''} ${s.opt?'optstep':''} ${selSteps.has(i)?'msel':''}" data-i="${i}" draggable="true">
       <span class="n" title="Drag to reorder">${i+1}</span><span class="ic ${tx.cls} ${dq?'dq':''}" aria-hidden="true">${tx.ic}</span>
-      <span class="t">${''}${s.src&&s.t==='travel'&&(s.kind==='note'||s.kind==='goto')?rxpHTML(tx.t):esc(rxpPlain(tx.t))}${(()=>{const gs=s.src&&!s.src.auto?G(s.src.g)?.steps[s.src.i]:null; return gs?notesHTML(gs,s.t==='travel'&&(s.kind==='note'||s.kind==='goto')?(s.text||''):''):'';})()}${s.t==='grind'&&r.party>1?`<span class="sub">in a group of ${r.party}</span>`:''}${r.kill?`<span class="sub kx">≈${fmt(r.kill.kills)} kills${r.kill.guessed?' (some counts guessed)':''}${r.party>1?` · group of ${r.party}`:''}${r.kill.dg?' · dungeon mobs':''}</span>`:''}${s.unote?`<span class="unote">${s.unote.split('\n').map(esc).join('<br>')}</span>`:''}${stickyChip(s,i)}${s.t==='accept'&&ESCORT.has(s.q)?`<span class="sub" style="color:var(--warn)">⚠ ${esc(ESC_NOTE)}</span>`:''}${allTags.map(t=>`<span class="dgtag" data-dgsel="${esc(t)}" title="${dgTags.includes(t)?`Only because you're running ${esc(dgName(t))}`:`${esc(dgName(t))} quest`}. Click to select every ${esc(t)} step">${esc(t)}</span>`).join('')}${tx.sub?`<span class="sub">${esc(tx.sub)}</span>`:''}${r.inactive?`<span class="wrn">${esc(r.inactive)}</span>`:''}${r.err.map(e=>{ const m=e.match(/^Requires level (\d+)/); return `<span class="err">${esc(e)}${m?` <button class="linkish" data-fixgrind="${i}:${m[1]}">Add a grind to level ${m[1]} before this</button>`:''}</span>`; }).join('')}${r.warn.map(e=>`<span class="wrn">${esc(e)}</span>`).join('')}${r.custom&&s.t==='turnin'?`<button class="linkish" data-uxp="${i}">${route.qxp?.[s.q]?'Change XP reward':'Set XP reward'}</button>`:''}</span>
+      <span class="t">${''}${s.src&&s.t==='travel'&&(s.kind==='note'||s.kind==='goto')?rxpHTML(tx.t):esc(rxpPlain(tx.t))}${(()=>{const gs=s.src&&!s.src.auto?G(s.src.g)?.steps[s.src.i]:null; return gs?notesHTML(gs,s.t==='travel'&&(s.kind==='note'||s.kind==='goto')?(s.text||''):''):'';})()}${s.t==='grind'&&r.party>1?`<span class="sub">in a group of ${r.party}</span>`:''}${r.kill?`<span class="sub kx">≈${fmt(r.kill.kills)} kills${r.kill.guessed?' (some counts guessed)':''}${r.party>1?` · group of ${r.party}`:''}${r.kill.dg?' · dungeon mobs':''}</span>`:''}${s.unote?`<span class="unote">${s.unote.split('\n').map(esc).join('<br>')}</span>`:''}${stickyChip(s,i)}${r.path?`<span class="stk" data-pathed="${i}" style="cursor:pointer" title="The RestedXP arrow loops through these points (#loop). Click to see or edit it on the map.">🔁 path · ${r.path.length} pts</span>`:''}${s.t==='accept'&&ESCORT.has(s.q)?`<span class="sub" style="color:var(--warn)">⚠ ${esc(ESC_NOTE)}</span>`:''}${allTags.map(t=>`<span class="dgtag" data-dgsel="${esc(t)}" title="${dgTags.includes(t)?`Only because you're running ${esc(dgName(t))}`:`${esc(dgName(t))} quest`}. Click to select every ${esc(t)} step">${esc(t)}</span>`).join('')}${tx.sub?`<span class="sub">${esc(tx.sub)}</span>`:''}${r.inactive?`<span class="wrn">${esc(r.inactive)}</span>`:''}${r.err.map(e=>{ const m=e.match(/^Requires level (\d+)/); return `<span class="err">${esc(e)}${m?` <button class="linkish" data-fixgrind="${i}:${m[1]}">Add a grind to level ${m[1]} before this</button>`:''}</span>`; }).join('')}${r.warn.map(e=>`<span class="wrn">${esc(e)}</span>`).join('')}${r.custom&&s.t==='turnin'?`<button class="linkish" data-uxp="${i}">${route.qxp?.[s.q]?'Change XP reward':'Set XP reward'}</button>`:''}</span>
       <span class="x">${r.gained||s.xpo!=null?`<b${s.xpo!=null?' title="XP set by you"':''}>+${fmt(r.gained)}${s.xpo!=null?'*':''}</b><br>`:''}${lvl.toFixed(1)}</span>
       <span class="sbtns">${s.q?`<a class="wh" href="${whURL(s.q,s.qn)}" target="_blank" rel="noopener" title="Open this quest on Wowhead">wh↗</a>`:''}<button class="opt ${s.opt?'on':''}" data-opt="${i}" title="${s.opt?'Optional (click to make required)':'Mark as optional'}" aria-pressed="${!!s.opt}">opt</button>${!stepGuide(s)&&['accept','complete','turnin','custom','grind','travel'].includes(s.t)?`<button class="ed ${s.stk?'on':''}" data-stk="${i}" title="Sticky: ${s.stk==='next'?'with next step':s.stk==='sticky'?'until done':'off'} (click to change)" aria-label="Sticky for step ${i+1}">📌</button>`:''}<button class="ed ${s.unote||s.xpo!=null?'on':''}" data-edit="${i}" title="Edit step: note, XP${s.src?'':', text'}" aria-label="Edit step ${i+1}">✎</button><button class="del" data-del="${i}" aria-label="Delete step ${i+1}">×</button></span></li>`);
     if(i===cursor && i<route.steps.length-1) parts.push(`<li class="insert">New steps are added here</li>`);
@@ -1245,6 +1287,7 @@ async function askMoveAfter(idx){ const v=await askText(`Move the ${idx.length} 
   if(idx.includes(n-1)&&!idx.includes(n)) return; moveBlock(idx,n); }
 $('#steps').addEventListener('click',e=>{
   if(e.target.closest('a.wh')){ e.stopPropagation(); return; }
+  const pe=e.target.closest('[data-pathed]'); if(pe){ e.stopPropagation(); startPathEdit(+pe.dataset.pathed); return; }
   const sk=e.target.closest('[data-stk]'); if(sk){ e.stopPropagation(); const s=route.steps[+sk.dataset.stk]; pushHistory(); s.stk=s.stk==null||s.stk===false?'next':s.stk==='next'?'sticky':false; refresh(); toast(s.stk==='next'?'Sticky: done together with the next step':s.stk==='sticky'?'Sticky: stays on screen until done':'Not sticky'); return; }
   const ed=e.target.closest('[data-edit]'); if(ed){ e.stopPropagation(); editStep(+ed.dataset.edit); return; }
   const ux=e.target.closest('[data-uxp]'); if(ux){ e.stopPropagation(); askUXP(route.steps[+ux.dataset.uxp]); return; }
@@ -1262,6 +1305,16 @@ $('#steps').addEventListener('click',e=>{
 });
 $('#steps').addEventListener('dblclick',async e=>{ const li=e.target.closest('[data-i]'); if(!li) return; const s=route.steps[+li.dataset.i];
   if(s&&s.q&&!Q(s.q)&&s.t==='turnin'){ askUXP(s); return; } if(s&&['grind','travel','custom'].includes(s.t)) openStepDialog(s.t,+li.dataset.i); });
+let pathEdit=null, pathDrag=null, pathHits=[];
+function ownPath(s){ if(!s.path) s.path=(pathOf(s)||[]).map(l=>({...l})); delete s.loopRaw; s.pathSrc='edited'; return s.path; }
+function pathDelPt(k){ const s=route.steps[pathEdit]; if(pathOf(s).length<=2) return toast('A path needs at least 2 points: use Remove path instead'); pushHistory(); ownPath(s).splice(k,1); refresh(); }
+function pathClick(x,y){ const s=route.steps[pathEdit]; const h=pathHits.find(h=>Math.hypot(h.x-x,h.y-y)<10); if(h) return true;
+  const P=pathHits; let best=-1,bd=12; for(let k=0;k<P.length;k++){ const a=P[k], b=P[(k+1)%P.length]; const dx=b.x-a.x, dy=b.y-a.y, L=dx*dx+dy*dy||1; const t=Math.max(0,Math.min(1,((x-a.x)*dx+(y-a.y)*dy)/L)); const d=Math.hypot(a.x+t*dx-x,a.y+t*dy-y); if(d<bd){bd=d;best=k;} }
+  if(best<0) return false; pushHistory(); const path=ownPath(s); const X=(x-view.tx)/view.s, Y=(y-view.ty)/view.s; path.splice(best+1,0,planeToZp(path[best].z,X,Y)); refresh(); return true; }
+function startPathEdit(i){ const s=route.steps[i]; if(!pathOf(s)){ pushHistory(); const p=genPath(s.q,s.obj,routeRefBefore(i)); if(!p) return toast('Not enough spawn points to build a path for this objective'); s.path=p; s.pathSrc='generated'; refresh(); }
+  pathEdit=i; closePanels&&closePanels(); const pts=SIM.res[i]?.path||[]; if(pts.length){ const xs=pts.map(p=>p.X), ys=pts.map(p=>p.Y); const bw=Math.max(60,Math.max(...xs)-Math.min(...xs)), bh=Math.max(60,Math.max(...ys)-Math.min(...ys)); flyTo((Math.min(...xs)+Math.max(...xs))/2,(Math.min(...ys)+Math.max(...ys))/2,Math.min(8,Math.min(W/(bw*2.2),H/(bh*2.2)))); }
+  $('#pathbar').style.display='flex'; $('#pathMsg').textContent=`Path for step ${i+1}${stepGuide(s)&&!s.path?' (from the guide: editing makes it your own)':''}: drag points · click the line to add one · right-click a point to remove it`; requestDraw(); }
+function stopPathEdit(){ pathEdit=null; pathDrag=null; $('#pathbar').style.display='none'; requestDraw(); }
 function editStep(i){ const s=route.steps[i], r=SIM.res[i]||{}; const d=$('#dlgEdit');
   const own=!s.src&&s.t==='travel'&&(s.kind==='note'||s.kind==='goto'); $('#edTextL').hidden=!own; $('#edText').value=own?(s.text||''):'';
   $('#edTitle').textContent='Edit step '+(i+1); $('#edNote').value=s.unote||''; $('#edXp').value=s.xpo!=null?s.xpo:'';
@@ -1270,6 +1323,11 @@ function editStep(i){ const s=route.steps[i], r=SIM.res[i]||{}; const d=$('#dlgE
     if(v==='reset'){ delete s.unote; delete s.xpo; }
     else { const n=$('#edNote').value.replace(/\s+$/,''); if(n) s.unote=n; else delete s.unote; const x=$('#edXp').value.trim(); if(x!==''&&+x>=0) s.xpo=Math.round(+x); else delete s.xpo; if(own){ const t=$('#edText').value.trim(); if(t) s.text=t; } }
     refresh(); };
+  const pth=pathOf(s), canPath=s.t==='complete'&&s.q; $('#edPathRow').hidden=!canPath;
+  if(canPath){ $('#edPathInfo').textContent=pth?`Path: ${pth.length} points (${s.path?(s.pathSrc==='generated'?'generated':s.pathSrc==='edited'?'edited by you':'from '+s.pathSrc):'from the guide, exported as is'})`:'No path: the arrow points at one spot.'; $('#edPathRm').hidden=!s.path; $('#edPathGen').textContent=pth?'Regenerate':'Make path'; }
+  $('#edPathEdit').onclick=()=>{ d.close(); startPathEdit(i); };
+  $('#edPathGen').onclick=()=>{ const p=genPath(s.q,s.obj,routeRefBefore(i)); if(!p) return toast('Not enough spawn points to build a path for this objective'); d.close(); pushHistory(); s.path=p; delete s.loopRaw; s.pathSrc='generated'; refresh(); startPathEdit(i); };
+  $('#edPathRm').onclick=()=>{ d.close(); pushHistory(); if(stepGuide(s)?.path) s.path=null; else delete s.path; delete s.loopRaw; delete s.pathSrc; if(pathEdit===i) stopPathEdit(); refresh(); };
   $('#edOk').onclick=()=>done('ok'); $('#edNo').onclick=()=>done(null); $('#edReset').onclick=()=>done('reset'); d.showModal(); setTimeout(()=>$('#edNote').focus(),0); }
 async function askUXP(s){ { const v=await askText(`XP reward for ${s.qn||'quest '+s.q} (at your level):`,String(route.qxp?.[s.q]||'')); if(v==null) return; pushHistory(); route.qxp=route.qxp||{}; if(+v>0) route.qxp[s.q]=Math.round(+v); else delete route.qxp[s.q]; refresh(); } }
 let dragFrom=null;
@@ -1476,6 +1534,7 @@ function updEst(){ const f=$('#grindForm'); const party=SIM.st.party||1; const p
 $('#estUse').addEventListener('click',()=>{ $('#grindForm').amount.value=updEst(); });
 function startPick(dlgSel,cb){ const d=$(dlgSel); d._picking=true; d.close('pick'); d._picking=false; picking=l=>{ cb(l); d.showModal(); }; canvas.classList.add('picking'); $('#pickbar').style.display='flex'; closePanels(); }
 function stopPick(){ picking=null; canvas.classList.remove('picking'); $('#pickbar').style.display='none'; }
+$('#pathDone').addEventListener('click',stopPathEdit); document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&pathEdit!=null) stopPathEdit(); });
 $('#pickCancel').addEventListener('click',()=>{ const cb=picking; stopPick(); cb&&cb(null); });
 [['#grindPick','#dlgGrind'],['#travelPick','#dlgTravel'],['#customPick','#dlgCustom']].forEach(([b,d])=>$(b).addEventListener('click',()=>startPick(d,l=>{ if(l) $(d)._setLoc(l); })));
 // dialog close via 'pick' should not add step: returnValue 'pick' != 'ok'
@@ -1546,6 +1605,7 @@ function buildRXP(){
       const out=[]; let cut=0; for(const ln of raw[gsx.rx-1].split('\n')){ const am=ln.match(/^\s*\.(accept|turnin|complete)\s+(\d+)/i); if(am){ const k=actKey(am[1].toLowerCase(),+am[2]); if(blkActs.has(k)&&!runActs.has(k)){ cut++; continue; } } out.push(ln); }
       for(let k=out.length-1;k>=0;k--){ const am=out[k].match(/^\s*\.accept\s+(\d+)/i); if(am&&ESCORT.has(+am[1])&&!out.some(l=>l.includes('Forever bug'))) out.splice(k+1,0,`    >>|cRXP_WARN_${ESC_NOTE}|r`); }
       if(run.some(x=>x.opt)&&!out.some(l=>/^\s*#optional\b/i.test(l))) out.splice(1,0,'    #optional');
+      const ep=run.find(x=>x.path!==undefined); if(ep){ for(let k=out.length-1;k>0;k--) if(/^\s*(#loop\b|\.goto\b)/i.test(out[k])) out.splice(k,1); if(ep.path&&ep.path.length>=2){ let h=1; while(h<out.length&&/^\s*#/.test(out[h])) h++; out.splice(h,0,'    #loop',gotoLine(ep.path[0])+',0',...ep.path.map(w=>gotoLine(w)+',30,0')); } }
       const un=run.map(x=>x.unote).filter(Boolean); if(un.length){ let e=out.length; while(e>1&&!out[e-1].trim()) e--; out.splice(e,0,...un.flatMap(n=>n.split('\n')).filter(l=>l.trim()).map(l=>'    >>'+l.trim())); }
       const txt=out.join('\n'); seg.items.push({rx:gsx.rx,text:txt,step:i,cut}); seg.lastBlk={g:gg.id,rx:gsx.rx}; seg.prevKey=null; return;
     }
@@ -1555,7 +1615,7 @@ function buildRXP(){
     const key=(s.t==='accept'||s.t==='turnin')&&p&&!stl?p.ent+'@'+p.X.toFixed(0)+'|'+dgl.join()+(xrl||'')+(optl||''):null;
     const cont=merge&&key&&key===seg.prevKey; seg.prevKey=key;
     const gp=s.t==='travel'&&(s.kind==='fly'||s.kind==='ride')?r.dep:p;
-    if(!cont){ L.push('step'); if(stl) L.push(stl); if(optl) L.push(optl); if(xrl) L.push(xrl); const gl=gotoLine(gp); if(gl&&!(s.t==='travel'&&(s.kind==='hs'||s.kind==='note'||s.kind==='ride'))&&(s.t!=='grind'||s.loc)) L.push(gl); }
+    const own=s.path||null; if(!cont){ L.push('step'); if(stl) L.push(stl); if(optl) L.push(optl); if(xrl) L.push(xrl); if(own&&own.length>=2){ if(s.loopRaw) L.push(...s.loopRaw); else { L.push('    #loop'); L.push(gotoLine(own[0])+',0'); for(const w of own) L.push(gotoLine(w)+',30,0'); } } const gl=own&&own.length>=2?null:gotoLine(gp); if(gl&&!(s.t==='travel'&&(s.kind==='hs'||s.kind==='note'||s.kind==='ride'))&&(s.t!=='grind'||s.loc)) L.push(gl); }
     if(s.t==='accept'){ lines.push(`    .accept ${s.q} >>Accept ${q.on||q.n}`); if(ESCORT.has(s.q)) lines.push(`    >>|cRXP_WARN_${ESC_NOTE}|r`); }
     else if(s.t==='turnin') lines.push(`    .turnin ${s.q} >>Turn in ${q.on||q.n}`);
     else if(s.t==='abandon') lines.push(`    .abandon ${s.q} >>Abandon ${q.on||q.n}`);
@@ -1726,7 +1786,7 @@ function parseGuideBody(body,group){
     const cm=raw.match(/^\s*\.complete\s+\d+\s*,\s*(\d+)[^-]*--.*?\(x?(\d+)\)/i);
     let line=raw.replace(/\s--.*$/,'').replace(/^--.*$/,'').trim(); if(!line) continue; if(cm) line+=` @@${cm[1]}=${cm[2]}`;
     const hdr=line.match(/^#(\w+)\s*(.*)$/);
-    if(hdr){ const k=hdr[1].toLowerCase(); if(cur&&k==='optional') cur.optional=true; if(cur&&(k==='completewith'||k==='label'||k==='requires')){ const [v,c]=hdr[2].split('<<'); if(condOK(c||'')) cur[k]=v.trim(); } if(cur&&k==='sticky'){ const c=hdr[2].split('<<')[1]; if(condOK(c||'')) cur.sticky=true; } if(k==='xprate'){ const [xr,xc]=hdr[2].split('<<'); if(cur){ if(condOK(xc||'')) cur.xprate=xr.trim(); } else g.xprate=xr.trim(); } { const vw=verTag(k,hdr[2]); if(vw){ if(cur) cur.ver=cur.ver||vw; else g.ver=g.ver||vw; } }
+    if(hdr){ const k=hdr[1].toLowerCase(); if(cur&&k==='optional') cur.optional=true; if(cur&&(k==='completewith'||k==='label'||k==='requires')){ const [v,c]=hdr[2].split('<<'); if(condOK(c||'')) cur[k]=v.trim(); } if(cur&&k==='loop'){ const c=hdr[2].split('<<')[1]; if(condOK(c||'')) cur.loop=true; } if(cur&&k==='sticky'){ const c=hdr[2].split('<<')[1]; if(condOK(c||'')) cur.sticky=true; } if(k==='xprate'){ const [xr,xc]=hdr[2].split('<<'); if(cur){ if(condOK(xc||'')) cur.xprate=xr.trim(); } else g.xprate=xr.trim(); } { const vw=verTag(k,hdr[2]); if(vw){ if(cur) cur.ver=cur.ver||vw; else g.ver=g.ver||vw; } }
       if(!cur){ if(k==='name') g.name=hdr[2].trim(); else if(k==='next'){ for(const alt of hdr[2].split(';')){ const [nx,nc]=alt.split('<<'); const nm=nx.replace(/^\s*#group\s+/i,'').split('\\').pop().trim(); if(nm&&condOK(nc||'')) g.nexts.push(nm); } g.next=g.nexts.join(';'); } else if(k==='group'&&!g.group){ for(const alt of hdr[2].split(';')){ const [gn,gc]=alt.split('<<'); if(condOK(gc||'')){ g.group=gn.trim(); break; } } } } continue; }
     if(/^step\b/i.test(line)){ cur={cond:(line.match(/<<\s*(.+)$/)||[])[1]||'',lines:[],raw:[raw.replace(/\s+$/,'')]}; g.blocks.push(cur); continue; }
     if(!cur){ if(line.startsWith('<<')) g.cond=line.slice(2).trim(); continue; }
@@ -1738,7 +1798,7 @@ function convertLoc(z,px,py,convert){ const cv=META.zones[z]?.cv; if(convert&&cv
 function buildGuideSteps(g,convert){
   const steps=[]; let unknownZones=new Set();
   g.blocks.forEach((b,bi)=>{
-    const bOK=condOK(b.cond)&&!b.ver; let loc=null, firstLoc=null; const pend=[]; const notes=[]; const seenC=new Set(); const dg=[], dgs=[]; let lmin=0, lmax=0; const startN=steps.length; const disp=[]; const reqs=[]; let gotoTxt='';
+    const bOK=condOK(b.cond)&&!b.ver; let loc=null, firstLoc=null; const pend=[]; const notes=[]; const seenC=new Set(); const dg=[], dgs=[]; let lmin=0, lmax=0; const startN=steps.length; const disp=[]; const reqs=[]; let gotoTxt=''; const gl=[];
     for(const line of b.lines){
       const [main,econd]=line.split('<<'); const ok=bOK&&condOK(econd||''); const txt=(main.match(/>>\s*(.*)$/)||[])[1]||''; const cmd=main.replace(/>>.*$/,'').trim();
       if(txt&&ok&&!/^\.(accept|turnin|complete|goto|xp)\b/i.test(cmd)) disp.push(txt.trim());
@@ -1751,8 +1811,8 @@ function buildGuideSteps(g,convert){
       if(/^\.goto\b/i.test(cmd)&&txt&&ok&&!gotoTxt) gotoTxt=txt.trim();
       if((m=cmd.match(/^\.goto\s+(\d+)\/(\d+)\s*,\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)/i))){ if(!ok) continue; // "uiMapId/continent, worldY, worldX" (Forever guides)
         const z=zoneFromName(m[1]); const Z=z!=null?META.zones[z]:null; if(!Z){ unknownZones.add(m[1]+'/'+m[2]); continue; } const [Lb,Rb,Tb,Bb]=Z.b; const px=(Lb-(+m[3]))/(Lb-Rb)*100, py=(Tb-(+m[4]))/(Tb-Bb)*100;
-        loc=convertLoc(z,px,py,false); if(!firstLoc) firstLoc=loc; for(const p of pend) if(!p.loc) p.loc=loc; continue; }
-      if((m=cmd.match(/^\.goto\s+([^,]+),\s*([\d.]+)\s*,\s*([\d.]+)/i))){ if(!ok) continue; const z=zoneFromName(m[1]); if(z==null){ unknownZones.add(m[1].trim()); continue; } loc=convertLoc(z,+m[2],+m[3],convert); if(!firstLoc) firstLoc=loc; for(const p of pend) if(!p.loc) p.loc=loc; continue; }
+        loc=convertLoc(z,px,py,false); if(loc) gl.push(loc); if(!firstLoc) firstLoc=loc; for(const p of pend) if(!p.loc) p.loc=loc; continue; }
+      if((m=cmd.match(/^\.goto\s+([^,]+),\s*([\d.]+)\s*,\s*([\d.]+)/i))){ if(!ok) continue; const z=zoneFromName(m[1]); if(z==null){ unknownZones.add(m[1].trim()); continue; } loc=convertLoc(z,+m[2],+m[3],convert); if(loc) gl.push(loc); if(!firstLoc) firstLoc=loc; for(const p of pend) if(!p.loc) p.loc=loc; continue; }
       const mk=(o)=>{ o.cond=ok; o.rx=bi+1; o.loc=loc; o.label=txt; if(o.q&&!Q(o.q)&&txt){ const n=txt.replace(/\|c\w{8}|\|r|\|T[^|]*\|t/g,'').replace(/^(Accept|Turn in|Complete)\s+/i,'').trim(); if(n) o.qn=n; } pend.push(o); return o; };
       if((m=cmd.match(/^\.accept\s+(\d+)/i))) steps.push(mk({t:'accept',q:+m[1]}));
       else if((m=cmd.match(/^\.turnin\s+(\d+)/i))) steps.push(mk({t:'turnin',q:+m[1]}));
@@ -1772,6 +1832,7 @@ function buildGuideSteps(g,convert){
     const nt=dj?{txt:dj,ok:true}:gotoTxt?{txt:gotoTxt,ok:true}:(notes[0]||(mobs.length?{txt:'Kill '+mobs.slice(0,3).join(', '),ok:true}:firstLoc?{txt:'Go to '+zoneName(firstLoc.z),ok:true}:hasCmd?{txt:'Guide step',ok:true}:null));
     if(!pend.length && nt){ steps.push({t:'travel',kind:firstLoc?'goto':'note',text:nt.txt,loc:firstLoc,cond:bOK&&nt.ok,rx:bi+1,info:true}); }
     if(reqs.length) for(let k=startN;k<steps.length;k++) steps[k].reqs=reqs;
+    if(b.loop&&gl.length>=2){ const lr=['    #loop',...(b.raw||[]).filter(l=>/^\s*\.goto\b/i.test(l))]; for(let k=startN;k<steps.length;k++){ steps[k].path=gl.map(l=>({z:l.z,px:+l.px,py:+l.py})); steps[k].loopRaw=lr; } }
     for(let k=startN;k<steps.length;k++){ if(b.completewith) steps[k].cw=b.completewith; if(b.sticky||b.completewith) steps[k].sticky=true; if(b.label) steps[k].label=b.label; }
     if(b.optional) for(let k=startN;k<steps.length;k++) steps[k].gopt=true;
     if(b.xprate) for(let k=startN;k<steps.length;k++) steps[k].xr=b.xprate;

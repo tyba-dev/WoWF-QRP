@@ -307,6 +307,7 @@ dialog textarea{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-
         <button class="btn" id="zfit" aria-label="Show all of Azeroth">All</button>
         <button class="btn" id="zcur" aria-label="Center on the selected step">Step</button>
       </div>
+      <div class="pickbar" id="pathbar" style="max-width:90%;font-weight:600"><span id="pathMsg"></span> <button class="btn sm" id="pathDone">Done</button></div>
       <div class="pickbar" id="pickbar">Click the map to place it <button class="btn sm" id="pickCancel">Cancel</button></div>
       <div class="tip" id="tip"></div>
       <div class="status" id="status"></div>
@@ -454,6 +455,7 @@ dialog textarea{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-
 <dialog id="dlgEdit"><div class="dl"><h2 id="edTitle" style="margin:0 0 6px">Edit step</h2>
   <label id="edTextL">Step text<input type="text" id="edText"></label>
   <label>Note (shown on this step; one line per note)<textarea id="edNote" rows="3" placeholder="e.g. Kill the boars on the way"></textarea></label>
+  <div id="edPathRow" class="row" style="gap:6px;align-items:center;flex-wrap:wrap"><span class="note" id="edPathInfo"></span><button class="btn sm" id="edPathEdit" type="button">Edit on map</button><button class="btn sm" id="edPathGen" type="button">Regenerate</button><button class="btn sm" id="edPathRm" type="button">Remove path</button></div>
   <label>XP this step gives<input type="number" id="edXp" min="0" style="width:140px"></label>
   <p class="note" id="edXpHint" style="margin:0"></p>
   <div class="actions"><button class="btn" id="edReset">Clear edits</button><button class="btn" id="edNo">Cancel</button><button class="btn gold" id="edOk">Save</button></div></div></dialog>
