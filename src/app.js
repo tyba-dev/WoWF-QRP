@@ -314,7 +314,13 @@ function nearest(pts,ref){
   if(!pts.length) return null; if(!ref) return pts[0];
   let b=pts[0],bd=1e18; for(const p of pts){ const d=(p.X-ref.X)**2+(p.Y-ref.Y)**2; if(d<bd){bd=d;b=p;} } return b;
 }
+/* ---------- vendors ---------- */
+function vendorOf(id){ const v=META.vend?.[id]; return v?{id:+id,name:v[0],sub:v[1],fac:v[2],sp:v[3],items:v[4]}:null; }
+function vendorOK(v){ const f=charInfo(route).fac; return !v.fac||v.fac.includes(f); }
+function vendorPts(v){ return v.sp.map(([z,x,y])=>{ const p=zp2plane(z,x,y); return p?{...p,label:v.name,npc:v.id}:null; }).filter(Boolean); }
+function itemName(id){ return META.vi?.[id]||DB.i?.[id]?.n||('Item '+id); }
 function stepPoint(s,ref){
+  if(s.t==='buy'){ const v=vendorOf(s.npc); return v?nearest(vendorPts(v),ref):(s.loc?zp2plane(s.loc.z,s.loc.px,s.loc.py):null); }
   if(s.loc) return zp2plane(s.loc.z,s.loc.px,s.loc.py);
   if(!s.q||!Q(s.q)) return null;
   if(s.t==='accept') return nearest(starterPts(s.q),ref) || nearest(Q(s.q).s.i.flatMap(i=>itemSourcePts(i,'item')),ref);
@@ -385,7 +391,7 @@ const mctx=document.createElement('canvas').getContext('2d');
 let W=0,H=0,DPR=1;
 const view={s:0.03,tx:0,ty:0};
 const zonePaths=new Map(); let landPaths=[];
-const layers={avail:true,locked:true,trivial:false,objectives:true,route:true,fp:true,towns:true,dungeons:true,relief:true};
+const layers={vendors:true,avail:true,locked:true,trivial:false,objectives:true,route:true,fp:true,towns:true,dungeons:true,relief:true};
 const reliefImgs=[];
 function loadRelief(){ for(const [m,r] of Object.entries(META.relief||{})){ const o={...r,m,ri:new Image(),wi:new Image(),rs:new Set(r.tile?.r||[]),ws:new Set(r.tile?.w||[])}; o.ri.onload=o.wi.onload=requestDraw; o.ri.src='data:image/webp;base64,'+r.rel; o.wi.src='data:image/webp;base64,'+r.wat; reliefImgs.push(o);} }
 const _cv={}; function offCtx(n){ let c=_cv[n]; if(!c){ c=_cv[n]=document.createElement('canvas').getContext('2d'); } if(c.canvas.width!==canvas.width||c.canvas.height!==canvas.height){ c.canvas.width=canvas.width; c.canvas.height=canvas.height; } return c; }
@@ -537,6 +543,10 @@ function drawPOIs(){
       hits.push({x,y,r:8,kind:'town',label:name,loc:{z,px:x0,py:y0}});
     }
   }
+  if(layers.vendors && s>=0.3 && META.vend){ ctx.font='700 10px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    for(const id in META.vend){ const v=vendorOf(id); if(!vendorOK(v)) continue; for(const p of vendorPts(v)){ const [x,y]=toS(p); if(x<-10||x>W+10||y<-10||y>H+10) continue;
+      ctx.fillStyle='#5a3d0a'; ctx.beginPath(); ctx.arc(x,y,5.5,0,7); ctx.fill(); ctx.strokeStyle='#ffd24a'; ctx.lineWidth=1.3; ctx.stroke(); ctx.fillStyle='#ffd24a'; ctx.fillText('¤',x,y+.5);
+      hits.push({x,y,r:7,kind:'vendor',vid:v.id,label:v.name}); } } }
   if(layers.dungeons && s>=0.03){ const seen=[];
     for(const [aid,d] of Object.entries(META.dungeons)){ for(const [z,x0,y0] of d.l){ const p=zp2plane(z,x0,y0); if(!p) continue; const [x,y]=toS(p);
       ctx.save(); ctx.translate(x,y); ctx.fillStyle='#2a1030'; ctx.beginPath(); ctx.arc(0,0,7,0,7); ctx.fill(); ctx.strokeStyle='#c68bf0'; ctx.lineWidth=1.6; ctx.beginPath(); for(let a=0;a<9;a+=0.3){ const r=0.6*a; ctx.lineTo(Math.cos(a)*r,Math.sin(a)*r);} ctx.stroke(); ctx.restore();
@@ -705,6 +715,7 @@ function stepText(s){
     case 'complete': { const ob=s.obj&&q?objectives(s.q).find(o=>o.rx===s.obj):null; return {ic:'✓',cls:'complete',t:ob?`${qn}: ${ob.text}`:'Complete '+qn,sub:ob?'One objective':(q?objectives(s.q).map(o=>o.text).join('; '):'')}; }
     case 'turnin': return {ic:'?',cls:'turnin',t:'Turn in '+qn,sub:q?locSub(s):''};
     case 'abandon': return {ic:'×',cls:'abandon',t:'Abandon '+qn,sub:''};
+    case 'buy': { const v=vendorOf(s.npc); return {ic:'¤',cls:'travel',t:'Buy from '+(v?.name||s.npcName||'vendor'),sub:(s.items||[]).map(it=>`${it.c}× ${it.n||itemName(it.id)}`).join(', ')+(v?.sub?' · '+v.sub:'')}; }
     case 'grind': return {ic:'⚔',cls:'grind',t:s.mode==='to'?`Grind to level ${s.level}${s.xp?' + '+fmt(s.xp)+' XP':''}`:`Grind ${fmt(s.amount||0)} XP`,sub:[s.note,{mobs:'Mob kills',explore:'Exploration',both:'Mobs and exploration',other:''}[s.src]||''].filter(Boolean).join(' · ')};
     case 'party': return {ic:s.size>1?String(s.size):'1',cls:'party',t:s.size>1?`Group up: ${s.size} players`:'Go solo',sub:'Affects mob-kill XP estimates from here on'};
     case 'custom': return {ic:'★',cls:'custom',t:({turnin:'Turn in ',accept:'Accept ',complete:'Complete '})[s.act||'turnin']+s.name,sub:(s.qid?'ID '+s.qid+' · ':'')+'custom quest'};
@@ -839,7 +850,7 @@ $('#steps').addEventListener('click',e=>{
   const s=route.steps[i]; if(s&&s.q&&Q(s.q)){ selQuest=s.q; renderRight(); requestDraw(); }
 });
 $('#steps').addEventListener('dblclick',async e=>{ const li=e.target.closest('[data-i]'); if(!li) return; const s=route.steps[+li.dataset.i];
-  if(s&&s.q&&!Q(s.q)&&s.t==='turnin'){ askUXP(s); return; } if(s&&['grind','travel','custom'].includes(s.t)) openStepDialog(s.t,+li.dataset.i); });
+  if(s&&s.q&&!Q(s.q)&&s.t==='turnin'){ askUXP(s); return; } if(s&&s.t==='buy'){ openBuy(+li.dataset.i); return; } if(s&&['grind','travel','custom'].includes(s.t)) openStepDialog(s.t,+li.dataset.i); });
 let pathEdit=null, pathDrag=null, pathHits=[];
 function ownPath(s){ if(!s.path) s.path=(pathOf(s)||[]).map(l=>({...l})); delete s.loopRaw; s.pathSrc='edited'; return s.path; }
 function pathDelPt(k){ const s=route.steps[pathEdit]; if(pathOf(s).length<=2) return toast('A path needs at least 2 points: use Remove path instead'); pushHistory(); ownPath(s).splice(k,1); refresh(); }
@@ -1010,6 +1021,8 @@ function showPop(h,x,y){
     html+=`<h4>${esc(h.label)}</h4><div class="it">${node?`<span class="note">${esc(META.taxi.nodes[node].n)}${SIM.st.fps.has(node)?' · learned':''}</span>`:''}<div class="row">${node?`<button class="btn sm gold" data-fpnode="${node}">Get flight path</button><button class="btn sm" data-flynode="${node}">Fly here</button>`:`<button class="btn sm gold" data-fp="${esc(place)}" ${locAttr(h.loc)}>Get flight path</button><button class="btn sm" data-fly="${esc(place)}" ${locAttr(h.loc)}>Fly here</button>`}</div></div>`;
   } else if(h.kind==='town'){
     html+=`<h4>${esc(h.label)}</h4><div class="it"><div class="row"><button class="btn sm" data-home="${esc(h.label)}" ${locAttr(h.loc)}>Set hearthstone</button><button class="btn sm" data-hs="${esc(h.label)}" ${locAttr(h.loc)}>Hearth here</button><button class="btn sm" data-goto="${esc(h.label)}" ${locAttr(h.loc)}>Go here</button>${flyBtn(zp2plane(h.loc.z,h.loc.px,h.loc.py))}</div></div>`;
+  } else if(h.kind==='vendor'){ const v=vendorOf(h.vid);
+    html+=`<h4>${esc(v.name)}</h4><div class="it"><span class="note">${esc(v.sub||'Vendor')}${v.items.length?' · sells '+v.items.slice(0,6).map(i=>esc(itemName(i))).join(', ')+(v.items.length>6?'…':''):''}</span><div class="row"><button class="btn sm gold" data-buyv="${v.id}">Buy from ${esc(v.name)}</button></div></div>`;
   } else if(h.kind==='dock'){
     html+=`<h4>${esc(h.dock.label)}</h4>`+h.rides.map(r=>`<div class="it"><div class="row"><button class="btn sm gold" data-ride="${r.id}">${esc(r.text)}</button></div></div>`).join('');
   } else if(h.kind==='ghost'){ html=ghostPopHTML(h);
@@ -1069,6 +1082,30 @@ function updEst(){ const f=$('#grindForm'); const party=SIM.st.party||1; const p
 $('#estUse').addEventListener('click',()=>{ $('#grindForm').amount.value=updEst(); });
 function startPick(dlgSel,cb){ const d=$(dlgSel); d._picking=true; d.close('pick'); d._picking=false; picking=l=>{ cb(l); d.showModal(); }; canvas.classList.add('picking'); $('#pickbar').style.display='flex'; closePanels(); }
 function stopPick(){ picking=null; canvas.classList.remove('picking'); $('#pickbar').style.display='none'; }
+let buyCtx=null;
+function openBuy(i,vid){ const s=i!=null?route.steps[i]:null; buyCtx={i,vid:s?s.npc:(vid!=null?+vid:null),items:new Map((s?.items||[]).map(it=>[it.id?String(it.id):'n:'+it.n,{...it}]))};
+  $('#buyFind').value=''; $('#buyOther').value=''; $('#buyOtherId').value=''; $('#buyOtherN').value='1'; $('#buyMsg').textContent=''; $('#buyOk').textContent=s?'Save':'Add step'; renderBuy(); $('#dlgBuy').showModal(); }
+function renderBuy(){ const ref=routeRefBefore(buyCtx.i!=null?buyCtx.i:cursor+1); const f=$('#buyFind').value.trim().toLowerCase();
+  let L=Object.keys(META.vend||{}).map(vendorOf).filter(v=>vendorOK(v)&&(!f||v.name.toLowerCase().includes(f)||(v.sub||'').toLowerCase().includes(f)||v.items.some(i=>itemName(i).toLowerCase().includes(f))));
+  const dist=v=>{ if(!ref) return 0; let b=1e18; for(const p of vendorPts(v)) b=Math.min(b,Math.hypot(p.X-ref.X,p.Y-ref.Y)); return b; };
+  L=L.map(v=>({v,d:dist(v)})).sort((a,b)=>a.d-b.d).slice(0,12); if(buyCtx.vid!=null&&!L.some(x=>x.v.id===buyCtx.vid)){ const v=vendorOf(buyCtx.vid); if(v) L.unshift({v,d:dist(v)}); }
+  $('#buyVendors').innerHTML=L.map(({v,d})=>`<button type="button" data-bv="${v.id}" aria-pressed="${v.id===buyCtx.vid}"><b>${esc(v.name)}</b> <span class="note">${esc(v.sub||'')} · ${esc(zoneName(v.sp[0][0]))}${ref?' · '+fmt(Math.round(d))+' yd':''}</span></button>`).join('')||'<span class="note">No vendors match.</span>';
+  const v=buyCtx.vid!=null?vendorOf(buyCtx.vid):null; const rows=[];
+  if(v) for(const id of v.items){ const k=String(id), it=buyCtx.items.get(k); rows.push(`<label class="buyi"><input type="checkbox" data-bi="${k}" ${it?'checked':''}> <span style="flex:1">${esc(itemName(id))}</span> <input type="number" min="1" data-bn="${k}" value="${it?it.c:1}"></label>`); }
+  for(const [k,it] of buyCtx.items) if(!v||!v.items.includes(+k)) rows.push(`<label class="buyi"><input type="checkbox" data-bi="${esc(k)}" checked> <span style="flex:1">${esc(it.n||itemName(it.id))}${it.id?'':' <span class="note">(no item ID: shown as text only)</span>'}</span> <input type="number" min="1" data-bn="${esc(k)}" value="${it.c}"></label>`);
+  $('#buyItems').innerHTML=v?(`<div class="note">${v.items.length?'Items this vendor sells (from Questie):':'Questie lists no items for this vendor: add them below.'}</div>`+rows.join('')):(rows.join('')||'<div class="note">Pick a vendor.</div>'); }
+$('#buyBtn').addEventListener('click',()=>openBuy(null,null));
+$('#buyFind').addEventListener('input',renderBuy);
+$('#buyVendors').addEventListener('click',e=>{ const b=e.target.closest('[data-bv]'); if(!b) return; buyCtx.vid=+b.dataset.bv; renderBuy(); });
+$('#buyItems').addEventListener('change',e=>{ const c=e.target.closest('[data-bi]'), n=e.target.closest('[data-bn]'); const k=(c||n)?.dataset.bi||(c||n)?.dataset.bn; if(!k) return;
+  const cb=$(`#buyItems [data-bi="${CSS.escape(k)}"]`), nn=$(`#buyItems [data-bn="${CSS.escape(k)}"]`); const c0=Math.max(1,parseInt(nn.value)||1);
+  if(n&&!cb.checked) cb.checked=true; if(cb.checked){ const old=buyCtx.items.get(k); buyCtx.items.set(k,{...(old||{}),...(k.startsWith('n:')?{}:{id:+k,n:itemName(+k)}),c:c0}); } else buyCtx.items.delete(k); });
+$('#buyOtherAdd').addEventListener('click',()=>{ const n=$('#buyOther').value.trim(), id=parseInt($('#buyOtherId').value)||null, c=Math.max(1,parseInt($('#buyOtherN').value)||1); if(!n&&!id) return; const k=id?String(id):'n:'+n; buyCtx.items.set(k,{id,n:n||itemName(id),c}); $('#buyOther').value=''; $('#buyOtherId').value=''; renderBuy(); });
+$('#buyNo').addEventListener('click',()=>$('#dlgBuy').close());
+$('#buyOk').addEventListener('click',()=>{ if(buyCtx.vid==null){ $('#buyMsg').textContent='Pick a vendor first.'; return; } if(!buyCtx.items.size){ $('#buyMsg').textContent='Tick at least one item.'; return; }
+  const v=vendorOf(buyCtx.vid); const step={t:'buy',npc:v.id,npcName:v.name,items:[...buyCtx.items.values()].map(it=>({id:it.id||null,n:it.n||itemName(it.id),c:it.c}))}; $('#dlgBuy').close();
+  if(buyCtx.i!=null){ pushHistory(); Object.assign(route.steps[buyCtx.i],step); refresh(); } else addStep(step); });
+document.addEventListener('click',e=>{ const b=e.target.closest('[data-buyv]'); if(!b) return; hidePop(); openBuy(null,+b.dataset.buyv); });
 $('#pathDone').addEventListener('click',stopPathEdit); document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&pathEdit!=null) stopPathEdit(); });
 $('#pickCancel').addEventListener('click',()=>{ const cb=picking; stopPick(); cb&&cb(null); });
 [['#grindPick','#dlgGrind'],['#travelPick','#dlgTravel'],['#customPick','#dlgCustom']].forEach(([b,d])=>$(b).addEventListener('click',()=>startPick(d,l=>{ if(l) $(d)._setLoc(l); })));
@@ -1154,6 +1191,10 @@ function buildRXP(){
     if(s.t==='accept'){ lines.push(`    .accept ${s.q} >>Accept ${q.on||q.n}`); if(ESCORT.has(s.q)) lines.push(`    >>|cRXP_WARN_${ESC_NOTE}|r`); }
     else if(s.t==='turnin') lines.push(`    .turnin ${s.q} >>Turn in ${q.on||q.n}`);
     else if(s.t==='abandon') lines.push(`    .abandon ${s.q} >>Abandon ${q.on||q.n}`);
+    else if(s.t==='buy'){ const v=vendorOf(s.npc), nm=v?.name||s.npcName||'the vendor'; lines.push(`    >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_${nm}|r`);
+      for(const it of s.items||[]) lines.push(`    >>|cRXP_BUY_Buy|r ${it.c>1?it.c+' ':''}[${it.n||itemName(it.id)}] |cRXP_BUY_from|r |cRXP_FRIENDLY_${nm}|r`);
+      for(const it of s.items||[]) if(it.id) lines.push(`    .collect ${it.id},${it.c} --Collect ${it.n||itemName(it.id)} (${it.c})`);
+      lines.push(`    .target ${nm}`); }
     else if(s.t==='complete'){ const obs=objIndexList(s.q).filter(([n])=>!s.obj||n===s.obj); if(obs.length) obs.forEach(([n,t])=>lines.push(`    .complete ${s.q},${n} --${t}`)); else lines.push(`    >>Complete ${q.on||q.n}`); }
     else if(s.t==='grind'){ const a=r.after; lines.push(`    .xp ${a.level}${a.xp?'+'+a.xp:''} >>Grind to ${a.level<MAXLVL&&a.xp?fmt(a.xp)+' XP into ':''}level ${a.level}${s.note?' ('+s.note+')':''}`); }
     else if(s.t==='custom'){ const verb={turnin:'Turn in',accept:'Accept',complete:'Complete'}[s.act||'turnin']; if(s.qid&&s.act!=='complete') lines.push(`    .${s.act==='accept'?'accept':'turnin'} ${s.qid} >>${verb} ${s.name}`); else lines.push(`    >>${verb} ${s.name}${s.xp&&s.act==='turnin'?' (+'+s.xp+' XP)':''}`); }
@@ -1577,6 +1618,7 @@ function ghostIcon(s){ return {accept:'!',turnin:'?',complete:'✓',grind:'⚔',
 function ghostText(s){ const q=s.q&&Q(s.q); const qn=q?q.n:(s.q?(s.qn||'Quest '+s.q):'');
   switch(s.t){ case 'accept': return 'Accept '+qn; case 'turnin': return 'Turn in '+qn; case 'complete': return 'Complete '+qn;
     case 'grind': return `Reach level ${s.level}${s.xp?' + '+fmt(s.xp)+' XP':''}`;
+    case 'buy': return 'Buy from '+(vendorOf(s.npc)?.name||'vendor');
     case 'travel': return ({fly:'Fly to ',fp:'Get flight path: ',home:'Set hearthstone: ',hs:'Hearth to ',goto:'',note:''})[s.kind]+rxpPlain(s.text||''); }
   return s.text||''; }
 const STLBL={skip:'Guide skips this',level:'Level skip',xprate:'XP rate',unknown:'Skipped',dungeon:'Dungeon',ok:'Doable',xp:'XP checkpoint',info:'Note',blocked:'Blocked',done:'Already done',route:'In your route',outside:'',excl:'Excluded',cond:'Not for your character'};

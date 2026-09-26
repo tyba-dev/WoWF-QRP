@@ -113,6 +113,7 @@ select{background:var(--panel2);border:1px solid var(--line);border-radius:6px;p
 .step .err{color:var(--danger);font-size:12px;display:block}
 .step .wrn{color:var(--warn);font-size:12px;display:block}
 .step .ed{border:1px solid var(--line);background:var(--panel2);border-radius:4px;width:22px;height:22px;padding:0;cursor:pointer;color:var(--muted);font-size:12px;opacity:.55}.step:hover .ed,.step .ed.on{opacity:1}.step .ed.on{color:var(--gold,#e0b85a)}.unote{display:block;color:var(--gold,#e0b85a);font-size:12px;margin-top:2px}
+.buyv{display:flex;flex-direction:column;gap:3px;max-height:190px;overflow:auto;margin:4px 0}.buyv button{text-align:left;border:1px solid var(--line);background:var(--panel2);border-radius:5px;padding:4px 8px;cursor:pointer;color:inherit;font:inherit}.buyv button[aria-pressed=true]{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold)}.buyi{display:flex;align-items:center;gap:6px;padding:2px 0}.buyi input[type=number]{width:64px}
 .step .del{border:1px solid var(--line);background:var(--panel2);border-radius:4px;width:22px;height:22px;padding:0;cursor:pointer;color:var(--muted);font-size:15px;line-height:1}
 .step .del:hover{color:var(--danger)}
 .step.dragover{box-shadow:inset 0 2px 0 var(--gold)}
@@ -280,6 +281,7 @@ dialog textarea{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-
         <button class="btn sm" id="addGrind">Add grind</button>
         <button class="btn sm" id="addTravel">Add travel or note</button>
         <button class="btn sm" id="hsBtn">Hearth</button>
+        <button class="btn sm" id="buyBtn" title="Buy items from a vendor (sets the RestedXP target to them)">Buy</button>
         <button class="btn sm" id="addCustom">Add custom quest</button>
         <span class="spacer"></span>
         <button class="btn sm" id="undoBtn" title="Undo (Ctrl+Z)">Undo</button>
@@ -298,6 +300,7 @@ dialog textarea{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-
         <label><input type="checkbox" data-l="fp" checked> Flight paths</label>
         <label><input type="checkbox" data-l="towns" checked> Towns</label>
         <label><input type="checkbox" data-l="dungeons" checked> Dungeons</label>
+        <label><input type="checkbox" data-l="vendors" checked> Vendors (zoomed in)</label>
         <label><input type="checkbox" data-l="relief" checked> Terrain relief</label>
         <button class="linkish" id="imgBtn" style="text-align:left;margin-top:4px">Zone map images…</button>
       </details>
@@ -389,6 +392,15 @@ dialog textarea{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-
   <div class="actions"><button class="btn" value="cancel" formnovalidate>Cancel</button><button class="btn gold" value="ok">Add step</button></div>
 </form></dialog>
 
+<dialog id="dlgBuy"><div class="dl" style="min-width:min(520px,92vw)">
+  <h2>Buy from vendor</h2>
+  <label>Vendor<input type="text" id="buyFind" placeholder="Name or type, e.g. General Supplies" autocomplete="off"></label>
+  <div id="buyVendors" class="buyv"></div>
+  <div id="buyItems"></div>
+  <div class="row" style="gap:6px;flex-wrap:wrap;align-items:end"><label style="flex:1;min-width:150px">Other item<input type="text" id="buyOther" placeholder="Item name"></label><label style="width:90px">Item ID<input type="number" id="buyOtherId" min="1"></label><label style="width:70px">Qty<input type="number" id="buyOtherN" min="1" value="1"></label><button class="btn sm" id="buyOtherAdd" type="button">Add</button></div>
+  <p class="note" id="buyMsg" style="margin:0"></p>
+  <div class="actions"><button class="btn" id="buyNo" type="button">Cancel</button><button class="btn gold" id="buyOk" type="button">Add step</button></div>
+</div></dialog>
 <dialog id="dlgCustom"><form method="dialog" id="customForm">
   <h2>Custom quest</h2>
   <p class="note" style="margin:0">For quests that aren't in the Questie database yet, including most new Forever quests. The XP is added when the step is reached.</p>
