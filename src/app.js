@@ -1366,7 +1366,7 @@ function buildRXP(){
   EXPORT_WARN=warns;
   const nm=k=>segs.length===1?name:`${name} ${k+1}${segs[k].gid?' - '+G(segs[k].gid).name:''}`;
   const outL=[]; if(segs.some(sg=>sg.items.some(x=>x.rx!=null))) outL.push('-- Contains text from RestedXP guides (https://github.com/RestedXP/RXPGuides), licensed CC BY-NC-SA 4.0.','-- If you share this file: credit RestedXP, keep it non-commercial and share it under the same licence.','-- Made with the Forever Route Planner (GPL-3.0). Not affiliated with RestedXP, Blizzard or WoW: Forever.','');
-  segs.forEach((sg,k)=>{ const H=[`RXPGuides.RegisterGuide(${JSON.stringify(group)},[[`]; if(extra) H.push(...extra.split(/\s*;\s*|\n/).filter(Boolean)); H.push(`<< ${fac}`); H.push(`#name ${nm(k)}`); const nx=k<segs.length-1?nm(k+1):next; if(nx) H.push(`#next ${nx}`);
+  segs.forEach((sg,k)=>{ const H=[`RXPGuides.RegisterGuide(${JSON.stringify(group)},[[`]; const ex=extra?extra.split(/\s*;\s*|\n/).filter(Boolean):[]; if(!ex.some(l=>/^#forever\b/i.test(l))) H.push('#forever'); H.push(...ex); H.push(`<< ${fac}`); H.push(`#name ${nm(k)}`); const nx=k<segs.length-1?nm(k+1):next; if(nx) H.push(`#next ${nx}`);
     outL.push(...H, ...sg.text(), ']])'); if(k<segs.length-1) outL.push(''); });
   return outL.join('\n');
 }
@@ -1543,7 +1543,7 @@ function buildGuideSteps(g,convert){
     if(!pend.length && nt){ steps.push({t:'travel',kind:firstLoc?'goto':'note',text:nt.txt,loc:firstLoc,cond:bOK&&nt.ok,rx:bi+1,info:true}); }
     if(reqs.length) for(let k=startN;k<steps.length;k++) steps[k].reqs=reqs;
     for(let k=startN;k<steps.length;k++){ const x=steps[k]; if(!x.q||Q(x.q)) continue; if((x.t==='accept'||x.t==='turnin')&&tgts.length) x.tgt=tgts[0]; if(x.t==='complete'){ const re=new RegExp('^\\s*\\.complete\\s+'+x.q+'\\b','i'); x.cl=(b.raw||[]).filter(l=>re.test(l)).map(l=>'    '+l.trim());
-        const say=(b.raw||[]).filter(l=>/^\s*>>/.test(l)).map(l=>'    '+l.trim()), tg=(b.raw||[]).filter(l=>/^\s*\.target\b/i.test(l)).map(l=>'    '+l.trim()); x.objs=[];
+        const say=(b.raw||[]).filter(l=>/^\s*>>/.test(l)).map(l=>'    '+l.trim()), tg=(b.raw||[]).filter(l=>/^\s*\.(target|mob|unitscan)\b/i.test(l)).map(l=>'    '+l.trim()); x.cl=[...say,...x.cl,...tg]; x.objs=[];
         for(const l of b.raw||[]){ const om=l.match(new RegExp('^\\s*\\.complete\\s+'+x.q+'\\s*,\\s*(\\d+)[^-]*(?:--\\s*(.*))?$','i')); if(!om) continue; const txt=(om[2]||'').replace(/\|c\w{8}|\|r|\|T[^|]*\|t/g,'').replace(/^\|?(?:\d+\/\d+)?\s*/,'').trim()||('Objective '+om[1]); x.objs.push({n:+om[1],text:txt,loc:x.loc?{z:x.loc.z,px:+x.loc.px,py:+x.loc.py}:null,tgt:tgts[0]||null,lines:[...say,'    '+l.trim(),...tg]}); } } }
     if(b.loop&&gl.length>=2){ const lr=['    #loop',...(b.raw||[]).filter(l=>/^\s*\.goto\b/i.test(l))]; for(let k=startN;k<steps.length;k++){ steps[k].path=gl.map(l=>({z:l.z,px:+l.px,py:+l.py})); steps[k].loopRaw=lr; } }
     for(let k=startN;k<steps.length;k++){ if(b.completewith) steps[k].cw=b.completewith; if(b.sticky||b.completewith) steps[k].sticky=true; if(b.label) steps[k].label=b.label; }
