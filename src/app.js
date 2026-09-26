@@ -253,7 +253,7 @@ function initState(r){ return {level:+r.char.level||1,xp:+r.char.xp||0,party:Mat
 // a new character's hearthstone is bound to where they first spawn
 const START_NAME={Human:'Northshire Abbey',Dwarf:'Coldridge Valley',Gnome:'Coldridge Valley','Night Elf':'Shadowglen',Orc:'Valley of Trials',Troll:'Valley of Trials',Undead:'Deathknell',Tauren:'Camp Narache'};
 function startHome(r){ const s=START[r.char.race]; if(!s) return null; const p=zp2plane(...s); return p?{...p,label:START_NAME[r.char.race]||zoneName(s[0]),step:null,def:true}:null; }
-function cloneState(s){ return {level:s.level,xp:s.xp,party:s.party,log:new Map([...s.log].map(([k,v])=>[k,{...v,objs:v.objs?new Set(v.objs):undefined}])),turned:new Set(s.turned),fps:new Set(s.fps),home:s.home,fq:new Map(s.fq||[])}; }
+function cloneState(s){ return {level:s.level,xp:s.xp,party:s.party,log:new Map([...s.log].map(([k,v])=>[k,{...v,objs:v.objs?new Set(v.objs):undefined}])),turned:new Set(s.turned),fps:new Set(s.fps),home:s.home,fq:new Map(s.fq||[]),fqo:new Map([...(s.fqo||new Map())].map(([k,v])=>[k,new Set(v)]))}; }
 // Forever: quest log holds 40, but escort quests can't be started with 25+ quests in the log
 const LOGMAX=40, ESC_LIMIT=25, ESCORT=new Set([155,219,309,435,648,660,665,667,731,836,863,898,938,945,976,994,995,1144,1222,1249,1270,1393,1440,1560,1651,2742,2767,2845,2904,2969,3382,3525,3982,4121,4245,4261,4265,4322,4491,4770,4901,4904,4966,5203,5321,5713,5821,5943,5944,6132,6403,6482,6523,6544,6641,8736]);
 const ESC_NOTE=`Escort quest: have fewer than ${ESC_LIMIT} quests in your log before accepting (Forever bug)`;
@@ -276,7 +276,7 @@ function simulate(){
     if(!skip && route.optOff && s.opt && s.t==='accept') optQ.add(s.q);
     if(skip){ r.inactive=skip; }
     else if((s.t==='accept'||s.t==='complete'||s.t==='turnin'||s.t==='abandon') && !q){ // Forever quest Questie doesn't know yet: kept as written, tracked like a custom quest
-      const xpSet=+(route.qxp?.[s.q])||0, xp=xpSet||fqXpEst(s.q); r.custom=true; if(!st.fq) st.fq=new Map(); if(s.t==='accept'&&!st.fq.has(s.q)) st.fq.set(s.q,'log'); else if(s.t==='complete'&&st.fq.get(s.q)==='log') st.fq.set(s.q,'ready'); else if(s.t==='turnin') st.fq.set(s.q,'done'); else if(s.t==='abandon') st.fq.delete(s.q);
+      const xpSet=+(route.qxp?.[s.q])||0, xp=xpSet||fqXpEst(s.q); r.custom=true; if(!st.fq) st.fq=new Map(); if(s.t==='accept'&&!st.fq.has(s.q)) st.fq.set(s.q,'log'); else if(s.t==='complete'&&st.fq.get(s.q)==='log'){ const ob=Object.keys(foreverQuests().get(s.q)?.objs||{}).length; if(s.obj&&ob>1){ st.fqo=st.fqo||new Map(); const set=new Set(st.fqo.get(s.q)||[]); set.add(s.obj); st.fqo.set(s.q,set); if(set.size>=ob) st.fq.set(s.q,'ready'); } else st.fq.set(s.q,'ready'); } else if(s.t==='turnin') st.fq.set(s.q,'done'); else if(s.t==='abandon') st.fq.delete(s.q);
       if(s.t==='turnin'&&xp){ r.gained=xp; addXP(st,xp); }
       r.warn.push(`Forever quest not in the Questie database${s.src?': kept exactly as the guide has it.':' (taken from your imported guides).'}${s.t==='turnin'?(xpSet?` Counting ${fmt(xp)} XP.`:xp?` Counting ≈${fmt(xp)} XP, estimated from its level (Wowhead): set it below if you know it.`:' Set its XP reward below if you know it.'):''}`); }
     else if(s.t==='accept'){
@@ -324,12 +324,12 @@ function nearest(pts,ref){
 /* ---------- Forever quests known only from your imported guides ---------- */
 function drawFQ(){ const s=view.s, st=SIM.st;
   if(layers.avail&&s>=0.015) for(const a of fqAvail(st,true)){ if(a.lock.length&&!layers.locked) continue; const e=a.e;
-    const marks=!a.f?[[e.acc[0],'!',1]]:[[e.tin[0],'?',a.f==='ready'?1:.6],...(a.f==='log'&&e.cmp.length?[[e.cmp[0],'◆',1]]:[])];
-    for(const [l,ch,al] of marks){ if(!l) continue; const p=zp2plane(l.z,l.px,l.py); if(!p) continue; const [x,y]=toS(p); if(x<-12||x>W+12||y<-12||y>H+12) continue;
+    const obl=Object.values(e.objs||{}), dn=st.fqo?.get(e.q)||new Set(); const marks=!a.f?[[e.acc[0],'!',1]]:[[e.tin[0],'?',a.f==='ready'?1:.6],...(a.f==='log'?(obl.length>1?obl.filter(o=>o.loc&&!dn.has(o.n)).map(o=>[o.loc,'◆',1,o.text]):e.cmp.length?[[e.cmp[0],'◆',1]]:[]):[])];
+    for(const [l,ch,al,otx] of marks){ if(!l) continue; const p=zp2plane(l.z,l.px,l.py); if(!p) continue; const [x,y]=toS(p); if(x<-12||x>W+12||y<-12||y>H+12) continue;
     const soon=!a.f&&st.level<e.minL; ctx.globalAlpha=soon?.55:al; ctx.fillStyle='#07363a'; ctx.beginPath(); ctx.arc(x,y,10,0,7); ctx.fill(); ctx.strokeStyle='#4fe3d0'; ctx.lineWidth=2; ctx.stroke();
     ctx.font='900 14px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillStyle='#4fe3d0'; ctx.fillText(ch,x,y+.5); ctx.globalAlpha=1;
     if(s>0.08) haloText(e.n,x,y-17,'11px "Alegreya Sans", sans-serif','#bff7ef','rgba(4,30,32,.9)',3);
-    hits.push({x,y,r:11,kind:'fq',q:e.q,label:e.n+(soon?` (from level ${e.minL})`:ch==='?'?' · turn in':ch==='◆'?' · objective':'')}); } } }
+    hits.push({x,y,r:11,kind:'fq',q:e.q,label:e.n+(soon?` (from level ${e.minL})`:ch==='?'?' · turn in':ch==='◆'?' · '+(otx||'objective'):'')}); } } }
 
 const FQ={key:null,map:new Map()};
 function guideLevels(g){ const m=(g.name||'').match(/(\d+)\s*-\s*(\d+)/); return m?[+m[1],+m[2]]:[1,60]; }
@@ -337,7 +337,7 @@ function foreverQuests(){ const key=route.id+':'+(route.guides||[]).map(g=>g.id+
   for(const g of route.guides||[]){ const [l0,l1]=guideLevels(g); for(const x of g.steps||[]){ if(!x.q||Q(x.q)||!x.cond||!['accept','turnin','complete'].includes(x.t)) continue;
     let e=m.get(x.q); if(!e) m.set(x.q,e={q:x.q,n:null,acc:[],tin:[],cmp:[],g:g.name,l:l0,l1,tgtA:null,tgtT:null,cl:null});
     if(x.qn&&!e.n) e.n=x.qn; const L=x.loc&&x.loc.z!=null?{z:x.loc.z,px:+x.loc.px,py:+x.loc.py}:null;
-    if(x.t==='accept'){ if(L) e.acc.push(L); if(!e.tgtA) e.tgtA=x.tgt||null; } else if(x.t==='turnin'){ if(L) e.tin.push(L); if(!e.tgtT) e.tgtT=x.tgt||null; } else { if(L) e.cmp.push(L); if(!e.cl&&x.cl?.length) e.cl=x.cl; } } }
+    if(x.t==='accept'){ if(L) e.acc.push(L); if(!e.tgtA) e.tgtA=x.tgt||null; } else if(x.t==='turnin'){ if(L) e.tin.push(L); if(!e.tgtT) e.tgtT=x.tgt||null; } else { if(L) e.cmp.push(L); if(!e.cl&&x.cl?.length) e.cl=x.cl; e.objs=e.objs||{}; for(const o of x.objs||[]) if(!e.objs[o.n]) e.objs[o.n]=o; } } }
   for(const e of m.values()){ const w=META.fqw?.[e.q]; if(w){ e.lv=w[0]||null; e.req=w[1]||null; e.prev=w[2]||[]; e.next=w[3]||[]; if(!e.n&&w[4]) e.n=w[4]; } if(!e.n) e.n='Quest '+e.q; e.minL=e.req||Math.max(1,Math.min(e.l,e.lv?e.lv-4:e.l)); } FQ.key=key; FQ.map=m; return m; }
 let xpMed=null; function fqXpEst(q){ const e=foreverQuests().get(q)||{lv:META.fqw?.[q]?.[0]}; if(!e.lv) return 0; if(!xpMed){ xpMed={}; const by={}; for(const k in DB.q){ const x=DB.q[k].xp; if(x&&x[1]) (by[x[0]]=by[x[0]]||[]).push(x[1]); } for(const L in by){ const a=by[L].sort((a,b)=>a-b); xpMed[L]=a[a.length>>1]; } } return xpMed[e.lv]||0; }
 function fqPrevMissing(e,st){ const miss=[]; for(const p of e.prev||[]){ if(Q(p)){ if(!st.turned.has(p)) miss.push(Q(p).n); } else if(foreverQuests().has(p)||META.fqw?.[p]){ if(fqStatus(p,st)!=='done') miss.push(foreverQuests().get(p)?.n||META.fqw?.[p]?.[4]||('Quest '+p)); } } return miss; }
@@ -347,8 +347,10 @@ function fqHidden(st){ const out=[]; const at=q=>{ let a=-1,d=-1; route.steps.fo
     if(why) out.push({e,why}); } return out; }
 function fqStatus(q,st){ return (st||SIM.st).fq?.get(q)||null; }
 function fqAvail(st,soon){ const out=[]; for(const e of foreverQuests().values()){ const f=fqStatus(e.q,st); if(f==='done') continue; if(!f&&!e.acc.length) continue; if(!f&&st.level<e.minL-(soon?3:0)) continue; const lock=f?[]:fqPrevMissing(e,st); out.push({e,f,lock}); } return out; }
-function fqStep(t,q){ const e=foreverQuests().get(+q); if(!e) return null; const loc=(t==='accept'?e.acc:t==='turnin'?e.tin:e.cmp)[0]||e.acc[0]||null; const s={t,q:e.q,qn:e.n}; if(loc) s.loc={...loc}; const tg=t==='accept'?e.tgtA:t==='turnin'?e.tgtT:null; if(tg) s.tgt=tg; if(t==='complete'&&e.cl) s.cl=[...e.cl]; return s; }
-function fqRow(a){ const e=a.e; const xp=+(route.qxp?.[e.q])||0, est=xp?0:fqXpEst(e.q); const nx=(e.next||[]).map(n=>foreverQuests().get(n)?.n||META.fqw?.[n]?.[4]||Q(n)?.n).filter(Boolean); return `<div class="qrow" data-fq="${e.q}"><span class="lv">${e.lv||e.l}</span><span class="nm"><span>${a.lock.length?'🔒 ':''}${esc(e.n)}</span><br><span class="meta">${esc(e.g)} · ${a.f==='log'?'in your log':a.f==='ready'?'ready to turn in':SIM.st.level<e.minL?'from level '+e.minL:'Forever quest'}${xp?' · +'+fmt(xp)+' XP':est?' · ≈'+fmt(est)+' XP (est.)':''}${e.req?' · needs level '+e.req:''}${a.lock.length?' · Needs: '+esc(a.lock.join(', ')):''}${nx.length?' · leads to '+esc(nx.join(', ')):''}</span></span><span class="row" style="gap:3px">${a.f?'':`<button class="btn sm" data-fqa="accept:${e.q}">Accept</button>`}${a.f==='log'?`<button class="btn sm" data-fqa="complete:${e.q}">Complete</button>`:''}${a.f?`<button class="btn sm" data-fqa="turnin:${e.q}">Turn in</button>`:''}</span></div>`; }
+function fqStep(t,q,n){ const e=foreverQuests().get(+q); if(!e) return null;
+  if(t==='complete'&&n&&e.objs?.[n]){ const o=e.objs[n]; const s={t,q:e.q,qn:e.n,obj:+n,objText:o.text,cl:[...o.lines]}; if(o.loc) s.loc={...o.loc}; if(o.tgt) s.tgt=o.tgt; return s; } const loc=(t==='accept'?e.acc:t==='turnin'?e.tin:e.cmp)[0]||e.acc[0]||null; const s={t,q:e.q,qn:e.n}; if(loc) s.loc={...loc}; const tg=t==='accept'?e.tgtA:t==='turnin'?e.tgtT:null; if(tg) s.tgt=tg; if(t==='complete'&&e.cl) s.cl=[...e.cl]; return s; }
+function fqObjBtns(e,st){ const ob=Object.values(e.objs||{}); if(ob.length<2) return `<button class="btn sm" data-fqa="complete:${e.q}">Complete</button>`; const done=(st||SIM.st).fqo?.get(e.q)||new Set(); return ob.map(o=>`<button class="btn sm" data-fqa="complete:${e.q}:${o.n}" ${done.has(o.n)?'disabled title="Done"':''}>${esc(o.text)}</button>`).join(''); }
+function fqRow(a){ const e=a.e; const xp=+(route.qxp?.[e.q])||0, est=xp?0:fqXpEst(e.q); const nx=(e.next||[]).map(n=>foreverQuests().get(n)?.n||META.fqw?.[n]?.[4]||Q(n)?.n).filter(Boolean); return `<div class="qrow" data-fq="${e.q}"><span class="lv">${e.lv||e.l}</span><span class="nm"><span>${a.lock.length?'🔒 ':''}${esc(e.n)}</span><br><span class="meta">${esc(e.g)} · ${a.f==='log'?'in your log':a.f==='ready'?'ready to turn in':SIM.st.level<e.minL?'from level '+e.minL:'Forever quest'}${xp?' · +'+fmt(xp)+' XP':est?' · ≈'+fmt(est)+' XP (est.)':''}${e.req?' · needs level '+e.req:''}${a.lock.length?' · Needs: '+esc(a.lock.join(', ')):''}${nx.length?' · leads to '+esc(nx.join(', ')):''}</span></span><span class="row" style="gap:3px">${a.f?'':`<button class="btn sm" data-fqa="accept:${e.q}">Accept</button>`}${a.f==='log'?fqObjBtns(e):''}${a.f?`<button class="btn sm" data-fqa="turnin:${e.q}">Turn in</button>`:''}</span></div>`; }
 /* ---------- vendors ---------- */
 function vendorOf(id){ const v=META.vend?.[id]; return v?{id:+id,name:v[0],sub:v[1],fac:v[2],sp:v[3],items:v[4]}:null; }
 function vendorOK(v){ const f=charInfo(route).fac; return !v.fac||v.fac.includes(f); }
@@ -782,7 +784,7 @@ function stepText(s){
   const q=s.q?Q(s.q):null; const qn=q?q.n:(s.qn||('Quest '+s.q));
   switch(s.t){
     case 'accept': return {ic:'!',cls:'accept',t:'Accept '+qn,sub:(q?locSub(s):'')+(s.src?' · from guide':'')};
-    case 'complete': { const ob=s.obj&&q?objectives(s.q).find(o=>o.rx===s.obj):null; return {ic:'✓',cls:'complete',t:ob?`${qn}: ${ob.text}`:'Complete '+qn,sub:ob?'One objective':(q?objectives(s.q).map(o=>o.text).join('; '):'')}; }
+    case 'complete': { if(!q&&s.objText) return {ic:'✓',cls:'complete',t:`${qn}: ${s.objText}`,sub:s.tgt?'Talk to '+s.tgt:'One objective'}; const ob=s.obj&&q?objectives(s.q).find(o=>o.rx===s.obj):null; return {ic:'✓',cls:'complete',t:ob?`${qn}: ${ob.text}`:'Complete '+qn,sub:ob?'One objective':(q?objectives(s.q).map(o=>o.text).join('; '):'')}; }
     case 'turnin': return {ic:'?',cls:'turnin',t:'Turn in '+qn,sub:q?locSub(s):''};
     case 'abandon': return {ic:'×',cls:'abandon',t:'Abandon '+qn,sub:''};
     case 'prof': { if(s.act==='craft') return {ic:'⚒',cls:'travel',t:`Craft ${s.n>1?s.n+' × ':''}${s.item}`,sub:s.prof}; const t=ptrainerOf(s.npc); return {ic:'⚒',cls:'travel',t:s.act==='learn'?`Learn ${s.prof}`:`Train ${s.prof}`,sub:(t?.name||s.npcName||'')+(t?' · '+t.sub+' · '+zoneName(t.sp[0][0]):'')}; }
@@ -814,7 +816,7 @@ function guideStickyDefault(t,q){ for(const g of route.guides||[]) for(const x o
 function planeToZp(z,X,Y){ const Z=META.zones[z]; const [L,R,T,B]=Z.b; const off=META.off[Z.m]; const wy=-(X-off[0]), wx=-(Y-off[1]); return {z:+z,px:+((L-wy)/(L-R)*100).toFixed(2),py:+((T-wx)/(T-B)*100).toFixed(2)}; }
 function pathOf(s){ return s.path!==undefined?s.path:(stepGuide(s)?.path||null); }
 function pathPts(path){ return (path||[]).map(l=>zp2plane(l.z,l.px,l.py)).filter(Boolean); }
-function guidePathFor(q){ for(const g of route.guides||[]) for(const x of g.steps||[]) if(x.q===q&&x.t==='complete'&&x.cond&&x.path&&x.path.length>=2) return {path:x.path.map(l=>({...l})),raw:x.loopRaw?[...x.loopRaw]:null,g:g.name}; return null; }
+function guidePathFor(q,obj){ for(const g of route.guides||[]) for(const x of g.steps||[]) if(x.q===q&&x.t==='complete'&&x.cond&&x.path&&x.path.length>=2&&!(obj&&x.objs&&!x.objs.some(o=>o.n===obj))) return {path:x.path.map(l=>({...l})),raw:x.loopRaw?[...x.loopRaw]:null,g:g.name}; return null; }
 function genPath(qid,obj,ref){
   if(!Q(qid)) return null; const obs=objectives(qid).filter(o=>!o.pre&&(!obj||o.rx===obj)&&['kill','loot','obj'].includes(o.kind));
   let pts=obs.flatMap(o=>o.pts).filter(p=>p&&!p.dg&&p.z!=null); if(pts.length<4) return null;
@@ -835,7 +837,7 @@ function genPath(qid,obj,ref){
   return T.map(k=>{ const w=W[k]; let bz=sel[0], bd=1e18; for(const p of sel){ const d=(p.X-w.X)**2+(p.Y-w.Y)**2; if(d<bd){bd=d;bz=p;} } return planeToZp(bz.z,w.X,w.Y); });
 }
 function routeRefBefore(i){ for(let k=Math.min(i,route.steps.length)-1;k>=0;k--) if(SIM.res[k]?.pt&&!SIM.res[k].stk) return SIM.res[k].pt; return null; }
-function defaultPath(step,at){ if(step.src||step.t!=='complete'||!step.q||step.path) return null; const gp=guidePathFor(step.q); if(gp){ step.path=gp.path; if(gp.raw) step.loopRaw=gp.raw; step.pathSrc=gp.g; return 'guide'; }
+function defaultPath(step,at){ if(step.src||step.t!=='complete'||!step.q||step.path) return null; const gp=guidePathFor(step.q,step.obj); if(gp){ step.path=gp.path; if(gp.raw) step.loopRaw=gp.raw; step.pathSrc=gp.g; return 'guide'; }
   const p=genPath(step.q,step.obj,routeRefBefore(at)); if(p){ step.path=p; step.pathSrc='generated'; return 'gen'; } return null; }
 function preLootSteps(step){ const q=step.q&&Q(step.q); if(!q||step.t!=='complete'||!q.rs||step.src) return [];
   const have=new Set(route.steps.slice(0,cursor+1).filter(x=>x.t==='collect'&&x.q===step.q).map(x=>x.item)); const o=q.o||{};
@@ -1121,7 +1123,7 @@ function showPop(h,x,y){
   const w=div.offsetWidth, hh=div.offsetHeight; div.style.left=Math.max(6,Math.min(W-w-6,x+12))+'px'; div.style.top=Math.max(6,Math.min(H-hh-6,y+12))+'px';
   $('#tip').style.display='none';
 }
-function fqPopHTML(q){ const e=foreverQuests().get(q); const f=fqStatus(q); return `<h4>${esc(e.n)}</h4><div class="it"><span class="note">Forever quest (not in Questie yet) · from ${esc(e.g)}${e.tgtA?' · '+esc(e.tgtA):''}</span><div class="row">${f?'':`<button class="btn sm gold" data-fqa="accept:${e.q}">Accept</button>`}${f==='log'?`<button class="btn sm gold" data-fqa="complete:${e.q}">Complete</button>`:''}${f?`<button class="btn sm gold" data-fqa="turnin:${e.q}">Turn in${e.tgtT?' to '+esc(e.tgtT):''}</button>`:''}<a class="btn sm" href="${whURL(e.q,e.n)}" target="_blank" rel="noopener">Wowhead</a></div></div>`; }
+function fqPopHTML(q){ const e=foreverQuests().get(q); const f=fqStatus(q); return `<h4>${esc(e.n)}</h4><div class="it"><span class="note">Forever quest (not in Questie yet) · from ${esc(e.g)}${e.tgtA?' · '+esc(e.tgtA):''}</span><div class="row">${f?'':`<button class="btn sm gold" data-fqa="accept:${e.q}">Accept</button>`}${f==='log'?fqObjBtns(e):''}${f?`<button class="btn sm gold" data-fqa="turnin:${e.q}">Turn in${e.tgtT?' to '+esc(e.tgtT):''}</button>`:''}<a class="btn sm" href="${whURL(e.q,e.n)}" target="_blank" rel="noopener">Wowhead</a></div></div>`; }
 function townHTML(h){ const locAttr=l=>`data-loc='${esc(JSON.stringify(l))}'`; return `<h4>${esc(h.label)}</h4><div class="it"><div class="row"><button class="btn sm" data-home="${esc(h.label)}" ${locAttr(h.loc)}>Set hearthstone</button><button class="btn sm" data-hs="${esc(h.label)}" ${locAttr(h.loc)}>Hearth here</button><button class="btn sm" data-goto="${esc(h.label)}" ${locAttr(h.loc)}>Go here</button>${flyBtn(zp2plane(h.loc.z,h.loc.px,h.loc.py))}</div></div>`; }
 function flyBtn(p){ if(!p||!META.taxi) return ''; const id=nearestNode(p); if(!id) return ''; return `<button class="btn sm" data-flynode="${id}" title="Adds a .fly step to the nearest flight path">Fly to ${esc(taxiShort(id))}</button>`; }
 function guessPlace(loc){ let best=null,bd=1e18; const p=zp2plane(loc.z,loc.px,loc.py); for(const [z,x,y,n] of META.towns){ const t=zp2plane(z,x,y); if(!t) continue; const d=(t.X-p.X)**2+(t.Y-p.Y)**2; if(d<bd){bd=d;best=n;} } for(const [z,Z] of Object.entries(META.zones)){ if(!Z.city) continue; const t=zp2plane(z,50,50); const d=(t.X-p.X)**2+(t.Y-p.Y)**2; if(d<bd){bd=d;best=Z.n;} } return bd<1200*1200?best:zoneName(loc.z); }
@@ -1200,7 +1202,7 @@ $('#buyNo').addEventListener('click',()=>$('#dlgBuy').close());
 $('#buyOk').addEventListener('click',()=>{ if(buyCtx.vid==null){ $('#buyMsg').textContent='Pick a vendor first.'; return; } if(!buyCtx.items.size){ $('#buyMsg').textContent='Tick at least one item.'; return; }
   const v=vendorOf(buyCtx.vid); const step={t:'buy',npc:v.id,npcName:v.name,items:[...buyCtx.items.values()].map(it=>({id:it.id||null,n:it.n||itemName(it.id),c:it.c}))}; $('#dlgBuy').close();
   if(buyCtx.i!=null){ pushHistory(); Object.assign(route.steps[buyCtx.i],step); refresh(); } else addStep(step); });
-document.addEventListener('click',e=>{ const b=e.target.closest('[data-fqa]'); if(!b) return; e.stopPropagation(); hidePop(); const [t,q]=b.dataset.fqa.split(':'); const st=fqStep(t,+q); if(st){ addStep(st); if(t==='turnin'&&!route.qxp?.[+q]) toast('Set its XP reward with “Set XP” on the step if you know it.',4000); } });
+document.addEventListener('click',e=>{ const b=e.target.closest('[data-fqa]'); if(!b) return; e.stopPropagation(); hidePop(); const [t,q,n]=b.dataset.fqa.split(':'); const st=fqStep(t,+q,n?+n:null); if(st){ addStep(st); if(t==='turnin'&&!route.qxp?.[+q]) toast('Set its XP reward with “Set XP” on the step if you know it.',4000); } });
 document.addEventListener('click',e=>{ const b=e.target.closest('[data-buyv]'); if(!b) return; hidePop(); openBuy(null,+b.dataset.buyv); });
 $('#pathDone').addEventListener('click',stopPathEdit); document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&pathEdit!=null) stopPathEdit(); });
 $('#pickCancel').addEventListener('click',()=>{ const cb=picking; stopPick(); cb&&cb(null); });
@@ -1513,7 +1515,9 @@ function buildGuideSteps(g,convert){
     const nt=dj?{txt:dj,ok:true}:gotoTxt?{txt:gotoTxt,ok:true}:(notes[0]||(mobs.length?{txt:'Kill '+mobs.slice(0,3).join(', '),ok:true}:firstLoc?{txt:'Go to '+zoneName(firstLoc.z),ok:true}:hasCmd?{txt:'Guide step',ok:true}:null));
     if(!pend.length && nt){ steps.push({t:'travel',kind:firstLoc?'goto':'note',text:nt.txt,loc:firstLoc,cond:bOK&&nt.ok,rx:bi+1,info:true}); }
     if(reqs.length) for(let k=startN;k<steps.length;k++) steps[k].reqs=reqs;
-    for(let k=startN;k<steps.length;k++){ const x=steps[k]; if(!x.q||Q(x.q)) continue; if((x.t==='accept'||x.t==='turnin')&&tgts.length) x.tgt=tgts[0]; if(x.t==='complete'){ const re=new RegExp('^\\s*\\.complete\\s+'+x.q+'\\b','i'); x.cl=(b.raw||[]).filter(l=>re.test(l)).map(l=>'    '+l.trim()); } }
+    for(let k=startN;k<steps.length;k++){ const x=steps[k]; if(!x.q||Q(x.q)) continue; if((x.t==='accept'||x.t==='turnin')&&tgts.length) x.tgt=tgts[0]; if(x.t==='complete'){ const re=new RegExp('^\\s*\\.complete\\s+'+x.q+'\\b','i'); x.cl=(b.raw||[]).filter(l=>re.test(l)).map(l=>'    '+l.trim());
+        const say=(b.raw||[]).filter(l=>/^\s*>>/.test(l)).map(l=>'    '+l.trim()), tg=(b.raw||[]).filter(l=>/^\s*\.target\b/i.test(l)).map(l=>'    '+l.trim()); x.objs=[];
+        for(const l of b.raw||[]){ const om=l.match(new RegExp('^\\s*\\.complete\\s+'+x.q+'\\s*,\\s*(\\d+)[^-]*(?:--\\s*(.*))?$','i')); if(!om) continue; const txt=(om[2]||'').replace(/\|c\w{8}|\|r|\|T[^|]*\|t/g,'').replace(/^\|?\d+\/\d+\s*/,'').trim()||('Objective '+om[1]); x.objs.push({n:+om[1],text:txt,loc:x.loc?{z:x.loc.z,px:+x.loc.px,py:+x.loc.py}:null,tgt:tgts[0]||null,lines:[...say,'    '+l.trim(),...tg]}); } } }
     if(b.loop&&gl.length>=2){ const lr=['    #loop',...(b.raw||[]).filter(l=>/^\s*\.goto\b/i.test(l))]; for(let k=startN;k<steps.length;k++){ steps[k].path=gl.map(l=>({z:l.z,px:+l.px,py:+l.py})); steps[k].loopRaw=lr; } }
     for(let k=startN;k<steps.length;k++){ if(b.completewith) steps[k].cw=b.completewith; if(b.sticky||b.completewith) steps[k].sticky=true; if(b.label) steps[k].label=b.label; }
     if(b.optional) for(let k=startN;k<steps.length;k++) steps[k].gopt=true;
