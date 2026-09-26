@@ -53,6 +53,22 @@ used={i for v in vend.values() for i in v[4]}
 json.dump(dict(vend=vend, trn=trn, vi={i:items[i] for i in used}), open('vend.json','w'), separators=(',',':'))
 if __name__=="__main__": print('vendors',len(vend),'with stock',sum(1 for v in vend.values() if v[4]),'items',len(used))
 if __name__=="__main__": print(vend.get(2115))
+# profession trainers (npcFlags & 16 = trainer, profession named in the subname)
+PMAP=[('Alchemy',r'Alchem'),('Blacksmithing',r'Blacksmith|Armorsmith|Weaponsmith'),('Enchanting',r'Enchant'),('Engineering',r'Engineer'),('Leatherworking',r'Leather'),('Tailoring',r'Tailor'),('Herbalism',r'Herbal'),('Skinning',r'Skinn'),('Mining',r'Miner|Mining'),('Cooking',r'Cook|Chef'),('Fishing',r'Fish'),('First Aid',r'First Aid|Surgeon|Nurse')]
+ptrn={}
+for nid,f in rows(Q+'foreverNpcDB.lua'):
+    sub=s(f[13]) if len(f)>13 else None
+    fl=int(f[14]) if len(f)>14 and f[14].lstrip('-').isdigit() else 0
+    if not sub or not fl&16 or re.search(r'Suppl|Merchant|Vendor|Promoter|League',sub): continue
+    prof=next((p for p,rx in PMAP if re.search(rx,sub)),None)
+    if not prof: continue
+    sp=[]
+    for z,pts in re.findall(r'\[(\d+)\]=\{((?:\{[-\d.]+,[-\d.]+\},?)*)\}', f[6] or ''):
+        for x,y in re.findall(r'\{([-\d.]+),([-\d.]+)\}', pts):
+            if float(x)>=0: sp.append([int(z),round(float(x),1),round(float(y),1)])
+    if sp: ptrn[nid]=[s(f[0]), prof, s(f[12]) if len(f)>12 else None, sp[:4], sub]
+json.dump(ptrn,open('ptrn.json','w'),separators=(',',':'))
+if __name__=="__main__": print('profession trainers',len(ptrn))
 # spirit healers (graveyards)
 gy=[]
 for nid,f in rows(Q+'foreverNpcDB.lua'):

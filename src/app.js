@@ -364,12 +364,21 @@ function addDeath(gi){ const G=gi!=null?gyAt(gi):null; let g=G;
   if(!g){ const nx=SIM.res[cursor+1]?.pt; if(nx) g=nearestGY(nx,META.zones[nx.z]?.m); }
   if(!g) return toast('Pick a graveyard: zoom in, click a ✝ Spirit Healer and choose “Die and res here”',4500);
   addStep({t:'deathskip',gy:g.gi}); if(gi==null) toast(`Die and res at the ${zoneName(g.z)} graveyard, the closest one to your next step. Pick another ✝ on the map to change it.`,5000); }
+/* ---------- profession trainers ---------- */
+const PSPELL={Alchemy:2259,Blacksmithing:2018,Cooking:2550,Enchanting:7411,Engineering:4036,'First Aid':3273,Fishing:7620,Herbalism:2366,Leatherworking:2108,Mining:2575,Skinning:8613,Tailoring:3908};
+function ptrainerOf(id){ const v=META.ptrn?.[id]; return v?{id:+id,name:v[0],prof:v[1],fac:v[2],sp:v[3],sub:v[4]}:null; }
+function ptrainerPts(t){ return t.sp.map(([z,x,y])=>{ const p=zp2plane(z,x,y); return p?{...p,label:t.name,npc:t.id}:null; }).filter(Boolean); }
+function itemIdByName(n){ const k=n.trim().toLowerCase(); for(const src of [META.vi||{},DB.i||{}]) for(const id in src){ const nm=typeof src[id]==='string'?src[id]:src[id]?.n; if(nm&&nm.toLowerCase()===k) return +id; } return null; }
+async function addProf(id,act){ const t=ptrainerOf(id); if(!t) return;
+  if(act==='craft'){ const v=await askText(`What will you craft? e.g. "Linen Bandage x10"`,'','Add','text'); if(!v) return; const m=v.match(/^(.*?)(?:\s*[x×]\s*(\d+))?\s*$/i); const item=m[1].trim(); if(!item) return; addStep({t:'prof',act:'craft',prof:t.prof,item,n:+(m[2]||1),itemId:itemIdByName(item)}); return; }
+  addStep({t:'prof',act,prof:t.prof,npc:t.id,npcName:t.name}); }
 function trainerOf(id){ const v=META.trn?.[id]; return v?{id:+id,name:v[0],cls:v[1],fac:v[2],sp:v[3]}:null; }
 function myTrainers(){ const c=route.char.cls; return Object.keys(META.trn||{}).map(trainerOf).filter(t=>t.cls===c&&vendorOK(t)); }
 function trainerPts(t){ return t.sp.map(([z,x,y])=>{ const p=zp2plane(z,x,y); return p?{...p,label:t.name,npc:t.id}:null; }).filter(Boolean); }
 function nearestTrainer(ref){ let best=null,bd=1e18; for(const t of myTrainers()) for(const p of trainerPts(t)){ const d=ref?Math.hypot(p.X-ref.X,p.Y-ref.Y):0; if(d<bd){bd=d;best=t;} } return best; }
 function itemName(id){ return META.vi?.[id]||DB.i?.[id]?.n||('Item '+id); }
 function stepPoint(s,ref){
+  if(s.t==='prof'){ if(s.act==='craft') return null; const t=ptrainerOf(s.npc); return t?nearest(ptrainerPts(t),ref):null; }
   if(s.t==='deathskip'){ return gyAt(s.gy); }
   if(s.t==='collect'){ return s.loc?zp2plane(s.loc.z,s.loc.px,s.loc.py):nearest(itemSourcePts(s.item,'loot'),ref); }
   if(s.t==='train'){ const t=trainerOf(s.npc); return t?nearest(trainerPts(t),ref):null; }
@@ -601,6 +610,7 @@ function drawPOIs(){
       ctx.fillStyle='#5a3d0a'; ctx.beginPath(); ctx.arc(x,y,5.5,0,7); ctx.fill(); ctx.strokeStyle='#ffd24a'; ctx.lineWidth=1.3; ctx.stroke(); ctx.fillStyle='#ffd24a'; ctx.fillText('¤',x,y+.5);
       hits.push({x,y,r:7,kind:'vendor',vid:v.id,label:v.name}); } }
     for(const g of gyPts()){ const [x,y]=toS(g); if(x<-10||x>W+10||y<-10||y>H+10) continue; ctx.fillStyle='#2b2140'; ctx.beginPath(); ctx.arc(x,y,6.5,0,7); ctx.fill(); ctx.strokeStyle='#c8aaff'; ctx.lineWidth=1.4; ctx.stroke(); ctx.fillStyle='#e9dcff'; ctx.font='700 10px sans-serif'; ctx.fillText('✝',x,y+.5); hits.push({x,y,r:8,kind:'gy',gi:g.gi,label:g.label}); }
+    for(const id in META.ptrn||{}){ const t=ptrainerOf(id); if(!vendorOK(t)) continue; for(const p of ptrainerPts(t)){ const [x,y]=toS(p); if(x<-10||x>W+10||y<-10||y>H+10) continue; ctx.fillStyle='#153a22'; ctx.beginPath(); ctx.arc(x,y,6.5,0,7); ctx.fill(); ctx.strokeStyle='#8fe0a8'; ctx.lineWidth=1.4; ctx.stroke(); ctx.fillStyle='#c9f5d6'; ctx.font='700 9px sans-serif'; ctx.fillText('⚒',x,y+.5); hits.push({x,y,r:8,kind:'ptrainer',pid:t.id,label:t.name+' ('+t.sub+')'}); } }
     for(const t of myTrainers()) for(const p of trainerPts(t)){ const [x,y]=toS(p); if(x<-10||x>W+10||y<-10||y>H+10) continue; ctx.fillStyle='#1d2a55'; ctx.beginPath(); ctx.arc(x,y,6.5,0,7); ctx.fill(); ctx.strokeStyle='#9fc0ff'; ctx.lineWidth=1.4; ctx.stroke(); ctx.fillStyle='#cfe0ff'; ctx.font='700 9px sans-serif'; ctx.fillText('✦',x,y+.5); hits.push({x,y,r:8,kind:'trainer',tid:t.id,label:t.name+' ('+t.cls+' trainer)'}); } }
   if(layers.dungeons && s>=0.03){ const seen=[];
     for(const [aid,d] of Object.entries(META.dungeons)){ for(const [z,x0,y0] of d.l){ const p=zp2plane(z,x0,y0); if(!p) continue; const [x,y]=toS(p);
@@ -771,6 +781,7 @@ function stepText(s){
     case 'complete': { const ob=s.obj&&q?objectives(s.q).find(o=>o.rx===s.obj):null; return {ic:'✓',cls:'complete',t:ob?`${qn}: ${ob.text}`:'Complete '+qn,sub:ob?'One objective':(q?objectives(s.q).map(o=>o.text).join('; '):'')}; }
     case 'turnin': return {ic:'?',cls:'turnin',t:'Turn in '+qn,sub:q?locSub(s):''};
     case 'abandon': return {ic:'×',cls:'abandon',t:'Abandon '+qn,sub:''};
+    case 'prof': { if(s.act==='craft') return {ic:'⚒',cls:'travel',t:`Craft ${s.n>1?s.n+' × ':''}${s.item}`,sub:s.prof}; const t=ptrainerOf(s.npc); return {ic:'⚒',cls:'travel',t:s.act==='learn'?`Learn ${s.prof}`:`Train ${s.prof}`,sub:(t?.name||s.npcName||'')+(t?' · '+t.sub+' · '+zoneName(t.sp[0][0]):'')}; }
     case 'deathskip': { const g=gyAt(s.gy), r=SIM?.res[route.steps.indexOf(s)]; const d=r?.dep?withZone(r.dep):null; return {ic:'☠',cls:'travel',t:'Die and res at the Spirit Healer',sub:(g?zoneName(g.z)+' graveyard':'')+(d&&d.z!=null?` · die around ${zoneName(d.z)} ${d.px.toFixed(0)}, ${d.py.toFixed(0)}`:'')+' · res sickness from level 11'}; }
     case 'collect': { const src=[...new Set(itemSourcePts(s.item,'loot').map(p=>p.label))].slice(0,2).join(', '); return {ic:'✚',cls:'complete',t:`Loot ${DB.i[s.item]?.n||'item'}${s.c>1?' ×'+s.c:''}`,sub:(src?'from '+src+' · ':'')+'needed for '+(Q(s.q)?.n||'quest')}; }
     case 'train': { const t=trainerOf(s.npc); return {ic:'✦',cls:'travel',t:'Train class spells',sub:(t?.name||s.npcName||'class trainer')+(t?' · '+zoneName(t.sp[0][0]):'')}; }
@@ -1086,6 +1097,7 @@ function showPop(h,x,y){
   } else if(h.kind==='town'){
     html+=townHTML(h);
   } else if(h.kind==='fq'){ html+=fqPopHTML(h.q);
+  } else if(h.kind==='ptrainer'){ const t=ptrainerOf(h.pid); html+=`<h4>${esc(t.name)}</h4><div class="it"><span class="note">${esc(t.sub)}</span><div class="row"><button class="btn sm gold" data-prof="learn:${t.id}">Learn ${esc(t.prof)}</button><button class="btn sm" data-prof="train:${t.id}">Train ${esc(t.prof)}</button><button class="btn sm" data-prof="craft:${t.id}">Craft…</button></div></div>`;
   } else if(h.kind==='gy'){ html+=`<h4>Spirit Healer</h4><div class="it"><span class="note">${esc(zoneName(gyAt(h.gi).z))} graveyard</span><div class="row"><button class="btn sm gold" data-dsk="${h.gi}">Die and res here</button></div></div>`;
   } else if(h.kind==='trainer'){ const t=trainerOf(h.tid); html+=`<h4>${esc(t.name)}</h4><div class="it"><span class="note">${esc(t.cls)} trainer</span><div class="row"><button class="btn sm gold" data-train="${t.id}">Train class spells here</button></div></div>`;
   } else if(h.kind==='vendor'){ const v=vendorOf(h.vid);
@@ -1169,6 +1181,7 @@ $('#buyBtn').addEventListener('click',()=>openBuy(null,null));
 function addTrain(id){ const t=id!=null?trainerOf(id):nearestTrainer(routeRefBefore(cursor+1)); if(!t) return toast(`No ${route.char.cls} trainer found for your faction`); addStep({t:'train',npc:t.id,npcName:t.name}); if(id==null) toast(`Train at ${t.name} (${zoneName(t.sp[0][0])}), the nearest ${t.cls} trainer. Double-click the step to pick another.`,4500); }
 $('#trainBtn').addEventListener('click',()=>addTrain(null));
 $('#dieBtn').addEventListener('click',()=>addDeath(null));
+document.addEventListener('click',e=>{ const b=e.target.closest('[data-prof]'); if(!b) return; hidePop(); const [a,id]=b.dataset.prof.split(':'); addProf(+id,a); });
 document.addEventListener('click',e=>{ const b=e.target.closest('[data-dsk]'); if(!b) return; hidePop(); addDeath(+b.dataset.dsk); });
 document.addEventListener('click',e=>{ const b=e.target.closest('[data-train]'); if(!b) return; hidePop(); addTrain(+b.dataset.train); });
 async function pickTrainer(i){ const s=route.steps[i]; const ref=routeRefBefore(i); const L=myTrainers().map(t=>({t,d:ref?Math.min(...trainerPts(t).map(p=>Math.hypot(p.X-ref.X,p.Y-ref.Y))):0})).sort((a,b)=>a.d-b.d).slice(0,9);
@@ -1270,6 +1283,8 @@ function buildRXP(){
     if(s.t==='accept'){ lines.push(`    .accept ${s.q} >>Accept ${q.on||q.n}`); if(s.tgt) lines.push(`    .target ${s.tgt}`); if(ESCORT.has(s.q)) lines.push(`    >>|cRXP_WARN_${ESC_NOTE}|r`); }
     else if(s.t==='turnin'){ lines.push(`    .turnin ${s.q} >>Turn in ${q.on||q.n}`); if(s.tgt) lines.push(`    .target ${s.tgt}`); }
     else if(s.t==='abandon') lines.push(`    .abandon ${s.q} >>Abandon ${q.on||q.n}`);
+    else if(s.t==='prof'){ if(s.act==='craft'){ lines.push(`    >>Craft ${s.n>1?s.n+' ':''}[${s.item}]`); if(s.itemId) lines.push(`    .collect ${s.itemId},${s.n||1} --${s.item} (${s.n||1})`); }
+      else { const nm=ptrainerOf(s.npc)?.name||s.npcName||'the trainer'; lines.push(`    >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_${nm}|r`); if(s.act==='learn'&&PSPELL[s.prof]) lines.push(`    .train ${PSPELL[s.prof]} >> Train [${s.prof}]`); else lines.push(`    .trainer >> Train ${s.prof}`); lines.push(`    .target ${nm}`); } }
     else if(s.t==='deathskip'){ const d=r.dep?withZone(r.dep):null; if(d&&d.z!=null&&!cont) L.push(`    #softcore`); if(d&&d.z!=null) lines.push(gotoLine(d)+',20,0 >>Die around here to respawn at the right graveyard'); lines.push('    .deathskip >> Die and respawn at the |cRXP_FRIENDLY_Spirit Healer|r'); lines.push('    .target Spirit Healer'); }
     else if(s.t==='collect'){ const it=DB.i[s.item]; const nm=it?.n||('item '+s.item); const mobs=[...new Set((it?.d||[]).map(n=>entName('n',n)))], ob=[...new Set((it?.od||[]).map(n=>entName('o',n)))];
       lines.push(mobs.length?`    >>Kill |cRXP_ENEMY_${mobs.join('|r and |cRXP_ENEMY_')}|r. Loot ${mobs.length>1?'them':'it'} for |cRXP_LOOT_${nm}|r`:`    >>Loot |cRXP_LOOT_${nm}|r${ob.length?' from the '+ob.join(', '):''}`);
@@ -1705,6 +1720,7 @@ function ghostIcon(s){ return {accept:'!',turnin:'?',complete:'✓',grind:'⚔',
 function ghostText(s){ const q=s.q&&Q(s.q); const qn=q?q.n:(s.q?(s.qn||'Quest '+s.q):'');
   switch(s.t){ case 'accept': return 'Accept '+qn; case 'turnin': return 'Turn in '+qn; case 'complete': return 'Complete '+qn;
     case 'grind': return `Reach level ${s.level}${s.xp?' + '+fmt(s.xp)+' XP':''}`;
+    case 'prof': return s.act==='craft'?'Craft '+s.item:(s.act==='learn'?'Learn ':'Train ')+s.prof;
     case 'deathskip': return 'Die and res';
     case 'collect': return 'Loot '+(DB.i[s.item]?.n||'item');
     case 'train': return 'Train class spells';
@@ -1871,7 +1887,7 @@ function ask(msg,okLabel){ $('#askIn').hidden=true; return new Promise(res=>{ co
   const done=v=>{ d.onclose=null; $('#askOk').onclick=null; $('#askNo').onclick=null; d.close(); res(v); };
   $('#askOk').onclick=()=>done(true); $('#askNo').onclick=()=>done(false); d.onclose=()=>res(false); d.showModal(); }); }
 
-function askText(msg,def,ok){ return new Promise(res=>{ const d=$('#dlgAsk'), inp=$('#askIn'); $('#askMsg').textContent=msg; $('#askOk').textContent=ok||'OK'; inp.hidden=false; inp.value=def||'';
+function askText(msg,def,ok,type){ return new Promise(res=>{ const d=$('#dlgAsk'), inp=$('#askIn'); $('#askMsg').textContent=msg; $('#askOk').textContent=ok||'OK'; inp.type=type||'number'; inp.style.width=type==='text'?'100%':'120px'; inp.hidden=false; inp.value=def||'';
   const done=v=>{ d.onclose=null; $('#askOk').onclick=null; $('#askNo').onclick=null; inp.onkeydown=null; d.close(); inp.hidden=true; res(v); };
   $('#askOk').onclick=()=>done(inp.value); $('#askNo').onclick=()=>done(null); inp.onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault(); done(inp.value); } }; d.onclose=()=>{ inp.hidden=true; res(null); }; d.showModal(); inp.select(); }); }
 
