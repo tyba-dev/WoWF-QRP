@@ -302,6 +302,7 @@ function simulate(){
     if(s.xpo!=null&&!r.inactive){ r.xpCalc=r.gained; st.level=r.before.level; st.xp=r.before.xp; r.gained=+s.xpo; addXP(st,r.gained); }
     r.after={level:st.level,xp:st.xp}; r.logSize=st.log.size; r.party=st.party;
     if(r.inactive) r.pt=null; else if(!travelGeo(s,r,st,lastPt)) r.pt=stepPoint(s,lastPt);
+    if(!r.inactive&&s.t==='deathskip'&&r.pt){ const G=gyAt(s.gy); const D=deathSpot(lastPt,G); if(D){ r.dep=withZone(D); r.leg={type:'death'}; } }
     if(!r.inactive){ const P=pathOf(s); if(P&&P.length>=2){ r.path=pathPts(P); if(r.path.length) r.pt=Object.assign({},r.pt||{},r.path[0]); } }
     r.from=lastPt; r.stk=isSticky(s); if(r.pt&&!r.stk) lastPt=r.pt;
     res.push(r);
@@ -345,12 +346,28 @@ function fqRow(a){ const e=a.e; const xp=+(route.qxp?.[e.q])||0, est=xp?0:fqXpEs
 function vendorOf(id){ const v=META.vend?.[id]; return v?{id:+id,name:v[0],sub:v[1],fac:v[2],sp:v[3],items:v[4]}:null; }
 function vendorOK(v){ const f=charInfo(route).fac; return !v.fac||v.fac.includes(f); }
 function vendorPts(v){ return v.sp.map(([z,x,y])=>{ const p=zp2plane(z,x,y); return p?{...p,label:v.name,npc:v.id}:null; }).filter(Boolean); }
+/* ---------- graveyards / deathskip ---------- */
+let GYP=null; function gyPts(){ if(!GYP) GYP=(META.gy||[]).map(([z,x,y],i)=>{ const p=zp2plane(z,x,y); return p?{...p,gi:i,m:META.zones[z]?.m,label:'Spirit Healer · '+zoneName(z)}:null; }).filter(Boolean); return GYP; }
+function gyAt(i){ return gyPts().find(g=>g.gi===i)||null; }
+function nearestGY(p,m){ let b=null,bd=1e18; for(const g of gyPts()){ if(m!=null&&g.m!==m) continue; const d=Math.hypot(g.X-p.X,g.Y-p.Y); if(d<bd){bd=d;b=g;} } return b; }
+const DS_MARGIN=0.8; // die where the target graveyard is clearly the closest one (at most 80% of the distance to any other)
+function deathOK(D,G){ const dg=Math.hypot(D.X-G.X,D.Y-G.Y); for(const o of gyPts()){ if(o===G||o.m!==G.m) continue; if(dg>DS_MARGIN*Math.hypot(D.X-o.X,D.Y-o.Y)) return false; } return true; }
+function deathSpot(P,G){ if(!P||!G) return null; if(deathOK(P,G)) return {X:P.X,Y:P.Y};
+  let best=null,bd=1e18; const dx=G.X-P.X, dy=G.Y-P.Y, L=Math.hypot(dx,dy)||1, nx=-dy/L, ny=dx/L;
+  for(let t=0.02;t<=1.0001;t+=0.02) for(const o of [0,-0.15,0.15,-0.3,0.3]){ const D={X:P.X+dx*t+nx*o*L*t,Y:P.Y+dy*t+ny*o*L*t}; const d=Math.hypot(D.X-P.X,D.Y-P.Y); if(d<bd&&deathOK(D,G)){ bd=d; best=D; } }
+  return best||{X:G.X,Y:G.Y}; }
+function withZone(D){ const z=plane2zone(D.X,D.Y); return z?{...D,z:z.z,px:z.px,py:z.py}:D; }
+function addDeath(gi){ const G=gi!=null?gyAt(gi):null; let g=G;
+  if(!g){ const nx=SIM.res[cursor+1]?.pt; if(nx) g=nearestGY(nx,META.zones[nx.z]?.m); }
+  if(!g) return toast('Pick a graveyard: zoom in, click a ✝ Spirit Healer and choose “Die and res here”',4500);
+  addStep({t:'deathskip',gy:g.gi}); if(gi==null) toast(`Die and res at the ${zoneName(g.z)} graveyard, the closest one to your next step. Pick another ✝ on the map to change it.`,5000); }
 function trainerOf(id){ const v=META.trn?.[id]; return v?{id:+id,name:v[0],cls:v[1],fac:v[2],sp:v[3]}:null; }
 function myTrainers(){ const c=route.char.cls; return Object.keys(META.trn||{}).map(trainerOf).filter(t=>t.cls===c&&vendorOK(t)); }
 function trainerPts(t){ return t.sp.map(([z,x,y])=>{ const p=zp2plane(z,x,y); return p?{...p,label:t.name,npc:t.id}:null; }).filter(Boolean); }
 function nearestTrainer(ref){ let best=null,bd=1e18; for(const t of myTrainers()) for(const p of trainerPts(t)){ const d=ref?Math.hypot(p.X-ref.X,p.Y-ref.Y):0; if(d<bd){bd=d;best=t;} } return best; }
 function itemName(id){ return META.vi?.[id]||DB.i?.[id]?.n||('Item '+id); }
 function stepPoint(s,ref){
+  if(s.t==='deathskip'){ return gyAt(s.gy); }
   if(s.t==='collect'){ return s.loc?zp2plane(s.loc.z,s.loc.px,s.loc.py):nearest(itemSourcePts(s.item,'loot'),ref); }
   if(s.t==='train'){ const t=trainerOf(s.npc); return t?nearest(trainerPts(t),ref):null; }
   if(s.t==='buy'){ const v=vendorOf(s.npc); return v?nearest(vendorPts(v),ref):(s.loc?zp2plane(s.loc.z,s.loc.px,s.loc.py):null); }
@@ -580,6 +597,7 @@ function drawPOIs(){
     for(const id in META.vend){ const v=vendorOf(id); if(!vendorOK(v)) continue; for(const p of vendorPts(v)){ const [x,y]=toS(p); if(x<-10||x>W+10||y<-10||y>H+10) continue;
       ctx.fillStyle='#5a3d0a'; ctx.beginPath(); ctx.arc(x,y,5.5,0,7); ctx.fill(); ctx.strokeStyle='#ffd24a'; ctx.lineWidth=1.3; ctx.stroke(); ctx.fillStyle='#ffd24a'; ctx.fillText('¤',x,y+.5);
       hits.push({x,y,r:7,kind:'vendor',vid:v.id,label:v.name}); } }
+    for(const g of gyPts()){ const [x,y]=toS(g); if(x<-10||x>W+10||y<-10||y>H+10) continue; ctx.fillStyle='#2b2140'; ctx.beginPath(); ctx.arc(x,y,6.5,0,7); ctx.fill(); ctx.strokeStyle='#c8aaff'; ctx.lineWidth=1.4; ctx.stroke(); ctx.fillStyle='#e9dcff'; ctx.font='700 10px sans-serif'; ctx.fillText('✝',x,y+.5); hits.push({x,y,r:8,kind:'gy',gi:g.gi,label:g.label}); }
     for(const t of myTrainers()) for(const p of trainerPts(t)){ const [x,y]=toS(p); if(x<-10||x>W+10||y<-10||y>H+10) continue; ctx.fillStyle='#1d2a55'; ctx.beginPath(); ctx.arc(x,y,6.5,0,7); ctx.fill(); ctx.strokeStyle='#9fc0ff'; ctx.lineWidth=1.4; ctx.stroke(); ctx.fillStyle='#cfe0ff'; ctx.font='700 9px sans-serif'; ctx.fillText('✦',x,y+.5); hits.push({x,y,r:8,kind:'trainer',tid:t.id,label:t.name+' ('+t.cls+' trainer)'}); } }
   if(layers.dungeons && s>=0.03){ const seen=[];
     for(const [aid,d] of Object.entries(META.dungeons)){ for(const [z,x0,y0] of d.l){ const p=zp2plane(z,x0,y0); if(!p) continue; const [x,y]=toS(p);
@@ -682,6 +700,7 @@ function drawRoute(){
   for(const {i,p,r} of pts) if(r.stk){ const [x,y]=toS(p); ctx.strokeStyle=i>cursor?'rgba(255,230,160,.45)':'rgba(255,205,70,.9)'; ctx.lineWidth=1.5; ctx.setLineDash([2,3]); ctx.beginPath(); ctx.arc(x,y,9,0,7); ctx.stroke(); ctx.setLineDash([]); }
   for(let k=1;k<lp.length;k++){ const {i,p,r}=lp[k]; const prev=lp[k-1].p; const f=i>cursor; const lt=r.leg?.type;
     if(lt==='hs') continue;
+    if(lt==='death'&&r.dep){ walkLeg(prev,r.dep,f); const [ax,ay]=toS(r.dep),[bx,by]=toS(p); ctx.strokeStyle=f?'rgba(200,170,255,.45)':'rgba(200,170,255,.95)'; ctx.lineWidth=2; ctx.setLineDash([2,5]); ctx.beginPath(); ctx.moveTo(ax,ay); ctx.lineTo(bx,by); ctx.stroke(); ctx.setLineDash([]); ctx.font='13px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillStyle='#e9dcff'; ctx.fillText('☠',ax,ay); continue; }
     if(lt==='fly'){ if(r.dep) walkLeg(prev,r.dep,f); drawFlight(r,f); continue; }
     if(lt==='ride'&&r.dep){ walkLeg(prev,r.dep,f); const [ax,ay]=toS(r.dep),[bx,by]=toS(p); const dx=bx-ax,dy=by-ay; ctx.strokeStyle=f?'rgba(120,200,255,.45)':'rgba(120,200,255,.95)'; ctx.lineWidth=2.5; ctx.setLineDash([3,5]); ctx.beginPath(); ctx.moveTo(ax,ay); ctx.quadraticCurveTo((ax+bx)/2-dy*0.1,(ay+by)/2+dx*0.1,bx,by); ctx.stroke(); ctx.setLineDash([]); continue; }
     walkLeg(prev,p,f); }
@@ -749,6 +768,7 @@ function stepText(s){
     case 'complete': { const ob=s.obj&&q?objectives(s.q).find(o=>o.rx===s.obj):null; return {ic:'✓',cls:'complete',t:ob?`${qn}: ${ob.text}`:'Complete '+qn,sub:ob?'One objective':(q?objectives(s.q).map(o=>o.text).join('; '):'')}; }
     case 'turnin': return {ic:'?',cls:'turnin',t:'Turn in '+qn,sub:q?locSub(s):''};
     case 'abandon': return {ic:'×',cls:'abandon',t:'Abandon '+qn,sub:''};
+    case 'deathskip': { const g=gyAt(s.gy), r=SIM?.res[route.steps.indexOf(s)]; const d=r?.dep?withZone(r.dep):null; return {ic:'☠',cls:'travel',t:'Die and res at the Spirit Healer',sub:(g?zoneName(g.z)+' graveyard':'')+(d&&d.z!=null?` · die around ${zoneName(d.z)} ${d.px.toFixed(0)}, ${d.py.toFixed(0)}`:'')+' · res sickness from level 11'}; }
     case 'collect': { const src=[...new Set(itemSourcePts(s.item,'loot').map(p=>p.label))].slice(0,2).join(', '); return {ic:'✚',cls:'complete',t:`Loot ${DB.i[s.item]?.n||'item'}${s.c>1?' ×'+s.c:''}`,sub:(src?'from '+src+' · ':'')+'needed for '+(Q(s.q)?.n||'quest')}; }
     case 'train': { const t=trainerOf(s.npc); return {ic:'✦',cls:'travel',t:'Train class spells',sub:(t?.name||s.npcName||'class trainer')+(t?' · '+zoneName(t.sp[0][0]):'')}; }
     case 'buy': { const v=vendorOf(s.npc); return {ic:'¤',cls:'travel',t:'Buy from '+(v?.name||s.npcName||'vendor'),sub:(s.items||[]).map(it=>`${it.c}× ${it.n||itemName(it.id)}`).join(', ')+(v?.sub?' · '+v.sub:'')}; }
@@ -1063,6 +1083,7 @@ function showPop(h,x,y){
   } else if(h.kind==='town'){
     html+=townHTML(h);
   } else if(h.kind==='fq'){ html+=fqPopHTML(h.q);
+  } else if(h.kind==='gy'){ html+=`<h4>Spirit Healer</h4><div class="it"><span class="note">${esc(zoneName(gyAt(h.gi).z))} graveyard</span><div class="row"><button class="btn sm gold" data-dsk="${h.gi}">Die and res here</button></div></div>`;
   } else if(h.kind==='trainer'){ const t=trainerOf(h.tid); html+=`<h4>${esc(t.name)}</h4><div class="it"><span class="note">${esc(t.cls)} trainer</span><div class="row"><button class="btn sm gold" data-train="${t.id}">Train class spells here</button></div></div>`;
   } else if(h.kind==='vendor'){ const v=vendorOf(h.vid);
     html+=`<h4>${esc(v.name)}</h4><div class="it"><span class="note">${esc(v.sub||'Vendor')}${v.items.length?' · sells '+v.items.slice(0,6).map(i=>esc(itemName(i))).join(', ')+(v.items.length>6?'…':''):''}</span><div class="row"><button class="btn sm gold" data-buyv="${v.id}">Buy from ${esc(v.name)}</button></div></div>`;
@@ -1144,6 +1165,8 @@ function renderBuy(){ const ref=routeRefBefore(buyCtx.i!=null?buyCtx.i:cursor+1)
 $('#buyBtn').addEventListener('click',()=>openBuy(null,null));
 function addTrain(id){ const t=id!=null?trainerOf(id):nearestTrainer(routeRefBefore(cursor+1)); if(!t) return toast(`No ${route.char.cls} trainer found for your faction`); addStep({t:'train',npc:t.id,npcName:t.name}); if(id==null) toast(`Train at ${t.name} (${zoneName(t.sp[0][0])}), the nearest ${t.cls} trainer. Double-click the step to pick another.`,4500); }
 $('#trainBtn').addEventListener('click',()=>addTrain(null));
+$('#dieBtn').addEventListener('click',()=>addDeath(null));
+document.addEventListener('click',e=>{ const b=e.target.closest('[data-dsk]'); if(!b) return; hidePop(); addDeath(+b.dataset.dsk); });
 document.addEventListener('click',e=>{ const b=e.target.closest('[data-train]'); if(!b) return; hidePop(); addTrain(+b.dataset.train); });
 async function pickTrainer(i){ const s=route.steps[i]; const ref=routeRefBefore(i); const L=myTrainers().map(t=>({t,d:ref?Math.min(...trainerPts(t).map(p=>Math.hypot(p.X-ref.X,p.Y-ref.Y))):0})).sort((a,b)=>a.d-b.d).slice(0,9);
   const v=await askText('Pick a trainer by number:\n'+L.map((x,k)=>`${k+1}. ${x.t.name} · ${zoneName(x.t.sp[0][0])}${ref?' · '+fmt(Math.round(x.d))+' yd':''}`).join('\n'),'1','Use'); const k=parseInt(v)-1; if(!(k>=0&&k<L.length)) return; pushHistory(); s.npc=L[k].t.id; s.npcName=L[k].t.name; refresh(); }
@@ -1240,10 +1263,11 @@ function buildRXP(){
     const key=(s.t==='accept'||s.t==='turnin')&&p&&!stl?p.ent+'@'+p.X.toFixed(0)+'|'+dgl.join()+(xrl||'')+(optl||''):null;
     const cont=merge&&key&&key===seg.prevKey; seg.prevKey=key;
     const gp=s.t==='travel'&&(s.kind==='fly'||s.kind==='ride')?r.dep:p;
-    const own=s.path||null; if(!cont){ L.push('step'); if(stl) L.push(stl); if(optl) L.push(optl); if(xrl) L.push(xrl); if(own&&own.length>=2){ if(s.loopRaw) L.push(...s.loopRaw); else { L.push('    #loop'); L.push(gotoLine(own[0])+',0'); for(const w of own) L.push(gotoLine(w)+',30,0'); } } const gl=own&&own.length>=2?null:gotoLine(gp); if(gl&&!(s.t==='travel'&&(s.kind==='hs'||s.kind==='note'||s.kind==='ride'))&&(s.t!=='grind'||s.loc)) L.push(gl); }
+    const own=s.path||null; if(!cont){ L.push('step'); if(stl) L.push(stl); if(optl) L.push(optl); if(xrl) L.push(xrl); if(own&&own.length>=2){ if(s.loopRaw) L.push(...s.loopRaw); else { L.push('    #loop'); L.push(gotoLine(own[0])+',0'); for(const w of own) L.push(gotoLine(w)+',30,0'); } } const gl=own&&own.length>=2?null:gotoLine(gp); if(gl&&s.t!=='deathskip'&&!(s.t==='travel'&&(s.kind==='hs'||s.kind==='note'||s.kind==='ride'))&&(s.t!=='grind'||s.loc)) L.push(gl); }
     if(s.t==='accept'){ lines.push(`    .accept ${s.q} >>Accept ${q.on||q.n}`); if(s.tgt) lines.push(`    .target ${s.tgt}`); if(ESCORT.has(s.q)) lines.push(`    >>|cRXP_WARN_${ESC_NOTE}|r`); }
     else if(s.t==='turnin'){ lines.push(`    .turnin ${s.q} >>Turn in ${q.on||q.n}`); if(s.tgt) lines.push(`    .target ${s.tgt}`); }
     else if(s.t==='abandon') lines.push(`    .abandon ${s.q} >>Abandon ${q.on||q.n}`);
+    else if(s.t==='deathskip'){ const d=r.dep?withZone(r.dep):null; if(d&&d.z!=null&&!cont) L.push(`    #softcore`); if(d&&d.z!=null) lines.push(gotoLine(d)+',20,0 >>Die around here to respawn at the right graveyard'); lines.push('    .deathskip >> Die and respawn at the |cRXP_FRIENDLY_Spirit Healer|r'); lines.push('    .target Spirit Healer'); }
     else if(s.t==='collect'){ const it=DB.i[s.item]; const nm=it?.n||('item '+s.item); const mobs=[...new Set((it?.d||[]).map(n=>entName('n',n)))], ob=[...new Set((it?.od||[]).map(n=>entName('o',n)))];
       lines.push(mobs.length?`    >>Kill |cRXP_ENEMY_${mobs.join('|r and |cRXP_ENEMY_')}|r. Loot ${mobs.length>1?'them':'it'} for |cRXP_LOOT_${nm}|r`:`    >>Loot |cRXP_LOOT_${nm}|r${ob.length?' from the '+ob.join(', '):''}`);
       lines.push(`    .collect ${s.item},${s.c||1}${s.q?','+s.q+',1':''} --${nm} (${s.c||1})`); for(const m of mobs.slice(0,3)) lines.push(`    .mob ${m}`); }
@@ -1678,6 +1702,7 @@ function ghostIcon(s){ return {accept:'!',turnin:'?',complete:'✓',grind:'⚔',
 function ghostText(s){ const q=s.q&&Q(s.q); const qn=q?q.n:(s.q?(s.qn||'Quest '+s.q):'');
   switch(s.t){ case 'accept': return 'Accept '+qn; case 'turnin': return 'Turn in '+qn; case 'complete': return 'Complete '+qn;
     case 'grind': return `Reach level ${s.level}${s.xp?' + '+fmt(s.xp)+' XP':''}`;
+    case 'deathskip': return 'Die and res';
     case 'collect': return 'Loot '+(DB.i[s.item]?.n||'item');
     case 'train': return 'Train class spells';
     case 'buy': return 'Buy from '+(vendorOf(s.npc)?.name||'vendor');

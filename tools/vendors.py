@@ -53,3 +53,12 @@ used={i for v in vend.values() for i in v[4]}
 json.dump(dict(vend=vend, trn=trn, vi={i:items[i] for i in used}), open('vend.json','w'), separators=(',',':'))
 if __name__=="__main__": print('vendors',len(vend),'with stock',sum(1 for v in vend.values() if v[4]),'items',len(used))
 if __name__=="__main__": print(vend.get(2115))
+# spirit healers (graveyards)
+gy=[]
+for nid,f in rows(Q+'foreverNpcDB.lua'):
+    if s(f[0])!='Spirit Healer': continue
+    for z,pts in re.findall(r'\[(\d+)\]=\{((?:\{[-\d.]+,[-\d.]+\},?)*)\}', f[6] or ''):
+        for x,y in re.findall(r'\{([-\d.]+),([-\d.]+)\}', pts):
+            if float(x)>=0: gy.append([int(z),round(float(x),2),round(float(y),2)])
+json.dump(gy,open('gy.json','w'))
+if __name__=="__main__": print('graveyards',len(gy))
