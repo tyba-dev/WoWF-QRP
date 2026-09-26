@@ -299,7 +299,7 @@ function simulate(){
     if(s.xpo!=null&&!r.inactive){ r.xpCalc=r.gained; st.level=r.before.level; st.xp=r.before.xp; r.gained=+s.xpo; addXP(st,r.gained); }
     r.after={level:st.level,xp:st.xp}; r.logSize=st.log.size; r.party=st.party;
     if(r.inactive) r.pt=null; else if(!travelGeo(s,r,st,lastPt)) r.pt=stepPoint(s,lastPt);
-    r.from=lastPt; if(r.pt) lastPt=r.pt;
+    r.from=lastPt; r.stk=isSticky(s); if(r.pt&&!r.stk) lastPt=r.pt;
     res.push(r);
     if(i===cursor) atCursor=cloneState(st);
   });
@@ -629,7 +629,9 @@ function drawRoute(){
   const walkLeg=(a,b,f)=>{ if(!a||!b) return; const P=legPath(a,b);
     if(!P){ walkStyle(f); if(P===undefined){ ctx.globalAlpha=.45; ctx.setLineDash([2,6]); } poly([a,b]); ctx.globalAlpha=1; return; }
     for(const sg of P.segs){ if(sg.k==='ship'){ ctx.strokeStyle=f?'rgba(120,200,255,.45)':'rgba(120,200,255,.95)'; ctx.lineWidth=2; ctx.setLineDash([3,5]); poly(sg.pts); } else { walkStyle(f); poly(sg.pts); } } };
-  for(let k=1;k<pts.length;k++){ const {i,p,r}=pts[k]; const prev=pts[k-1].p; const f=i>cursor; const lt=r.leg?.type;
+  const lp=pts.filter(x=>!x.r.stk);
+  for(const {i,p,r} of pts) if(r.stk){ const [x,y]=toS(p); ctx.strokeStyle=i>cursor?'rgba(255,230,160,.45)':'rgba(255,205,70,.9)'; ctx.lineWidth=1.5; ctx.setLineDash([2,3]); ctx.beginPath(); ctx.arc(x,y,9,0,7); ctx.stroke(); ctx.setLineDash([]); }
+  for(let k=1;k<lp.length;k++){ const {i,p,r}=lp[k]; const prev=lp[k-1].p; const f=i>cursor; const lt=r.leg?.type;
     if(lt==='hs') continue;
     if(lt==='fly'){ if(r.dep) walkLeg(prev,r.dep,f); drawFlight(r,f); continue; }
     if(lt==='ride'&&r.dep){ walkLeg(prev,r.dep,f); const [ax,ay]=toS(r.dep),[bx,by]=toS(p); const dx=bx-ax,dy=by-ay; ctx.strokeStyle=f?'rgba(120,200,255,.45)':'rgba(120,200,255,.95)'; ctx.lineWidth=2.5; ctx.setLineDash([3,5]); ctx.beginPath(); ctx.moveTo(ax,ay); ctx.quadraticCurveTo((ax+bx)/2-dy*0.1,(ay+by)/2+dx*0.1,bx,by); ctx.stroke(); ctx.setLineDash([]); continue; }
@@ -708,7 +710,13 @@ function locSub(s){ const p=SIM?.res[route.steps.indexOf(s)]?.pt; if(!p) return 
 let history=[], future=[];
 function pushHistory(){ history.push(JSON.stringify({steps:route.steps,cursor})); if(history.length>100) history.shift(); future=[]; }
 function undo(){ selSteps.clear(); const h=history.pop(); if(!h) return toast('Nothing to undo'); future.push(JSON.stringify({steps:route.steps,cursor})); const o=JSON.parse(h); route.steps=o.steps; cursor=o.cursor; refresh(); }
-function addStep(step){ pushHistory(); route.steps.splice(cursor+1,0,step); cursor++; refresh(); scrollCursor(); }
+// sticky / completewith: guide steps carry it from RestedXP; your own steps use s.stk = 'next' | 'sticky'
+function stepGuide(s){ return s.src&&!s.src.auto&&typeof G==='function'?G(s.src.g)?.steps[s.src.i]:null; }
+function isSticky(s){ const gs=stepGuide(s); return gs?!!(gs.sticky||gs.cw):!!s.stk; }
+function guideStickyDefault(t,q){ for(const g of route.guides||[]) for(const x of g.steps||[]) if(x.q===q&&x.t===t&&x.cond&&(x.sticky||x.cw)) return {stk:x.cw==='next'?'next':'sticky',g:g.name}; return null; }
+function addStep(step){ let d=null; if(!step.src&&step.q&&['accept','complete','turnin'].includes(step.t)&&step.stk===undefined){ d=guideStickyDefault(step.t,step.q); if(d) step.stk=d.stk; }
+  if(d) setTimeout(()=>toast(`Made sticky (${d.stk==='next'?'done with the next step':'stays on screen until done'}) as in ${d.g}. Click 📌 on the step to change.`,4000),0);
+  pushHistory(); route.steps.splice(cursor+1,0,step); cursor++; refresh(); scrollCursor(); }
 function markRemoved(st){ if(!st?.src||st.src.auto) return; const g=G(st.src.g); if(!g) return; g.removed=g.removed||[]; if(!g.removed.includes(st.src.i)) g.removed.push(st.src.i); }
 function removeStep(i){ pushHistory(); markRemoved(route.steps[i]); route.steps.splice(i,1); if(cursor>=i) cursor--; refresh(); }
 function moveStep(from,to){ if(from===to) return; pushHistory(); const [s]=route.steps.splice(from,1); if(to>from) to--; route.steps.splice(to,0,s); cursor=to; refresh(); }
@@ -730,7 +738,7 @@ function renderSteps(){
       <span class="n" title="Drag to reorder">${i+1}</span><span class="ic ${tx.cls} ${dq?'dq':''}" aria-hidden="true">${tx.ic}</span>
       <span class="t">${''}${s.src&&s.t==='travel'&&(s.kind==='note'||s.kind==='goto')?rxpHTML(tx.t):esc(rxpPlain(tx.t))}${(()=>{const gs=s.src&&!s.src.auto?G(s.src.g)?.steps[s.src.i]:null; return gs?notesHTML(gs,s.t==='travel'&&(s.kind==='note'||s.kind==='goto')?(s.text||''):''):'';})()}${s.t==='grind'&&r.party>1?`<span class="sub">in a group of ${r.party}</span>`:''}${r.kill?`<span class="sub kx">≈${fmt(r.kill.kills)} kills${r.kill.guessed?' (some counts guessed)':''}${r.party>1?` · group of ${r.party}`:''}${r.kill.dg?' · dungeon mobs':''}</span>`:''}${s.unote?`<span class="unote">${s.unote.split('\n').map(esc).join('<br>')}</span>`:''}${stickyChip(s,i)}${s.t==='accept'&&ESCORT.has(s.q)?`<span class="sub" style="color:var(--warn)">⚠ ${esc(ESC_NOTE)}</span>`:''}${allTags.map(t=>`<span class="dgtag" data-dgsel="${esc(t)}" title="${dgTags.includes(t)?`Only because you're running ${esc(dgName(t))}`:`${esc(dgName(t))} quest`}. Click to select every ${esc(t)} step">${esc(t)}</span>`).join('')}${tx.sub?`<span class="sub">${esc(tx.sub)}</span>`:''}${r.inactive?`<span class="wrn">${esc(r.inactive)}</span>`:''}${r.err.map(e=>{ const m=e.match(/^Requires level (\d+)/); return `<span class="err">${esc(e)}${m?` <button class="linkish" data-fixgrind="${i}:${m[1]}">Add a grind to level ${m[1]} before this</button>`:''}</span>`; }).join('')}${r.warn.map(e=>`<span class="wrn">${esc(e)}</span>`).join('')}${r.custom&&s.t==='turnin'?`<button class="linkish" data-uxp="${i}">${route.qxp?.[s.q]?'Change XP reward':'Set XP reward'}</button>`:''}</span>
       <span class="x">${r.gained||s.xpo!=null?`<b${s.xpo!=null?' title="XP set by you"':''}>+${fmt(r.gained)}${s.xpo!=null?'*':''}</b><br>`:''}${lvl.toFixed(1)}</span>
-      <span class="sbtns">${s.q?`<a class="wh" href="${whURL(s.q,s.qn)}" target="_blank" rel="noopener" title="Open this quest on Wowhead">wh↗</a>`:''}<button class="opt ${s.opt?'on':''}" data-opt="${i}" title="${s.opt?'Optional (click to make required)':'Mark as optional'}" aria-pressed="${!!s.opt}">opt</button><button class="ed ${s.unote||s.xpo!=null?'on':''}" data-edit="${i}" title="Edit step: note, XP${s.src?'':', text'}" aria-label="Edit step ${i+1}">✎</button><button class="del" data-del="${i}" aria-label="Delete step ${i+1}">×</button></span></li>`);
+      <span class="sbtns">${s.q?`<a class="wh" href="${whURL(s.q,s.qn)}" target="_blank" rel="noopener" title="Open this quest on Wowhead">wh↗</a>`:''}<button class="opt ${s.opt?'on':''}" data-opt="${i}" title="${s.opt?'Optional (click to make required)':'Mark as optional'}" aria-pressed="${!!s.opt}">opt</button>${!stepGuide(s)&&['accept','complete','turnin','custom','grind','travel'].includes(s.t)?`<button class="ed ${s.stk?'on':''}" data-stk="${i}" title="Sticky: ${s.stk==='next'?'with next step':s.stk==='sticky'?'until done':'off'} (click to change)" aria-label="Sticky for step ${i+1}">📌</button>`:''}<button class="ed ${s.unote||s.xpo!=null?'on':''}" data-edit="${i}" title="Edit step: note, XP${s.src?'':', text'}" aria-label="Edit step ${i+1}">✎</button><button class="del" data-del="${i}" aria-label="Delete step ${i+1}">×</button></span></li>`);
     if(i===cursor && i<route.steps.length-1) parts.push(`<li class="insert">New steps are added here</li>`);
   });
   if(selSteps.size>1) parts.unshift(`<li class="selbar"><b>${selSteps.size} steps selected</b> <button class="btn sm" data-blk="up" title="Move the block up one step">▲ Up</button><button class="btn sm" data-blk="down" title="Move the block down one step">▼ Down</button><button class="btn sm" data-blk="cursor" title="Move the block to just after the highlighted step">Move after step…</button><button class="btn sm" data-blk="del">Delete</button><button class="btn sm" data-blk="clear">Clear</button><span class="note">Drag any selected step to move them all</span></li>`);
@@ -738,7 +746,7 @@ function renderSteps(){
 }
 let selSteps=new Set(), selAnchor=null;
 // RestedXP keeps #completewith/#sticky steps on screen alongside later steps; show that in the list
-function stickyChip(s,i){ const gs=s.src&&!s.src.auto?G(s.src.g)?.steps[s.src.i]:null; const cw=gs?.cw||s.cw; if(!(gs?.sticky||cw)) return '';
+function stickyChip(s,i){ const gs=stepGuide(s); if(!gs&&s.stk) return `<span class="stk" title="${esc(s.stk==='next'?'Exported with #completewith next: RestedXP shows it together with the next step and the arrow skips it. Do it on the way.':'Exported with #sticky: RestedXP keeps it on screen until done while you carry on; the arrow skips it.')}">📌 ${s.stk==='next'?'with next step':'sticky'}</span>`; const cw=gs?.cw||s.cw; if(!(gs?.sticky||cw)) return '';
   let tip, lbl;
   if(cw==='next'){ tip='RestedXP shows this step together with the next one and ticks it off when you move past it. Do it passively on the way.'; lbl='with next step'; }
   else if(cw){ const j=route.steps.findIndex((x,k)=>k>i&&x.src&&x.src.g===s.src.g&&(G(x.src.g)?.steps[x.src.i]?.label===cw)); tip=`RestedXP keeps this on screen while you do the following steps, until you reach ${j>=0?'step '+(j+1)+' ('+rxpPlain(stepText(route.steps[j]).t)+')':'the guide step labelled '+cw+' (not in your route)'}.`; lbl=j>=0?'until step '+(j+1):'until '+cw; }
@@ -774,6 +782,7 @@ async function askMoveAfter(idx){ const v=await askText(`Move the ${idx.length} 
   if(idx.includes(n-1)&&!idx.includes(n)) return; moveBlock(idx,n); }
 $('#steps').addEventListener('click',e=>{
   if(e.target.closest('a.wh')){ e.stopPropagation(); return; }
+  const sk=e.target.closest('[data-stk]'); if(sk){ e.stopPropagation(); const s=route.steps[+sk.dataset.stk]; pushHistory(); s.stk=s.stk==null||s.stk===false?'next':s.stk==='next'?'sticky':false; refresh(); toast(s.stk==='next'?'Sticky: done together with the next step':s.stk==='sticky'?'Sticky: stays on screen until done':'Not sticky'); return; }
   const ed=e.target.closest('[data-edit]'); if(ed){ e.stopPropagation(); editStep(+ed.dataset.edit); return; }
   const ux=e.target.closest('[data-uxp]'); if(ux){ e.stopPropagation(); askUXP(route.steps[+ux.dataset.uxp]); return; }
   const bb=e.target.closest('[data-blk]'); if(bb){ e.stopPropagation(); blockAction(bb.dataset.blk); return; }
@@ -814,7 +823,7 @@ function renderXP(){
   $('#xplbl').textContent=st.level<MAXLVL?`${fmt(st.xp)} / ${fmt(need)} XP (${pct.toFixed(0)}%)`:'Level 60';
   const e=SIM.end; const quests=route.steps.filter(s=>s.t==='turnin').length; const endL=e.level+(e.level<MAXLVL?e.xp/XP_TABLE[e.level]:0);
   $('#groupSel').value=String(SIM.st.party||1);
-  $('#xpsum').innerHTML=`Route end: <b>level ${endL.toFixed(2)}</b> · ${quests} turn-ins · ${SIM.st.log.size}/20 in log`;
+  $('#xpsum').innerHTML=`Route end: <b>level ${endL.toFixed(2)}</b> · ${quests} turn-ins · ${SIM.st.log.size}/${LOGMAX} in log`;
 }
 function renderRouteHead(){
   $('#routeSel').innerHTML=store.routes.map(r=>`<option value="${r.id}" ${r.id===route.id?'selected':''}>${esc(r.name)}</option>`).join('');
@@ -1079,10 +1088,11 @@ function buildRXP(){
     }
     const r=SIM.res[i]; const p=r.pt; const q=s.q?(Q(s.q)||{n:s.qn||('Quest '+s.q)}):null; const lines=[];
     const gs=s.src?G(s.src.g)?.steps[s.src.i]:null; const dgl=gs?[...(gs.dg||[]).map(t=>'    .dungeon '+t),...(gs.dgs||[]).map(t=>'    .dungeon !'+t)]:[]; const xrl=gs&&gs.xr?'    #xprate '+gs.xr:null; const optl=(s.opt||s.gopt)?'    #optional':null;
-    const key=(s.t==='accept'||s.t==='turnin')&&p?p.ent+'@'+p.X.toFixed(0)+'|'+dgl.join()+(xrl||'')+(optl||''):null;
+    const stl=s.stk==='next'?'    #completewith next':s.stk==='sticky'?'    #sticky':null;
+    const key=(s.t==='accept'||s.t==='turnin')&&p&&!stl?p.ent+'@'+p.X.toFixed(0)+'|'+dgl.join()+(xrl||'')+(optl||''):null;
     const cont=merge&&key&&key===seg.prevKey; seg.prevKey=key;
     const gp=s.t==='travel'&&(s.kind==='fly'||s.kind==='ride')?r.dep:p;
-    if(!cont){ L.push('step'); if(optl) L.push(optl); if(xrl) L.push(xrl); const gl=gotoLine(gp); if(gl&&!(s.t==='travel'&&(s.kind==='hs'||s.kind==='note'||s.kind==='ride'))&&(s.t!=='grind'||s.loc)) L.push(gl); }
+    if(!cont){ L.push('step'); if(stl) L.push(stl); if(optl) L.push(optl); if(xrl) L.push(xrl); const gl=gotoLine(gp); if(gl&&!(s.t==='travel'&&(s.kind==='hs'||s.kind==='note'||s.kind==='ride'))&&(s.t!=='grind'||s.loc)) L.push(gl); }
     if(s.t==='accept'){ lines.push(`    .accept ${s.q} >>Accept ${q.on||q.n}`); if(ESCORT.has(s.q)) lines.push(`    >>|cRXP_WARN_${ESC_NOTE}|r`); }
     else if(s.t==='turnin') lines.push(`    .turnin ${s.q} >>Turn in ${q.on||q.n}`);
     else if(s.t==='abandon') lines.push(`    .abandon ${s.q} >>Abandon ${q.on||q.n}`);
