@@ -1269,6 +1269,11 @@ $('#dlgChar').addEventListener('close',()=>{ if($('#dlgChar').returnValue!=='ok'
   route.char.xprate=Math.max(0.5,Math.min(5,+f.xprate.value||1)); pruneXpRate(); route.char.fps=$$('#fpSettings [data-fpk]').filter(x=>x.checked).map(x=>x.dataset.fpk); route.char.allfps=$('#fpAll').checked; route.char.dqmult=Math.max(0.1,Math.min(10,+f.dqmult.value||3.5)); route.char.killxp=f.killxp.checked; route.char.droprate=Math.max(5,Math.min(100,+f.droprate.value||60)); route.char.defcount=Math.max(1,+f.defcount.value||8); route.char.dgdiv=Math.max(0.1,+f.dgdiv.value||3.5);
   route.char.dungeons=next; const turnedOn=Object.keys(next).some(t=>!prev[t]); if(turnedOn) insertNewlyEnabled(); refresh(); });
 $('#charBtn').addEventListener('click',openChar); $('#whoBtn').addEventListener('click',openChar);
+$('#copyRoute').addEventListener('click',async()=>{ const name=await askText('Name for the copy:',route.name+' (copy)','Copy','text'); if(name==null) return;
+  const src=route; await rawLoad((src.guides||[]).map(g=>g.id)); const r=JSON.parse(JSON.stringify(src)); r.id=uid(); r.name=name.trim()||src.name+' (copy)'; delete r.savedAt;
+  const map=new Map(); for(const g of r.guides||[]){ const nid=uid(); map.set(g.id,nid); if(rawCache.has(g.id)) rawPut(nid,rawCache.get(g.id)); g.id=nid; }
+  for(const s2 of r.steps||[]) if(s2.src&&map.has(s2.src.g)) s2.src.g=map.get(s2.src.g);
+  store.routes.push(r); route=r; cursor=Math.min(cursor,r.steps.length-1); history=[]; FQ.key=null; refresh(); saveNow&&saveNow(); toast(`Copied to “${r.name}”. Edit this one freely: the original is unchanged.`,4000); });
 $('#newRoute').addEventListener('click',()=>{ const r=newRoute({char:{...route.char,level:1,xp:0}}); store.routes.push(r); route=r; cursor=-1; history=[]; refresh(); openChar(); });
 $('#routeSel').addEventListener('change',e=>{ route=store.routes.find(r=>r.id===e.target.value); cursor=route.steps.length-1; history=[]; selQuest=null; refresh(); });
 
