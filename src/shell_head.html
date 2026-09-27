@@ -357,6 +357,12 @@ dialog textarea{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-
   </div>
   <p class="note" style="margin:0">Group size only affects the mob-kill estimator; quest XP is the same for every member. To change it partway, use the Group control under the map, which adds a step at the selected point.</p>
   <label>Dungeon quest XP multiplier (Forever placeholder)<input type="number" name="dqmult" min="0.1" max="10" step="0.1"></label>
+  <fieldset style="border:1px solid var(--line);border-radius:8px;padding:6px 10px;display:flex;flex-direction:column;gap:8px"><legend class="note">Kills while travelling (grinding on the way)</legend>
+    <div class="grid2"><label>1 kill every … yards walked (empty = off)<input type="number" name="ypk" min="0" step="0.1" placeholder="e.g. 60"></label><label>Until level (mount)<input type="number" name="ypkUntil" min="2" max="60"></label></div>
+    <p class="note" style="margin:0">XP per kill uses the average level of the mobs along each walking leg and your group size. Lower = more grinding (a priest dotting and running might be ~100 yards, stopping to kill everything ~40).</p>
+    <div class="grid4"><label>Calibrate: at step<input type="number" name="calStep" min="1"></label><label>I was level<input type="number" name="calLvl" min="1" max="60"></label><label>with XP<input type="number" name="calXp" min="0"></label><label>&nbsp;<button type="button" class="btn sm" id="calBtn">Calibrate</button></label></div>
+    <p class="note" id="calMsg" style="margin:0"></p>
+  </fieldset>
   <fieldset style="border:1px solid var(--line);border-radius:8px;padding:6px 10px;display:flex;flex-direction:column;gap:8px"><legend class="note">Kill XP while questing</legend>
     <label class="inline"><input type="checkbox" name="killxp"> Add estimated kill XP to "complete objectives" steps</label>
     <div class="grid3"><label>Quest item drop rate (%)<input type="number" name="droprate" min="5" max="100"></label><label>Count when the guide doesn't say<input type="number" name="defcount" min="1" max="50"></label><label>Dungeon mob XP: Era ÷<input type="number" name="dgdiv" min="0.1" max="20" step="0.1"></label></div>
