@@ -890,7 +890,15 @@ async function upgradeGuides(){ if(upgrading) return; const old=(route.guides||[
       for(const x of r.refreshed||[]){ x.pv=3; n++; } g.pv=3; }
     if(n){ refresh(); toast(`Updated ${n} imported guide${n>1?'s':''} with the latest details`); } else save();
   }catch(e){} finally{ upgrading=false; } }
-function refresh(){ if(route.guides?.some(g=>(g.pv||0)<3)) setTimeout(upgradeGuides,0); simulate(); computeGhosts(); renderSteps(); renderRight(); renderXP(); renderRouteHead(); renderHS(); requestDraw(); save(); }
+/* ---------- search in steps ---------- */
+let findQ='', findHits=[], findPos=-1;
+function stepSearchText(s,i){ const t=stepText(s); const gs=stepGuide(s); const q=s.q&&Q(s.q); const parts=[t.t,t.sub,s.unote,s.qn,s.q,gs?.label,gs?.text,(gs?.notes||[]).join(' '),q?.n,q?.t,SIM?.res[i]?.pt?.label,SIM?.res[i]?.pt?zoneName(SIM.res[i].pt.z):'',s.text,s.item,s.npcName];
+  return parts.filter(Boolean).map(x=>rxpPlain(String(x))).join(' ').toLowerCase(); }
+function runFind(){ findQ=$('#stepFind').value.trim().toLowerCase(); findHits=[]; if(findQ){ const terms=findQ.split(/\s+/); route.steps.forEach((s,i)=>{ const t=stepSearchText(s,i); if(terms.every(w=>t.includes(w))) findHits.push(i); }); }
+  if(findPos>=findHits.length) findPos=findHits.length-1; $('#stepFindN').textContent=findQ?(findHits.length?`${findPos>=0?findPos+1:0}/${findHits.length}`:'none'):''; markFind(); }
+function markFind(){ const set=new Set(findHits); $$('#steps li[data-i]').forEach(li=>{ const i=+li.dataset.i; li.classList.toggle('fhit',set.has(i)); li.classList.toggle('fcur',findPos>=0&&findHits[findPos]===i); }); }
+function findGo(d){ if(!findHits.length) return; findPos=findPos<0?(d>0?findHits.findIndex(i=>i>cursor):-1):findPos+d; if(findPos<0) findPos=d>0?0:findHits.length-1; findPos=(findPos+findHits.length)%findHits.length; $('#stepFindN').textContent=`${findPos+1}/${findHits.length}`; markFind(); const li=$(`#steps li[data-i="${findHits[findPos]}"]`); if(li) li.scrollIntoView({block:'center'}); const p=SIM.res[findHits[findPos]]?.pt; if(p) flyTo(p.X,p.Y,Math.max(view.s,0.06)); }
+function refresh(){ if(route.guides?.some(g=>(g.pv||0)<3)) setTimeout(upgradeGuides,0); simulate(); if(findQ) setTimeout(runFind,0); computeGhosts(); renderSteps(); renderRight(); renderXP(); renderRouteHead(); renderHS(); requestDraw(); save(); }
 
 function renderSteps(){
   const ul=$('#steps'); const parts=[];
@@ -910,7 +918,7 @@ function renderSteps(){
     if(i===cursor && i<route.steps.length-1) parts.push(`<li class="insert">New steps are added here</li>`);
   });
   if(selSteps.size>1) parts.unshift(`<li class="selbar"><b>${selSteps.size} steps selected</b> <button class="btn sm" data-blk="up" title="Move the block up one step">▲ Up</button><button class="btn sm" data-blk="down" title="Move the block down one step">▼ Down</button><button class="btn sm" data-blk="cursor" title="Move the block to just after the highlighted step">Move after step…</button><button class="btn sm" data-blk="del">Delete</button><button class="btn sm" data-blk="clear">Clear</button><span class="note">Drag any selected step to move them all</span></li>`);
-  ul.innerHTML=parts.join('');
+  ul.innerHTML=parts.join(''); if(findQ) markFind();
 }
 let selSteps=new Set(), selAnchor=null;
 // RestedXP keeps #completewith/#sticky steps on screen alongside later steps; show that in the list
@@ -1286,6 +1294,9 @@ $('#dlgChar').addEventListener('close',()=>{ if($('#dlgChar').returnValue!=='ok'
   route.char.xprate=Math.max(0.5,Math.min(5,+f.xprate.value||1)); pruneXpRate(); route.char.fps=$$('#fpSettings [data-fpk]').filter(x=>x.checked).map(x=>x.dataset.fpk); route.char.allfps=$('#fpAll').checked; route.char.dqmult=Math.max(0.1,Math.min(10,+f.dqmult.value||3.5)); route.char.killxp=f.killxp.checked; route.char.droprate=Math.max(5,Math.min(100,+f.droprate.value||60)); route.char.defcount=Math.max(1,+f.defcount.value||8); route.char.dgdiv=Math.max(0.1,+f.dgdiv.value||3.5); route.char.ypk=Math.max(0,+f.ypk.value||0); route.char.ypkUntil=Math.max(2,Math.min(60,+f.ypkUntil.value||40));
   route.char.dungeons=next; const turnedOn=Object.keys(next).some(t=>!prev[t]); if(turnedOn) insertNewlyEnabled(); refresh(); });
 $('#charBtn').addEventListener('click',openChar); $('#whoBtn').addEventListener('click',openChar);
+$('#stepFind').addEventListener('input',()=>{ findPos=-1; runFind(); if(findHits.length) findGo(1); });
+$('#stepFind').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); findGo(e.shiftKey?-1:1); } else if(e.key==='Escape'){ $('#stepFind').value=''; findPos=-1; runFind(); } });
+$('#stepFindNext').addEventListener('click',()=>findGo(1)); $('#stepFindPrev').addEventListener('click',()=>findGo(-1));
 $('#copyRoute').addEventListener('click',async()=>{ const name=await askText('Name for the copy:',route.name+' (copy)','Copy','text'); if(name==null) return;
   const src=route; await rawLoad((src.guides||[]).map(g=>g.id)); const r=JSON.parse(JSON.stringify(src)); r.id=uid(); r.name=name.trim()||src.name+' (copy)'; delete r.savedAt;
   const map=new Map(); for(const g of r.guides||[]){ const nid=uid(); map.set(g.id,nid); if(rawCache.has(g.id)) rawPut(nid,rawCache.get(g.id)); g.id=nid; }

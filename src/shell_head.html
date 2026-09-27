@@ -117,6 +117,7 @@ select{background:var(--panel2);border:1px solid var(--line);border-radius:6px;p
 .step .del{border:1px solid var(--line);background:var(--panel2);border-radius:4px;width:22px;height:22px;padding:0;cursor:pointer;color:var(--muted);font-size:15px;line-height:1}
 .step .del:hover{color:var(--danger)}
 .step.dragover{box-shadow:inset 0 2px 0 var(--gold)}
+.stepfind{display:flex;gap:4px;align-items:center;padding:4px 8px;border-bottom:1px solid var(--line)}.stepfind input{flex:1;min-width:0;font:inherit;padding:3px 6px;border:1px solid var(--line);border-radius:5px;background:var(--panel);color:inherit}.stepfind .note{white-space:nowrap;font-size:12px}.step.fhit{box-shadow:inset 3px 0 0 #4fa3ff}.step.fcur{background:color-mix(in srgb,#4fa3ff 22%,transparent)}
 .step.msel{background:color-mix(in srgb,var(--gold) 18%,transparent);border-left-color:var(--gold)}
 .selbar{position:sticky;top:0;z-index:3;display:flex;flex-wrap:wrap;gap:4px;align-items:center;padding:6px 10px;background:var(--panel3);border-bottom:1px solid var(--gold);list-style:none}
 .selbar .note{flex-basis:100%;font-size:11px}
@@ -276,6 +277,7 @@ dialog textarea{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-
         </div>
         <div class="row note" id="routeInfo"></div>
       </div>
+      <div class="stepfind"><input type="search" id="stepFind" placeholder="Search steps (quest, NPC, note, zone…)" aria-label="Search steps"><span class="note" id="stepFindN"></span><button class="btn sm" id="stepFindPrev" title="Previous match (Shift+Enter)">▲</button><button class="btn sm" id="stepFindNext" title="Next match (Enter)">▼</button></div>
       <div class="scroll" id="stepScroll"><ul class="steps" id="steps"></ul></div>
       <div class="pfoot">
         <button class="btn sm" id="addGrind">Add grind</button>
