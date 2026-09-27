@@ -1320,7 +1320,7 @@ function objLines(qid,obj){ const out=[], mobs=new Set(); if(!Q(qid)) return {pr
   return {pre:out,mobs:[...mobs].slice(0,4)}; }
 function objIndexList(qid){ const q=Q(qid); if(!q) return []; const o=q.o||{}; const out=[]; let i=1; const add=(txt)=>out.push([i++,txt]);
   (o.c||[]).forEach(([id,t])=>add(t||entName('n',id))); (o.o||[]).forEach(([id,t])=>add(t||entName('o',id))); (o.i||[]).forEach(([id,t])=>add(t||DB.i[id]?.n||'item')); (o.k||[]).forEach(k=>add(k[2]||entName('n',k[1]||k[0][0]))); if(q.te) add(q.te[0]); return out; }
-let EXPORT_WARN=[];
+let EXPORT_WARN=[], EXPORT_ADDED=[];
 const blkLines=t=>t.split('\n');
 const blkHdrCond=t=>(blkLines(t)[0].replace(/\s--.*$/,'').match(/<<\s*(.+)$/)||[])[1]||'';
 function blkRefs(t){ const out=[]; for(const l of blkLines(t)){ const m=l.replace(/\s--.*$/,'').match(/^\s*#(completewith|requires)\s+([^\s<]+)\s*(?:<<\s*(.+))?$/i); if(m&&condOK(m[3]||'')) out.push({k:m[1].toLowerCase(),v:m[2]}); } return out; }
@@ -1335,7 +1335,7 @@ function buildRXP(){
   const g=route.guide; const fac=charInfo(route).fac==='H'?'Horde':'Alliance';
   const name=$('#expName').value||route.name, group=$('#expGroup').value||'Forever Routes', next=$('#expNext').value, extra=$('#expExtra').value, merge=$('#expMerge').checked;
   g.group=group; g.next=next; g.extra=extra; save();
-  const warns=[]; const segs=[]; let seg=null; const done=new Set();
+  EXPORT_ADDED=[]; const warns=[]; const segs=[]; let seg=null; const done=new Set();
   const pendFin=[]; const flushFin=q=>{ if(!seg) return; for(let k=0;k<pendFin.length;k++){ const f=pendFin[k]; if(q!=null&&f.q!==q) continue; seg.items.push({rx:null,step:null,text:f.text,fin:true}); seg.prevKey=null; pendFin.splice(k--,1); } };
   const newSeg=gid=>{ flushFin(null); seg={gid,items:[],lastBlk:null,prevKey:null,text(){ return this.items.map(x=>x.text).filter(Boolean); }}; segs.push(seg); };
   const blockSteps=(g,rx)=>g.steps.filter(x=>x.rx===rx);
@@ -1405,8 +1405,12 @@ function buildRXP(){
     for(const it of [...sg.items]) if(it.text) for(const ref of blkRefs(it.text)){ if(ref.v==='next'||have().has(ref.v)) continue;
       let k=-1; raw.forEach((t,ix)=>{ if(t&&condOK(blkHdrCond(t))&&blkLabels(t).includes(ref.v)) k=ix+1; });
       if(k<0) continue; // the stock guide has the same dangling reference for this character
-      const t=raw[k-1]; const pos=sg.items.findIndex(x=>x.rx!=null&&x.rx>k); const ins={rx:k,text:t,step:null,added:true};
-      if(pos<0) sg.items.push(ins); else sg.items.splice(pos,0,ins); }
+      const t=raw[k-1]; const pos=sg.items.findIndex(x=>x.rx!=null&&x.rx>k); const acts=/^\s*\.(accept|turnin|complete|collect|fly|fp|hs|home|train|trainer|vendor|deathskip|use)\b/m.test(t);
+      if(!acts){ const ins={rx:k,text:t,step:null,added:true}; EXPORT_ADDED.push({guide:gg.name,label:ref.v,text:t}); if(pos<0) sg.items.push(ins); else sg.items.splice(pos,0,ins); continue; }
+      // the labelled stock step does things you didn't put in your route: move just its #label onto your next step instead of pulling that step in
+      const nx=pos>=0?sg.items[pos]:null;
+      if(nx&&nx.text&&!blkLabels(nx.text).length){ const L2=nx.text.split('\n'); L2.splice(1,0,'    #label '+ref.v); nx.text=L2.join('\n'); EXPORT_ADDED.push({guide:gg.name,label:ref.v,text:'(label moved onto your next step)'}); }
+      else { const stub=`step\n    #label ${ref.v}\n    >>|cRXP_WARN_Continue with the next step|r`; EXPORT_ADDED.push({guide:gg.name,label:ref.v,text:stub}); if(pos<0) sg.items.push({rx:k,text:stub,step:null,added:true}); else sg.items.splice(pos,0,{rx:k,text:stub,step:null,added:true}); } }
   }
   // checks against the stock guide
   segs.forEach((sg,si)=>{ if(!sg.gid) return; const gg=G(sg.gid), raw=rawCache.get(sg.gid); if(!raw) return;
