@@ -312,7 +312,8 @@ function simulate(){
     if(!r.inactive&&s.t==='deathskip'&&r.pt){ const G=gyAt(s.gy); const D=deathSpot(lastPt,G); if(D){ r.dep=withZone(D); r.leg={type:'death'}; } }
     if(!r.inactive){ const P=pathOf(s); if(P&&P.length>=2){ r.path=pathPts(P); if(r.path.length) r.pt=Object.assign({},r.pt||{},r.path[0]); } }
     { const lt=r.leg?.type; const until=+route.char.ypkUntil||40; const tgt=lt==='hs'?null:(lt==='fly'||lt==='ride'||lt==='death')?r.dep:r.pt;
-      if(!r.inactive&&tgt&&lastPt&&!isSticky(s)&&+route.char.ypk>0&&st.level<until&&st.level<MAXLVL){ const w=travelKills(lastPt,tgt,st); if(w){ r.walk=w; r.gained+=w.xp; addXP(st,w.xp); r.after={level:st.level,xp:st.xp}; } } }
+      let pj=i-1; while(pj>=0&&res[pj]?.inactive) pj--; const afterGrind=pj>=0&&route.steps[pj].t==='grind'; /* you've just been grinding: no extra travel kills on the next leg */
+      if(!afterGrind&&!r.inactive&&tgt&&lastPt&&!isSticky(s)&&+route.char.ypk>0&&st.level<until&&st.level<MAXLVL){ const w=travelKills(lastPt,tgt,st); if(w){ r.walk=w; r.gained+=w.xp; addXP(st,w.xp); r.after={level:st.level,xp:st.xp}; } } }
     r.from=lastPt; r.stk=isSticky(s)&&!['hs','fly','ride','death'].includes(r.leg?.type); /* a hearth / flight still moves you even when the guide shows it as #completewith */ if(r.pt&&!r.stk) lastPt=r.pt;
     res.push(r);
     if(i===cursor) atCursor=cloneState(st);
