@@ -779,7 +779,7 @@ function click(x,y){ if(pathEdit!=null&&pathClick(x,y)) return;
 function click0(x,y){
   if(picking){ const X=(x-view.tx)/view.s, Y=(y-view.ty)/view.s; const z=plane2zone(X,Y); if(!z){ toast('That spot is outside every zone'); return; } const cb=picking; stopPick(); cb({z:z.z,px:z.px,py:z.py}); return; }
   const h=hitAt(x,y); if(!h){ hidePop(); return; }
-  if(h.kind==='route'){ setCursor(h.step); return; }
+  if(h.kind==='route'){ setCursor(h.step); const under=hits.filter(t=>t.kind!=='route'&&Math.hypot(t.x-x,t.y-y)<=t.r+6).sort((a,b)=>((HIT_PRI[a.kind]??3)-(HIT_PRI[b.kind]??3))||(Math.hypot(a.x-x,a.y-y)-Math.hypot(b.x-x,b.y-y)))[0]; if(under) showPop(under,x,y); return; }
   showPop(h,x,y);
 }
 
@@ -1113,8 +1113,7 @@ function showPop(h,x,y){
   } else if(h.kind==='obj'){
     const q=h.qids[0]; html+=`<h4>${esc(Q(q).n)}</h4><div class="it">${esc(h.obText)}<br><span class="note">${esc(h.label||'')}</span><div class="row">${h.obRx&&objNums(q).length>1?`<button class="btn sm gold" data-cobj="${q}:${h.obRx}">This objective done</button><button class="btn sm" data-complete="${q}">All objectives done</button>`:`<button class="btn sm gold" data-complete="${q}">Objectives done</button>`}<button class="btn sm" data-sel="${q}">Details</button>${whLink(q,true)}</div></div>`;
   } else if(h.kind==='fp'){
-    const node=Object.entries(META.taxi.nodes).find(([id,n])=>n.fm===h.npc)?.[0]; const place=guessPlace(h.loc);
-    html+=`<h4>${esc(h.label)}</h4><div class="it">${node?`<span class="note">${esc(META.taxi.nodes[node].n)}${SIM.st.fps.has(node)?' · learned':''}</span>`:''}<div class="row">${node?`<button class="btn sm gold" data-fpnode="${node}">Get flight path</button><button class="btn sm" data-flynode="${node}">Fly here</button>`:`<button class="btn sm gold" data-fp="${esc(place)}" ${locAttr(h.loc)}>Get flight path</button><button class="btn sm" data-fly="${esc(place)}" ${locAttr(h.loc)}>Fly here</button>`}</div></div>`;
+    html+=fpHTML(h);
   } else if(h.kind==='town'){
     html+=townHTML(h);
   } else if(h.kind==='fq'){ html+=fqPopHTML(h.q);
@@ -1130,6 +1129,7 @@ function showPop(h,x,y){
   }
   { const seen=new Set(h.kind==='fq'?[h.q]:[]); for(const t of hits) if(t.kind==='fq'&&!seen.has(t.q)&&Math.hypot(t.x-x,t.y-y)<=t.r+6){ seen.add(t.q); html+=`<hr style="border:0;border-top:1px solid var(--line);margin:6px 0">`+fqPopHTML(t.q); } }
   { const SV=['ptrainer','gy','trainer','vendor']; const near=hits.filter(t=>t!==h&&SV.includes(t.kind)&&Math.hypot(t.x-x,t.y-y)<=t.r+8); const seen=new Set(); for(const t of near){ const k=t.kind+(t.pid||t.gi||t.tid||t.vid); if(seen.has(k)||(h.kind===t.kind&&(h.pid||h.gi||h.tid||h.vid)===(t.pid||t.gi||t.tid||t.vid))) continue; seen.add(k); html+=`<hr style="border:0;border-top:1px solid var(--line);margin:6px 0">`+svcHTML(t); } }
+  for(const t of hits) if((t.kind==='fp'||t.kind==='dock')&&t!==h&&!(h.kind===t.kind)&&Math.hypot(t.x-x,t.y-y)<=t.r+8){ html+=`<hr style="border:0;border-top:1px solid var(--line);margin:6px 0">`+(t.kind==='fp'?fpHTML(t):`<h4>${esc(t.dock.label)}</h4>`+t.rides.map(r=>`<div class="it"><div class="row"><button class="btn sm gold" data-ride="${r.id}">${esc(r.text)}</button></div></div>`).join('')); break; }
   if(h.kind!=='town'){ const tw=hits.find(t=>t.kind==='town'&&Math.hypot(t.x-x,t.y-y)<=t.r+10); if(tw) html+=`<hr style="border:0;border-top:1px solid var(--line);margin:6px 0">`+townHTML(tw); }
   const div=document.createElement('div'); div.className='pop'; div.innerHTML=html; $('#mapwrap').appendChild(div);
   const w=div.offsetWidth, hh=div.offsetHeight; div.style.left=Math.max(6,Math.min(W-w-6,x+12))+'px'; div.style.top=Math.max(6,Math.min(H-hh-6,y+12))+'px';
@@ -1143,6 +1143,10 @@ function svcHTML(h){ let html='';
   } else if(h.kind==='vendor'){ const v=vendorOf(h.vid);
     html+=`<h4>${esc(v.name)}</h4><div class="it"><span class="note">${esc(v.sub||'Vendor')}${v.items.length?' · sells '+v.items.slice(0,6).map(i=>esc(itemName(i))).join(', ')+(v.items.length>6?'…':''):''}</span><div class="row"><button class="btn sm gold" data-buyv="${v.id}">Buy from ${esc(v.name)}</button></div></div>`;
   }
+  return html; }
+function fpHTML(h){ let html='';
+    const node=Object.entries(META.taxi.nodes).find(([id,n])=>n.fm===h.npc)?.[0]; const place=guessPlace(h.loc);
+    html+=`<h4>${esc(h.label)}</h4><div class="it">${node?`<span class="note">${esc(META.taxi.nodes[node].n)}${SIM.st.fps.has(node)?' · learned':''}</span>`:''}<div class="row">${node?`<button class="btn sm gold" data-fpnode="${node}">Get flight path</button><button class="btn sm" data-flynode="${node}">Fly here</button>`:`<button class="btn sm gold" data-fp="${esc(place)}" ${locAttr(h.loc)}>Get flight path</button><button class="btn sm" data-fly="${esc(place)}" ${locAttr(h.loc)}>Fly here</button>`}</div></div>`;
   return html; }
 function townHTML(h){ const locAttr=l=>`data-loc='${esc(JSON.stringify(l))}'`; return `<h4>${esc(h.label)}</h4><div class="it"><div class="row"><button class="btn sm" data-home="${esc(h.label)}" ${locAttr(h.loc)}>Set hearthstone</button><button class="btn sm" data-hs="${esc(h.label)}" ${locAttr(h.loc)}>Hearth here</button><button class="btn sm" data-goto="${esc(h.label)}" ${locAttr(h.loc)}>Go here</button>${flyBtn(zp2plane(h.loc.z,h.loc.px,h.loc.py))}</div></div>`; }
 function flyBtn(p){ if(!p||!META.taxi) return ''; const id=nearestNode(p); if(!id) return ''; return `<button class="btn sm" data-flynode="${id}" title="Adds a .fly step to the nearest flight path">Fly to ${esc(taxiShort(id))}</button>`; }
