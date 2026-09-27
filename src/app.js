@@ -1288,7 +1288,8 @@ function buildRXP(){
   const name=$('#expName').value||route.name, group=$('#expGroup').value||'Forever Routes', next=$('#expNext').value, extra=$('#expExtra').value, merge=$('#expMerge').checked;
   g.group=group; g.next=next; g.extra=extra; save();
   const warns=[]; const segs=[]; let seg=null; const done=new Set();
-  const newSeg=gid=>{ seg={gid,items:[],lastBlk:null,prevKey:null,text(){ return this.items.map(x=>x.text).filter(Boolean); }}; segs.push(seg); };
+  const pendFin=[]; const flushFin=q=>{ if(!seg) return; for(let k=0;k<pendFin.length;k++){ const f=pendFin[k]; if(q!=null&&f.q!==q) continue; seg.items.push({rx:null,step:null,text:f.text,fin:true}); seg.prevKey=null; pendFin.splice(k--,1); } };
+  const newSeg=gid=>{ flushFin(null); seg={gid,items:[],lastBlk:null,prevKey:null,text(){ return this.items.map(x=>x.text).filter(Boolean); }}; segs.push(seg); };
   const blockSteps=(g,rx)=>g.steps.filter(x=>x.rx===rx);
   const actKey=(t,q)=>t+':'+q;
   route.steps.forEach((s,i)=>{
@@ -1305,10 +1306,12 @@ function buildRXP(){
       if(run.some(x=>x.opt)&&!out.some(l=>/^\s*#optional\b/i.test(l))) out.splice(1,0,'    #optional');
       const ep=run.find(x=>x.path!==undefined); if(ep){ for(let k=out.length-1;k>0;k--) if(/^\s*(#loop\b|\.goto\b)/i.test(out[k])) out.splice(k,1); if(ep.path&&ep.path.length>=2){ let h=1; while(h<out.length&&/^\s*#/.test(out[h])) h++; out.splice(h,0,'    #loop',gotoLine(ep.path[0])+',0',...ep.path.map(w=>gotoLine(w)+',30,0')); } }
       const un=run.map(x=>x.unote).filter(Boolean); if(un.length){ let e=out.length; while(e>1&&!out[e-1].trim()) e--; out.splice(e,0,...un.flatMap(n=>n.split('\n')).filter(l=>l.trim()).map(l=>'    >>'+l.trim())); }
+      for(const m of out.join('\n').matchAll(/^\s*\.turnin\s+(\d+)/gm)) flushFin(+m[1]);
       const txt=out.join('\n'); seg.items.push({rx:gsx.rx,text:txt,step:i,cut}); seg.lastBlk={g:gg.id,rx:gsx.rx}; seg.prevKey=null; return;
     }
     const r=SIM.res[i]; const p=r.pt; const q=s.q?(Q(s.q)||{n:s.qn||('Quest '+s.q)}):null; const lines=[];
     const gs=s.src?G(s.src.g)?.steps[s.src.i]:null; const dgl=gs?[...(gs.dg||[]).map(t=>'    .dungeon '+t),...(gs.dgs||[]).map(t=>'    .dungeon !'+t)]:[]; const xrl=gs&&gs.xr?'    #xprate '+gs.xr:null; const optl=(s.opt||s.gopt)?'    #optional':null;
+    if(s.t==='turnin'&&pendFin.some(f=>f.q===s.q)){ flushFin(s.q); }
     const stl=s.stk==='next'?'    #completewith next':s.stk==='sticky'?'    #sticky':null;
     const key=(s.t==='accept'||s.t==='turnin')&&p&&!stl?p.ent+'@'+p.X.toFixed(0)+'|'+dgl.join()+(xrl||'')+(optl||''):null;
     const cont=merge&&key&&key===seg.prevKey; seg.prevKey=key;
@@ -1340,7 +1343,12 @@ function buildRXP(){
     if(s.unote) lines.push(...s.unote.split('\n').filter(l=>l.trim()).map(l=>'    >>'+l.trim()));
     L.push(...lines); if(!cont) L.push(...dgl);
     seg.items.push({rx:null,step:i,text:L.join('\n')});
+    if(stl&&s.t==='complete'&&s.q&&!r.inactive){ const P=pathOf(s); const F=['step'];
+      if(P&&P.length>=2){ if(s.loopRaw) F.push(...s.loopRaw); else { F.push('    #loop',gotoLine(P[0])+',0',...P.map(w=>gotoLine(w)+',30,0')); } } else { const g=gotoLine(p); if(g) F.push(g); }
+      if(F.length>1){ if(s.cl?.length&&!Q(s.q)) F.push(...s.cl); else { const ol=objLines(s.q,s.obj); F.push(...ol.pre); const obs=objIndexList(s.q).filter(([n])=>!s.obj||n===s.obj); obs.forEach(([n,t])=>F.push(`    .complete ${s.q},${n} --${t}`)); ol.mobs.forEach(m=>F.push(`    .mob ${m}`)); }
+        pendFin.push({q:s.q,text:F.join('\n')}); } }
   });
+  flushFin(null);
   if(!segs.length) newSeg(null);
   // keep RestedXP's label links working: add stock blocks that exported steps point to (#completewith / #requires) if they were left out
   for(const sg of segs){ if(!sg.gid) continue; const gg=G(sg.gid), raw=rawCache.get(sg.gid); if(!raw) continue;
