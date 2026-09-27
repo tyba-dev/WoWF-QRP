@@ -22,7 +22,7 @@ async function loadData(){
   for(let i=0;i<bin.length;i++) u8[i]=bin.charCodeAt(i);
   const stream=new Blob([u8]).stream().pipeThrough(new DecompressionStream('gzip'));
   const o=JSON.parse(await new Response(stream).text());
-  DB=o.db; META=o.meta;
+  DB=o.db; META=o.meta; for(const [id,x] of Object.entries(QEXTRA)) if(DB.q[id]) Object.assign(DB.q[id],x);
   labelChains();
 }
 /* quests that share a name and form a chain get "(part k/n)" so follow-ups are distinguishable */
@@ -110,6 +110,7 @@ function objectives(qid){
   if(o.r) list.push({kind:'rep',text:'Reach reputation '+o.r[1]+' with faction '+o.r[0],pts:[]});
   if(q.te){ const pts=q.te[1].map(([z,x,y])=>zp2plane(z,x,y)).filter(Boolean).map(p=>({...p,kind:'event',label:q.te[0]})); list.push({kind:'event',text:q.te[0],pts}); }
   { let n=1; for(const ob of list){ if(ob.kind==='rep'||(ob.kind==='event'&&!ob.pts.length&&!q.te)) continue; ob.rx=n++; } }
+  (q.xk||[]).forEach((id,k)=>list.push({kind:'kill',text:entName('n',id)+' slain',pts:entPts('n',id).map(p=>({...p,kind:'kill',label:entName('n',id)})),rx:100+k,extra:true}));
   // items you must loot first (Questie requiredSourceItems), e.g. Samuel's Remains from Samuel Fipps: shown and routed, but not numbered (RestedXP .complete numbers stay Questie's)
   for(const id of q.rs||[]){ if((o.i||[]).some(([i])=>i===id)) continue; const pts=itemSourcePts(id,'loot'); if(pts.length) list.push({kind:'loot',text:(DB.i[id]?.n||('Item '+id))+' (loot first)',pts,pre:true}); }
   for(const ob of list){ if(ob.pts.length>160){ const st=ob.pts.length/160; ob.pts=Array.from({length:160},(_,i)=>ob.pts[Math.floor(i*st)]); } }
@@ -120,7 +121,10 @@ function isDungeonQuest(qid){ if(dqCache.has(qid)) return dqCache.get(qid); cons
   if(q){ if(q.z>0 && META.dgAreas.includes(q.z)) v=true; else { const pts=objectives(qid).flatMap(o=>o.pts); if(pts.length && pts.filter(p=>p.dg).length>=pts.length/2) v=true; } }
   dqCache.set(qid,v); return v; }
 function objNums(qid){ return objectives(qid).filter(o=>o.rx).map(o=>o.rx); }
-const hasObjectives=qid=>{ const q=Q(qid); return !!(q.o||q.te); };
+const hasObjectives=qid=>{ const q=Q(qid); return !!(q.o||q.te||q.xk); };
+// objectives the game doesn't list but the quest needs (Forever): kill these to be able to hand in. Not exported as .complete (the quest has no such objective).
+const QEXTRA={6383:{xk:[12676,12677,12678],note:'Kill Sharptalon, Shadumbra and Ursangous, then hand in to Senani Thunderheart'}};
+
 function objPoint(qid,rx,ref){
   let all=objectives(qid).filter(o=>!o.pre&&(!rx||o.rx===rx)).flatMap(o=>o.pts); if(!all.length) return rx?objPoint(qid,null,ref):null;
   let pts=all.filter(p=>!p.dg); if(!pts.length) pts=all;
@@ -846,7 +850,12 @@ function defaultPath(step,at){ if(step.src||step.t!=='complete'||!step.q||step.p
 function preLootSteps(step){ const q=step.q&&Q(step.q); if(!q||step.t!=='complete'||!q.rs||step.src) return [];
   const have=new Set(route.steps.slice(0,cursor+1).filter(x=>x.t==='collect'&&x.q===step.q).map(x=>x.item)); const o=q.o||{};
   return q.rs.filter(i=>!have.has(i)&&!(o.i||[]).some(([j])=>j===i)&&itemSourcePts(i,'loot').length).map(i=>({t:'collect',item:i,c:1,q:step.q})); }
-function addStep(step){ const pre=preLootSteps(step); if(pre.length){ pushHistory(); route.steps.splice(cursor+1,0,...pre); cursor+=pre.length; toast(`Added a step to loot ${pre.map(x=>DB.i[x.item]?.n).join(', ')} first: the objective needs it.`,4500); }
+function addStep(step){
+  // quests whose extra kills are spread out (e.g. The Ashenvale Hunt): one step per mob, nearest first
+  if(step.t==='complete'&&!step.src&&!step.obj&&Q(step.q)?.xk){ const obs=objectives(step.q).filter(o=>o.extra); let ref=routeRefBefore(cursor+1); const left=[...obs], order=[];
+    while(left.length){ let bi=0,bd=1e18; left.forEach((o,k)=>{ const p=o.pts[0]; const d=ref&&p?Math.hypot(p.X-ref.X,p.Y-ref.Y):k; if(d<bd){bd=d;bi=k;} }); const o=left.splice(bi,1)[0]; order.push(o); ref=o.pts[0]||ref; }
+    pushHistory(); for(const o of order){ route.steps.splice(cursor+1,0,{t:'complete',q:step.q,obj:o.rx}); cursor++; } refresh(); scrollCursor(); toast(`Added ${order.length} kill steps: ${order.map(o=>o.text.replace(/ slain$/,'')).join(', ')}`); return; }
+  const pre=preLootSteps(step); if(pre.length){ pushHistory(); route.steps.splice(cursor+1,0,...pre); cursor+=pre.length; toast(`Added a step to loot ${pre.map(x=>DB.i[x.item]?.n).join(', ')} first: the objective needs it.`,4500); }
   const pk=defaultPath(step,cursor+1); const msgs=[]; if(pk) msgs.push(pk==='guide'?`Path copied from ${step.pathSrc}.`:`Rough path generated through the spawns (${step.path.length} points): click 🔁 on the step to adjust it.`);
   let d=null; if(!step.src&&step.q&&['accept','complete','turnin'].includes(step.t)&&step.stk===undefined){ d=guideStickyDefault(step.t,step.q); if(d) step.stk=d.stk; }
   if(d) msgs.push(`Made sticky (${d.stk==='next'?'done with the next step':'stays on screen until done'}) as in ${d.g}: click 📌 to change.`);
@@ -1338,7 +1347,7 @@ function buildRXP(){
       for(const it of s.items||[]) if(it.id) lines.push(`    .collect ${it.id},${it.c} --Collect ${it.n||itemName(it.id)} (${it.c})`);
       lines.push(`    .target ${nm}`); }
     else if(s.t==='complete'&&s.cl?.length&&!Q(s.q)) lines.push(...s.cl);
-    else if(s.t==='complete'){ const ol=objLines(s.q,s.obj); lines.push(...ol.pre); const obs=objIndexList(s.q).filter(([n])=>!s.obj||n===s.obj); if(obs.length) obs.forEach(([n,t])=>lines.push(`    .complete ${s.q},${n} --${t}`)); else lines.push(`    >>Complete ${q.on||q.n}`); ol.mobs.forEach(m=>lines.push(`    .mob ${m}`)); }
+    else if(s.t==='complete'){ const ol=objLines(s.q,s.obj); if(Q(s.q)?.note&&!s.obj) lines.push(`    >>|cRXP_WARN_${Q(s.q).note}|r`); lines.push(...ol.pre); const obs=objIndexList(s.q).filter(([n])=>!s.obj||n===s.obj); if(obs.length) obs.forEach(([n,t])=>lines.push(`    .complete ${s.q},${n} --${t}`)); else if(!ol.pre.length) lines.push(`    >>Complete ${q.on||q.n}`); ol.mobs.forEach(m=>lines.push(`    .${Q(s.q)?.xk?.some(id=>entName('n',id)===m)?'unitscan':'mob'} ${m}`)); }
     else if(s.t==='grind'){ const a=r.after; lines.push(`    .xp ${a.level}${a.xp?'+'+a.xp:''} >>Grind to ${a.level<MAXLVL&&a.xp?fmt(a.xp)+' XP into ':''}level ${a.level}${s.note?' ('+s.note+')':''}`); }
     else if(s.t==='custom'){ const verb={turnin:'Turn in',accept:'Accept',complete:'Complete'}[s.act||'turnin']; if(s.qid&&s.act!=='complete') lines.push(`    .${s.act==='accept'?'accept':'turnin'} ${s.qid} >>${verb} ${s.name}`); else lines.push(`    >>${verb} ${s.name}${s.xp&&s.act==='turnin'?' (+'+s.xp+' XP)':''}`); }
     else if(s.t==='party') lines.push(s.size>1?`    >>Group up with ${s.size-1} other player${s.size>2?'s':''}`:'    >>Continue solo');
