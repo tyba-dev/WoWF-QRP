@@ -37,3 +37,12 @@ for qid,f in rows(Q+'foreverQuestDB.lua'):
             if sp: D['o'][str(o)]={'n':lstr(of[0]),'p':sp}; added['o']+=1
 json.dump(D,open('db.json','w'),separators=(',',':'))
 print(added, D['q']['6395'].get('rs'), D['i']['16333'], D['n'].get('1919'))
+# shareable quests (questFlags & 8 = QUEST_FLAGS_SHARABLE)
+D=json.load(open('db.json')); n=0
+for qid,f in rows(Q+'foreverQuestDB.lua'):
+    q=D['q'].get(str(qid))
+    if not q or len(f)<23 or f[22] in ('nil',''): continue
+    try: fl=int(f[22])
+    except ValueError: continue
+    if fl&8: q['sh']=1; n+=1
+json.dump(D,open('db.json','w'),separators=(',',':')); print('shareable',n)
