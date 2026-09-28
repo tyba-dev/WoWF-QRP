@@ -308,7 +308,9 @@ function simulate(){
     } else if(s.t==='turnin'){
       if(!st.log.has(s.q)) r.err.push('Not in your quest log');
       else if(!st.log.get(s.q).done){ const e=st.log.get(s.q); const miss=objectives(s.q).filter(o=>o.rx&&!(e.objs&&e.objs.has(o.rx))).map(o=>o.text); r.err.push('Objectives not done'+(miss.length?': '+miss.join('; '):'')); }
-      const xp=questXP(s.q,st.level); r.gained=xp; addXP(st,xp); st.log.delete(s.q); st.turned.add(s.q);
+      const xp=questXP(s.q,st.level); r.gained=xp;
+      if(q.xp&&st.level<MAXLVL&&st.level>q.xp[0]+5){ const full=questXP(s.q,q.xp[0]); r.warn.push(`XP penalty: you are level ${st.level}, the quest is level ${q.xp[0]}, so it gives ${Math.round(Math.max(1,Math.min(10,2*(q.xp[0]-st.level)+20))*10)}% (${fmt(xp)} of ${fmt(full)} XP, losing ${fmt(full-xp)}). Turn it in by level ${q.xp[0]+5} for full XP.`); }
+      addXP(st,xp); st.log.delete(s.q); st.turned.add(s.q);
     } else if(s.t==='abandon'){ st.log.delete(s.q); }
     else if(s.t==='grind'){
       if(s.mode==='to'){
