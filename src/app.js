@@ -325,7 +325,7 @@ function simulate(){
       const own=s.ypk!=null&&s.ypk!==''; const yp=own?+s.ypk:+route.char.ypk; if(own&&!(yp>0)) r.walkOff=true;
       if((own||!afterGrind)&&!r.inactive&&tgt&&lastPt&&!isSticky(s)&&yp>0&&st.level<until&&st.level<MAXLVL){ const w=travelKills(lastPt,tgt,st,yp); if(w){ r.walk=w; r.gained+=w.xp; addXP(st,w.xp); r.after={level:st.level,xp:st.xp}; } } }
     if(!r.inactive){ const lt=r.leg?.type; const pts=[]; if(lastPt&&!isSticky(s)){ if(lt==='fly'||lt==='ride'||lt==='death'){ if(r.dep) pts.push(lastPt,r.dep,null); } else if(lt!=='hs'&&r.pt) pts.push(lastPt,r.pt); }
-      if(r.path&&r.path.length>1) pts.push(null,...r.path,r.path[0]); if(r.pt&&(lt==='fly'||lt==='ride'||lt==='hs'||lt==='death')) pts.push(null,r.pt); exploreAlong(pts,st,r); }
+      if(r.path&&r.path.length>1&&!isSticky(s)) pts.push(null,...r.path,r.path[0]); /* sticky / done-along-the-way steps don't walk their loop */ if(r.pt&&(lt==='fly'||lt==='ride'||lt==='hs'||lt==='death')) pts.push(null,r.pt); exploreAlong(pts,st,r); }
     r.from=lastPt; r.stk=isSticky(s)&&!['hs','fly','ride','death'].includes(r.leg?.type); /* a hearth / flight still moves you even when the guide shows it as #completewith */ if(r.pt&&!r.stk) lastPt=r.pt;
     res.push(r);
     if(i===cursor) atCursor=cloneState(st);
