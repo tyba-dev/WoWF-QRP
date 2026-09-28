@@ -83,6 +83,7 @@ function starterPts(qid){
   const q=Q(qid); const out=[];
   for(const id of q.s.n) out.push(...entPts('n',id).map(p=>({...p,label:entName('n',id)})));
   for(const id of q.s.o) out.push(...entPts('o',id).map(p=>({...p,label:entName('o',id)})));
+  if(!out.length&&q.s.i.length) return itemStartPts(qid);
   return out;
 }
 function finisherPts(qid){
@@ -91,6 +92,10 @@ function finisherPts(qid){
   for(const id of q.f.o) out.push(...entPts('o',id).map(p=>({...p,label:entName('o',id)})));
   return out;
 }
+const isItemStart=qid=>{ const q=Q(qid); return !!q&&!q.s.n.length&&!q.s.o.length&&q.s.i.length>0; };
+function itemStartPts(qid){ /* one representative spot per dropping mob/object: the spawn nearest that mob's centre */ const out=[]; const IS=new Map();
+  for(const i of Q(qid).s.i){ const it=DB.i[i]; if(!it) continue; for(const [t,ids] of [['n',it.d||[]],['o',it.od||[]]]) for(const id of ids.slice(0,4)){ const ps=entPts(t,id).filter(p=>!p.dg); if(!ps.length) continue; const mx=ps.reduce((a,p)=>a+p.X,0)/ps.length, my=ps.reduce((a,p)=>a+p.Y,0)/ps.length; const c=ps.reduce((b,p)=>Math.hypot(p.X-mx,p.Y-my)<Math.hypot(b.X-mx,b.Y-my)?p:b); out.push({...c,label:entName(t,id)+' (drops '+(it.n||'item')+')',item:i}); } }
+  return out; }
 function itemSourcePts(iid,kind){
   const it=DB.i[iid]; const out=[]; if(!it) return out;
   for(const id of it.d||[]) out.push(...entPts('n',id).map(p=>({...p,kind,label:entName('n',id)})));
@@ -827,7 +832,7 @@ function click0(x,y){
 function stepText(s){
   const q=s.q?Q(s.q):null; const qn=q?q.n:(s.qn||('Quest '+s.q));
   switch(s.t){
-    case 'accept': return {ic:'!',cls:'accept',t:'Accept '+qn,sub:s.shared?'Shared by a party member':(q?locSub(s):'')+(s.src?' · from guide':'')};
+    case 'accept': return {ic:'!',cls:'accept',t:'Accept '+qn,sub:s.shared?'Shared by a party member':isItemStart(s.q)&&!s.src?'Farm '+Q(s.q).s.i.map(i=>DB.i[i]?.n||'item').join(', ')+' (starts the quest) · '+locSub(s):(q?locSub(s):'')+(s.src?' · from guide':'')};
     case 'complete': { if(!q&&s.objText) return {ic:'✓',cls:'complete',t:`${qn}: ${s.objText}`,sub:s.tgt?'Talk to '+s.tgt:'One objective'}; const ob=s.obj&&q?objectives(s.q).find(o=>o.rx===s.obj):null; return {ic:'✓',cls:'complete',t:ob?`${qn}: ${ob.text}${s.upto>0?` (up to ${s.upto})`:''}`:'Complete '+qn,sub:ob?'One objective':(q?objectives(s.q).map(o=>o.text).join('; '):'')}; }
     case 'turnin': return {ic:'?',cls:'turnin',t:'Turn in '+qn,sub:q?locSub(s):''};
     case 'abandon': return {ic:'×',cls:'abandon',t:'Abandon '+qn,sub:''};
@@ -862,7 +867,7 @@ function pathOf(s){ return s.path!==undefined?s.path:(stepGuide(s)?.path||null);
 function pathPts(path){ return (path||[]).map(l=>zp2plane(l.z,l.px,l.py)).filter(Boolean); }
 function guidePathFor(q,obj){ for(const g of route.guides||[]) for(const x of g.steps||[]) if(x.q===q&&x.t==='complete'&&x.cond&&x.path&&x.path.length>=2&&!(obj&&x.objs&&!x.objs.some(o=>o.n===obj))) return {path:x.path.map(l=>({...l})),raw:x.loopRaw?[...x.loopRaw]:null,g:g.name}; return null; }
 function genPath(qid,obj,ref){
-  if(!Q(qid)) return null; const obs=objectives(qid).filter(o=>!o.pre&&(!obj||o.rx===obj)&&['kill','loot','obj'].includes(o.kind));
+  if(!Q(qid)) return null; const obs=obj==='item'?[{pts:Q(qid).s.i.flatMap(i=>itemSourcePts(i,'loot'))}]:objectives(qid).filter(o=>!o.pre&&(!obj||o.rx===obj)&&['kill','loot','obj'].includes(o.kind));
   let pts=obs.flatMap(o=>o.pts).filter(p=>p&&!p.dg&&p.z!=null); if(pts.length<4) return null;
   const cl=new Map(); for(const p of pts){ const k=Math.round(p.X/300)+','+Math.round(p.Y/300); if(!cl.has(k)) cl.set(k,[]); cl.get(k).push(p); }
   let best=null,bs=-1e18; for(const g of cl.values()){ const mx=g.reduce((a,p)=>a+p.X,0)/g.length, my=g.reduce((a,p)=>a+p.Y,0)/g.length; const d=ref?Math.hypot(mx-ref.X,my-ref.Y):0; const sc=g.length*400-d; if(sc>bs){ bs=sc; best={mx,my}; } }
@@ -881,7 +886,8 @@ function genPath(qid,obj,ref){
   return T.map(k=>{ const w=W[k]; let bz=sel[0], bd=1e18; for(const p of sel){ const d=(p.X-w.X)**2+(p.Y-w.Y)**2; if(d<bd){bd=d;bz=p;} } return planeToZp(bz.z,w.X,w.Y); });
 }
 function routeRefBefore(i){ for(let k=Math.min(i,route.steps.length)-1;k>=0;k--) if(SIM.res[k]?.pt&&!SIM.res[k].stk) return SIM.res[k].pt; return null; }
-function defaultPath(step,at){ if(step.src||step.t!=='complete'||!step.q||step.path) return null; const gp=guidePathFor(step.q,step.obj); if(gp){ step.path=gp.path; if(gp.raw) step.loopRaw=gp.raw; step.pathSrc=gp.g; return 'guide'; }
+function defaultPath(step,at){ if(!step.src&&step.t==='accept'&&!step.shared&&!step.path&&isItemStart(step.q)){ const p=genPath(step.q,'item',routeRefBefore(at)); if(p){ step.path=p; step.pathSrc='generated'; return 'gen'; } return null; }
+  if(step.src||step.t!=='complete'||!step.q||step.path) return null; const gp=guidePathFor(step.q,step.obj); if(gp){ step.path=gp.path; if(gp.raw) step.loopRaw=gp.raw; step.pathSrc=gp.g; return 'guide'; }
   const p=genPath(step.q,step.obj,routeRefBefore(at)); if(p){ step.path=p; step.pathSrc='generated'; return 'gen'; } return null; }
 function preLootSteps(step){ const q=step.q&&Q(step.q); if(!q||step.t!=='complete'||!q.rs||step.src) return [];
   const have=new Set(route.steps.slice(0,cursor+1).filter(x=>x.t==='collect'&&x.q===step.q).map(x=>x.item)); const o=q.o||{};
@@ -1384,11 +1390,16 @@ function buildRXP(){
     const gs=s.src?G(s.src.g)?.steps[s.src.i]:null; const dgl=gs?[...(gs.dg||[]).map(t=>'    .dungeon '+t),...(gs.dgs||[]).map(t=>'    .dungeon !'+t)]:[]; const xrl=gs&&gs.xr?'    #xprate '+gs.xr:null; const optl=(s.opt||s.gopt)?'    #optional':null;
     if(s.t==='turnin'&&pendFin.some(f=>f.q===s.q)){ flushFin(s.q); }
     const stl=s.stk==='next'?'    #completewith next':s.stk==='sticky'?'    #sticky':null;
-    const key=(s.t==='accept'||s.t==='turnin')&&p&&!stl&&!s.shared?p.ent+'@'+p.X.toFixed(0)+'|'+dgl.join()+(xrl||'')+(optl||''):null;
+    const key=(s.t==='accept'||s.t==='turnin')&&p&&!stl&&!s.shared&&!isItemStart(s.q)?p.ent+'@'+p.X.toFixed(0)+'|'+dgl.join()+(xrl||'')+(optl||''):null;
     const cont=merge&&key&&key===seg.prevKey; seg.prevKey=key;
     const gp=s.t==='travel'&&(s.kind==='fly'||s.kind==='ride')?r.dep:p;
     const own=stl?null:(s.path||null); if(!cont){ L.push('step'); if(stl) L.push(stl); if(optl) L.push(optl); if(xrl) L.push(xrl); if(own&&own.length>=2){ if(s.loopRaw) L.push(...s.loopRaw); else { L.push('    #loop'); L.push(gotoLine(own[0])+',0'); for(const w of own) L.push(gotoLine(w)+',30,0'); } } const gl=stl||(own&&own.length>=2)?null:gotoLine(gp); /* sticky / completewith steps get no arrow point, like the stock guides */ if(gl&&s.t!=='deathskip'&&!(s.t==='travel'&&(s.kind==='hs'||s.kind==='note'||s.kind==='ride'))&&(s.t!=='grind'||s.loc)) L.push(gl); }
     if(s.t==='accept'&&s.shared){ lines.push(`    >>|cRXP_WARN_Have a party member share|r |cRXP_FRIENDLY_[${q.on||q.n}]|r |cRXP_WARN_with you|r`); lines.push(`    .accept ${s.q} >>Accept ${q.on||q.n}`); if(ESCORT.has(s.q)) lines.push(`    >>|cRXP_WARN_${ESC_NOTE}|r`); }
+    else if(s.t==='accept'&&isItemStart(s.q)){ for(const iid of Q(s.q).s.i){ const it=DB.i[iid]; const nm=it?.n||('item '+iid); const mobs=[...new Set((it?.d||[]).map(n=>entName('n',n)))], ob=[...new Set((it?.od||[]).map(n=>entName('o',n)))];
+        lines.push(mobs.length?`    >>Kill |cRXP_ENEMY_${mobs.slice(0,3).join('|r and |cRXP_ENEMY_')}|r. Loot ${mobs.length>1?'them':'it'} for |T134939:0|t[|cRXP_LOOT_${nm}|r]. |cRXP_WARN_Use it to start the quest|r`:`    >>Loot |T134939:0|t[|cRXP_LOOT_${nm}|r]${ob.length?' from the |cRXP_PICK_'+ob.join(', ')+'|r':''}. |cRXP_WARN_Use it to start the quest|r`);
+        lines.push(`    .collect ${iid},1,${s.q} --${nm} (1)`); }
+      lines.push(`    .accept ${s.q} >>Accept ${q.on||q.n}`); for(const iid of Q(s.q).s.i) lines.push(`    .use ${iid}`);
+      for(const m of [...new Set(Q(s.q).s.i.flatMap(i=>(DB.i[i]?.d||[]).map(n=>entName('n',n))))].slice(0,3)) lines.push(`    .mob ${m}`); if(ESCORT.has(s.q)) lines.push(`    >>|cRXP_WARN_${ESC_NOTE}|r`); }
     else if(s.t==='accept'||s.t==='turnin'){ const tk=cont?{pre:[],post:[]}:talkLines(p,s.tgt); lines.push(...tk.pre); lines.push(s.t==='accept'?`    .accept ${s.q} >>Accept ${q.on||q.n}`:`    .turnin ${s.q} >>Turn in ${q.on||q.n}`); lines.push(...tk.post); if(s.t==='accept'&&ESCORT.has(s.q)) lines.push(`    >>|cRXP_WARN_${ESC_NOTE}|r`); }
     else if(s.t==='abandon') lines.push(`    .abandon ${s.q} >>Abandon ${q.on||q.n}`);
     else if(s.t==='prof'){ if(s.act==='craft'){ lines.push(`    >>Craft ${s.n>1?s.n+' ':''}[${s.item}]`); if(s.itemId) lines.push(`    .collect ${s.itemId},${s.n||1} --${s.item} (${s.n||1})`); }
