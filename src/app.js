@@ -433,7 +433,9 @@ function calibrateYpk(idx,level,xp){ const want=totalXP(level,xp); const keep=ro
   if(at(hi)>want){ route.char.ypk=keep; simulate(); return {err:'The planner is already past that level/XP at that step without travel kills.'}; }
   if(at(lo)<want){ route.char.ypk=keep; simulate(); return {err:'Even 1 kill every 5 yards doesn\u2019t reach that; check the step, level and XP.'}; }
   for(let i=0;i<40;i++){ const mid=Math.sqrt(lo*hi); if(at(mid)>=want) lo=mid; else hi=mid; } best=(y=>y<100?Math.round(y*10)/10:Math.round(y))(Math.sqrt(lo*hi)); route.char.ypk=best; simulate(); return {ypk:best}; }
+const pinnable=s=>!(s.t==='travel'&&['fly','ride','hs'].includes(s.kind))&&!(s.t==='prof'&&s.act==='craft');
 function stepPoint(s,ref){
+  if(s.pin&&pinnable(s)) return zp2plane(s.pin.z,s.pin.px,s.pin.py);
   if(s.t==='accept'&&s.shared) return null;
   if(s.t==='prof'){ if(s.act==='craft') return null; const t=ptrainerOf(s.npc); return t?nearest(ptrainerPts(t),ref):null; }
   if(s.t==='deathskip'){ return gyAt(s.gy); }
@@ -1023,12 +1025,16 @@ function editStep(i){ const s=route.steps[i], r=SIM.res[i]||{}; const d=$('#dlgE
   $('#edTitle').textContent='Edit step '+(i+1); $('#edNote').value=s.unote||''; $('#edXp').value=s.xpo!=null?s.xpo:''; $('#edYpk').value=s.ypk!=null?s.ypk:''; const canPart=s.t==='complete'&&s.obj&&Q(s.q)&&s.obj<100; $('#edUptoL').hidden=!canPart; $('#edUpto').value=s.upto||''; $('#edYpk').placeholder=route.char.ypk?'route: '+route.char.ypk:'route: off';
   const calc=s.xpo!=null?r.xpCalc:r.gained; $('#edXp').placeholder=String(calc||0); $('#edXpHint').textContent=`Planner's estimate: ${fmt(calc||0)} XP. Leave empty to use it.`+(s.t==='grind'&&s.mode==='to'?' Setting XP here replaces the level target with that amount of XP.':'');
   const done=v=>{ d.close(); if(!v) return; pushHistory();
-    if(v==='reset'){ delete s.unote; delete s.xpo; delete s.ypk; delete s.upto; }
+    if(v==='reset'){ delete s.unote; delete s.xpo; delete s.ypk; delete s.upto; delete s.pin; }
     else { const n=$('#edNote').value.replace(/\s+$/,''); if(n) s.unote=n; else delete s.unote; const x=$('#edXp').value.trim(); if(x!==''&&+x>=0) s.xpo=Math.round(+x); else delete s.xpo; const yk=$('#edYpk').value.trim(); if(yk!==''&&+yk>=0) s.ypk=+yk; else delete s.ypk; if(!$('#edUptoL').hidden){ const u=parseInt($('#edUpto').value); if(u>0) s.upto=u; else delete s.upto; } if(own){ const t=$('#edText').value.trim(); if(t) s.text=t; } }
     refresh(); };
   const pth=pathOf(s), canPath=s.t==='complete'&&s.q; $('#edPathRow').hidden=!canPath;
   if(canPath){ $('#edPathInfo').textContent=pth?`Path: ${pth.length} points (${s.path?(s.pathSrc==='generated'?'generated':s.pathSrc==='edited'?'edited by you':'from '+s.pathSrc):'from the guide, exported as is'})`:'No path: the arrow points at one spot.'; $('#edPathRm').hidden=!s.path; $('#edPathGen').textContent=pth?'Regenerate':'Make path'; }
   $('#edPathEdit').onclick=()=>{ d.close(); startPathEdit(i); };
+  const locInfo=()=>{ const p=s.pin||(r.pt&&r.pt.z!=null?r.pt:null); $('#edLocInfo').textContent='Location: '+(p?zoneName(p.z)+' '+(+p.px).toFixed(1)+', '+(+p.py).toFixed(1):'none')+(s.pin?' (set by you)':' (default)'); $('#edLocRm').hidden=!s.pin; };
+  $('#edLocRow').hidden=!pinnable(s); if(pinnable(s)) locInfo();
+  $('#edLocSet').onclick=()=>startPick('#dlgEdit',l=>{ if(!l) return; pushHistory(); s.pin=l; refresh(); locInfo(); });
+  $('#edLocRm').onclick=()=>{ pushHistory(); delete s.pin; refresh(); locInfo(); };
   $('#edPathGen').onclick=()=>{ const p=genPath(s.q,s.obj,routeRefBefore(i)); if(!p) return toast('Not enough spawn points to build a path for this objective'); d.close(); pushHistory(); s.path=p; delete s.loopRaw; s.pathSrc='generated'; refresh(); startPathEdit(i); };
   $('#edPathRm').onclick=()=>{ d.close(); pushHistory(); if(stepGuide(s)?.path) s.path=null; else delete s.path; delete s.loopRaw; delete s.pathSrc; if(pathEdit===i) stopPathEdit(); refresh(); };
   $('#edOk').onclick=()=>done('ok'); $('#edNo').onclick=()=>done(null); $('#edReset').onclick=()=>done('reset'); d.showModal(); setTimeout(()=>$('#edNote').focus(),0); }
@@ -1383,6 +1389,7 @@ function buildRXP(){
       const out=[]; let cut=0; for(const ln of raw[gsx.rx-1].split('\n')){ const am=ln.match(/^\s*\.(accept|turnin|complete)\s+(\d+)/i); if(am){ const k=actKey(am[1].toLowerCase(),+am[2]); if(blkActs.has(k)&&!runActs.has(k)){ cut++; continue; } } out.push(ln); }
       for(let k=out.length-1;k>=0;k--){ const am=out[k].match(/^\s*\.accept\s+(\d+)/i); if(am&&ESCORT.has(+am[1])&&!out.some(l=>l.includes('Forever bug'))) out.splice(k+1,0,`    >>|cRXP_WARN_${ESC_NOTE}|r`); }
       if(run.some(x=>x.opt)&&!out.some(l=>/^\s*#optional\b/i.test(l))) out.splice(1,0,'    #optional');
+      const pn=run.find(x=>x.pin&&pinnable(x)&&!(x.path&&x.path.length>=2)); if(pn){ const gl=gotoLine(pn.pin); const k=out.findIndex((l,k)=>k>0&&/^\s*\.goto\b/i.test(l)); if(k>0){ const m=out[k].match(/^\s*\.goto\s+[^,]+,\s*[\d.]+\s*,\s*[\d.]+(.*)$/i); out[k]=gl+(m?m[1]:''); } else { let h=1; while(h<out.length&&/^\s*#/.test(out[h])) h++; out.splice(h,0,gl); } }
       const ep=run.find(x=>x.path!==undefined); if(ep){ for(let k=out.length-1;k>0;k--) if(/^\s*(#loop\b|\.goto\b)/i.test(out[k])) out.splice(k,1); if(ep.path&&ep.path.length>=2){ let h=1; while(h<out.length&&/^\s*#/.test(out[h])) h++; out.splice(h,0,'    #loop',gotoLine(ep.path[0])+',0',...ep.path.map(w=>gotoLine(w)+',30,0')); } }
       const un=run.map(x=>x.unote).filter(Boolean); if(un.length){ let e=out.length; while(e>1&&!out[e-1].trim()) e--; out.splice(e,0,...un.flatMap(n=>n.split('\n')).filter(l=>l.trim()).map(l=>'    >>'+l.trim())); }
       for(const m of out.join('\n').matchAll(/^\s*\.turnin\s+(\d+)/gm)) flushFin(+m[1]);
