@@ -265,6 +265,9 @@ const ESC_NOTE=`Escort quest: have fewer than ${ESC_LIMIT} quests in your log be
 function simulate(){
   const st=initState(route); const res=[]; let atCursor=cloneState(st); const optQ=new Set(route.optOff?route.steps.filter(x=>x.opt&&x.t==='accept'&&x.q).map(x=>x.q):[]);
   let lastPt=null; const rqC=new Map();
+  // a sticky "complete" followed later by a normal one for the same quest/objective is a passive attempt: the later step is where it's counted
+  const passive=new Map(); { const lastFinal=new Map(); for(let k=route.steps.length-1;k>=0;k--){ const x=route.steps[k]; if(x.t!=='complete'||!x.q) continue; const key=x.q+':'+(x.obj||0), keyQ=x.q+':0';
+      if(isSticky(x)){ const f=lastFinal.get(key)??lastFinal.get(keyQ); if(f!=null) passive.set(k,f); } else { lastFinal.set(key,k); if(x.obj) { if(!lastFinal.has(keyQ)) {} } else { for(const kk of [...lastFinal.keys()]) if(kk.startsWith(x.q+':')) lastFinal.set(kk,k); } } } }
   route.steps.forEach((s,i)=>{
     const r={i,err:[],warn:[],gained:0,before:{level:st.level,xp:st.xp}};
     const q=s.q?Q(s.q):null;
@@ -279,7 +282,9 @@ function simulate(){
     }
     if(!skip && route.hideOpt!==false && route.optOff){ if(s.opt) skip='Optional step, not counted'; else if(s.q&&optQ.has(s.q)&&s.t!=='accept') skip='Part of an optional quest, not counted'; }
     if(!skip && route.optOff && s.opt && s.t==='accept') optQ.add(s.q);
+    if(!skip&&passive.has(i)){ r.passive=passive.get(i); }
     if(skip){ r.inactive=skip; }
+    else if(r.passive!=null){ r.warn.push(`Done along the way if you can: counted at step ${r.passive+1}, where it has to be finished`); }
     else if((s.t==='accept'||s.t==='complete'||s.t==='turnin'||s.t==='abandon') && !q){ // Forever quest Questie doesn't know yet: kept as written, tracked like a custom quest
       const xpSet=+(route.qxp?.[s.q])||0, xp=xpSet||fqXpEst(s.q); r.custom=true; if(!st.fq) st.fq=new Map(); if(s.t==='accept'&&!st.fq.has(s.q)) st.fq.set(s.q,'log'); else if(s.t==='complete'&&st.fq.get(s.q)==='log'){ const ob=Object.keys(foreverQuests().get(s.q)?.objs||{}).length; if(s.obj&&ob>1){ st.fqo=st.fqo||new Map(); const set=new Set(st.fqo.get(s.q)||[]); set.add(s.obj); st.fqo.set(s.q,set); if(set.size>=ob) st.fq.set(s.q,'ready'); } else st.fq.set(s.q,'ready'); } else if(s.t==='turnin') st.fq.set(s.q,'done'); else if(s.t==='abandon') st.fq.delete(s.q);
       if(s.t==='turnin'&&xp){ r.gained=xp; addXP(st,xp); }
@@ -289,7 +294,7 @@ function simulate(){
       if(st.log.size>=LOGMAX) r.err.push(`Quest log is full (${LOGMAX})`); else if(ESCORT.has(s.q)&&st.log.size>=ESC_LIMIT) r.err.push(`Escort quest: you have ${st.log.size} quests in your log; drop below ${ESC_LIMIT} before accepting`);
       st.log.set(s.q,{done:!hasObjectives(s.q)});
     } else if(s.t==='complete'){
-      if(!st.log.has(s.q)) r.err.push('Not in your quest log yet'); else { const e=st.log.get(s.q); e.objs=e.objs||new Set();
+      if(!st.log.has(s.q)) r.err.push('Not in your quest log yet'); else { const e=st.log.get(s.q); e.objs=e.objs||new Set(); e.stickyDone=isSticky(s);
         if(s.obj){ if(e.objs.has(s.obj)||e.done) r.warn.push('This objective is already done'); e.prog=e.prog||{}; const had=e.prog[s.obj]||0; const tot=+(s.counts?.[s.obj])||0;
           if(s.upto>0){ // partial: only up to this count now, the rest later (RestedXP .complete q,n,N)
             const n=Math.max(0,s.upto-had); if(!n) r.warn.push(`Already at ${had} for this objective`); const ke=n?killEstimate(s.q,{[s.obj]:n},st,i=>i!==s.obj):null; e.prog[s.obj]=Math.max(had,s.upto); if(ke&&ke.xp){ r.kill=ke; r.gained=ke.xp; addXP(st,ke.xp); } }
@@ -366,8 +371,8 @@ function fqStatus(q,st){ return (st||SIM.st).fq?.get(q)||null; }
 function fqAvail(st,soon){ const out=[]; for(const e of foreverQuests().values()){ const f=fqStatus(e.q,st); if(f==='done') continue; if(!f&&!e.acc.length) continue; if(!f&&st.level<e.minL-(soon?3:0)) continue; const lock=f?[]:fqPrevMissing(e,st); out.push({e,f,lock}); } return out; }
 function fqStep(t,q,n){ const e=foreverQuests().get(+q); if(!e) return null;
   if(t==='complete'&&n&&e.objs?.[n]){ const o=e.objs[n]; const s={t,q:e.q,qn:e.n,obj:+n,objText:o.text,cl:[...o.lines]}; if(o.loc) s.loc={...o.loc}; if(o.tgt) s.tgt=o.tgt; return s; } const loc=(t==='accept'?e.acc:t==='turnin'?e.tin:e.cmp)[0]||e.acc[0]||null; const s={t,q:e.q,qn:e.n}; if(loc) s.loc={...loc}; const tg=t==='accept'?e.tgtA:t==='turnin'?e.tgtT:null; if(tg) s.tgt=tg; if(t==='complete'&&e.cl) s.cl=[...e.cl]; return s; }
-function fqObjBtns(e,st){ const ob=Object.values(e.objs||{}); if(ob.length<2) return `<button class="btn sm" data-fqa="complete:${e.q}">Complete</button>`; const done=(st||SIM.st).fqo?.get(e.q)||new Set(); return ob.map(o=>`<button class="btn sm" data-fqa="complete:${e.q}:${o.n}" ${done.has(o.n)?'disabled title="Done"':''}>${esc(o.text)}</button>`).join(''); }
-function fqRow(a){ const e=a.e; const xp=+(route.qxp?.[e.q])||0, est=xp?0:fqXpEst(e.q); const nx=(e.next||[]).map(n=>foreverQuests().get(n)?.n||META.fqw?.[n]?.[4]||Q(n)?.n).filter(Boolean); return `<div class="qrow" data-fq="${e.q}"><span class="lv">${e.lv||e.l}</span><span class="nm"><span>${a.lock.length?'🔒 ':''}${esc(e.n)}</span><br><span class="meta">${esc(e.g)} · ${a.f==='log'?'in your log':a.f==='ready'?'ready to turn in':SIM.st.level<e.minL?'from level '+e.minL:'Forever quest'}${xp?' · +'+fmt(xp)+' XP':est?' · ≈'+fmt(est)+' XP (est.)':''}${e.req?' · needs level '+e.req:''}${a.lock.length?' · Needs: '+esc(a.lock.join(', ')):''}${nx.length?' · leads to '+esc(nx.join(', ')):''}</span></span><span class="row" style="gap:3px">${a.f?'':`<button class="btn sm" data-fqa="accept:${e.q}">Accept</button>`}${a.f==='log'?fqObjBtns(e):''}${a.f?`<button class="btn sm" data-fqa="turnin:${e.q}">Turn in</button>`:''}</span></div>`; }
+function fqObjBtns(e,st){ const ob=Object.values(e.objs||{}); if(ob.length<2) return `<button class="btn sm" data-fqa="complete:${e.q}">Complete</button>`; const done=(st||SIM.st).fqo?.get(e.q)||new Set(); return ob.map(o=>`<button class="btn sm" data-fqa="complete:${e.q}:${o.n}" ${done.has(o.n)?'title="Already done at an earlier step: adds another complete step"':''}>${done.has(o.n)?'✓ ':''}${esc(o.text)}</button>`).join(''); }
+function fqRow(a){ const e=a.e; const xp=+(route.qxp?.[e.q])||0, est=xp?0:fqXpEst(e.q); const nx=(e.next||[]).map(n=>foreverQuests().get(n)?.n||META.fqw?.[n]?.[4]||Q(n)?.n).filter(Boolean); return `<div class="qrow" data-fq="${e.q}"><span class="lv">${e.lv||e.l}</span><span class="nm"><span>${a.lock.length?'🔒 ':''}${esc(e.n)}</span><br><span class="meta">${esc(e.g)} · ${a.f==='log'?'in your log':a.f==='ready'?'ready to turn in':SIM.st.level<e.minL?'from level '+e.minL:'Forever quest'}${xp?' · +'+fmt(xp)+' XP':est?' · ≈'+fmt(est)+' XP (est.)':''}${e.req?' · needs level '+e.req:''}${a.lock.length?' · Needs: '+esc(a.lock.join(', ')):''}${nx.length?' · leads to '+esc(nx.join(', ')):''}</span></span><span class="row" style="gap:3px">${a.f?'':`<button class="btn sm" data-fqa="accept:${e.q}">Accept</button>`}${a.f==='log'||a.f==='ready'?fqObjBtns(e):''}${a.f?`<button class="btn sm" data-fqa="turnin:${e.q}">Turn in</button>`:''}</span></div>`; }
 /* ---------- vendors ---------- */
 function vendorOf(id){ const v=META.vend?.[id]; return v?{id:+id,name:v[0],sub:v[1],fac:v[2],sp:v[3],items:v[4]}:null; }
 function vendorOK(v){ const f=charInfo(route).fac; return !v.fac||v.fac.includes(f); }
@@ -700,7 +705,7 @@ function drawQuests(){
   // objectives for quests in log
   const dgAgg=new Map();
   if(layers.objectives){
-    for(const [qid,v] of st.log){ if(v.done) continue; const col=qColor(qid); const sel=selQuest===qid;
+    for(const [qid,v] of st.log){ if(v.done&&!v.stickyDone) continue; const col=qColor(qid); const sel=selQuest===qid;
       for(const ob of objectives(qid)) for(const p of (v.objs&&ob.rx&&v.objs.has(ob.rx))?[]:ob.pts){ if(p.dg){ const k=p.X.toFixed(0)+','+p.Y.toFixed(0); if(!dgAgg.has(k)) dgAgg.set(k,{p,q:new Set()}); dgAgg.get(k).q.add(qid); continue; } const [x,y]=toS(p); if(x<-10||x>W+10||y<-10||y>H+10) continue;
         const r=(small?2.2:3.6)+(sel?1.4:0); ctx.fillStyle=col; ctx.strokeStyle='#120c04'; ctx.lineWidth=1.3; ctx.beginPath();
         if(p.kind==='obj'||p.kind==='loot'&&p.ent?.[0]==='o'){ ctx.rect(x-r,y-r,2*r,2*r);} else if(p.kind==='event'){ ctx.moveTo(x,y-r-1);ctx.lineTo(x+r+1,y);ctx.lineTo(x,y+r+1);ctx.lineTo(x-r-1,y);ctx.closePath(); } else ctx.arc(x,y,r,0,7);
@@ -1100,7 +1105,7 @@ function renderDetail(){
   const itemStart=q.s.i.map(i=>DB.i[i]?.n||('Item '+i));
   const pre=[...(q.pg||[]),...(q.ps||[])].filter(Q);
   let act='';
-  if(inLog){ if(!inLog.done&&hasObjectives(qid)) act+=`<button class="btn" data-complete="${qid}">Mark objectives done</button>`; act+=`<button class="btn gold" data-turnin="${qid}">Turn in</button>`; }
+  if(inLog){ if(hasObjectives(qid)) act+=`<button class="btn" data-complete="${qid}">${inLog.done?'Add another complete step':'Mark objectives done'}</button>`; act+=`<button class="btn gold" data-turnin="${qid}">Turn in</button>`; }
   else if(!w) act+=`<button class="btn gold" data-accept="${qid}">Accept</button>`;
   else if(!st.turned.has(qid)) act+=`<button class="btn" data-accept="${qid}">Accept anyway</button>`;
   const obs=objectives(qid);
@@ -1154,7 +1159,7 @@ function showPop(h,x,y){
   const locAttr=l=>`data-loc='${esc(JSON.stringify(l))}'`;
   if(h.kind==='quest'){
     html+=`<h4>${esc(h.label)}</h4>`;
-    for(const q of h.turn){ const v=st.log.get(q); html+=`<div class="it"><b>${esc(Q(q).n)}</b> <span class="note">${v.done?'ready':'in progress'} · +${fmt(questXP(q,lv))} XP</span><div class="row">${!v.done&&hasObjectives(q)?`<button class="btn sm" data-complete="${q}">Objectives done</button>`:''}<button class="btn sm gold" data-turnin="${q}">Turn in</button><button class="btn sm" data-sel="${q}">Details</button>${whLink(q,true)}</div></div>`; }
+    for(const q of h.turn){ const v=st.log.get(q); html+=`<div class="it"><b>${esc(Q(q).n)}</b> <span class="note">${v.done?'ready':'in progress'} · +${fmt(questXP(q,lv))} XP</span><div class="row">${hasObjectives(q)?`<button class="btn sm" data-complete="${q}">${v.done?'Complete again':'Objectives done'}</button>`:''}<button class="btn sm gold" data-turnin="${q}">Turn in</button><button class="btn sm" data-sel="${q}">Details</button>${whLink(q,true)}</div></div>`; }
     for(const q of h.avail){ const dc=diffClass(Q(q).l,lv); html+=`<div class="it"><span class="c-${dc}">[${Q(q).l}] ${esc(Q(q).n)}</span> <span class="note">+${fmt(questXP(q,lv))} XP</span><div class="row"><button class="btn sm gold" data-accept="${q}">Accept</button><button class="btn sm" data-sel="${q}">Details</button>${whLink(q,true)}</div></div>`; }
     for(const a of h.locked||[]){ const q=a.qid; html+=`<div class="it"><span class="c-${diffClass(Q(q).l,lv)}">🔒 [${Q(q).l}] ${esc(Q(q).n)}</span> <span class="note">+${fmt(questXP(q,lv))} XP</span><div class="note">Needs: ${rootsHTML(a)}</div><div class="row"><button class="btn sm" data-sel="${q}">Details</button>${whLink(q,true)}</div></div>`; }
     for(const q of h.sel||[]) html+=`<div class="it">${esc(Q(q).n)}<div class="row"><button class="btn sm" data-sel="${q}">Details</button>${whLink(q,true)}</div></div>`;
@@ -1184,7 +1189,7 @@ function showPop(h,x,y){
   const w=div.offsetWidth, hh=div.offsetHeight; div.style.left=Math.max(6,Math.min(W-w-6,x+12))+'px'; div.style.top=Math.max(6,Math.min(H-hh-6,y+12))+'px';
   $('#tip').style.display='none';
 }
-function fqPopHTML(q){ const e=foreverQuests().get(q); const f=fqStatus(q); return `<h4>${esc(e.n)}</h4><div class="it"><span class="note">Forever quest (not in Questie yet) · from ${esc(e.g)}${e.tgtA?' · '+esc(e.tgtA):''}</span><div class="row">${f?'':`<button class="btn sm gold" data-fqa="accept:${e.q}">Accept</button>`}${f==='log'?fqObjBtns(e):''}${f?`<button class="btn sm gold" data-fqa="turnin:${e.q}">Turn in${e.tgtT?' to '+esc(e.tgtT):''}</button>`:''}<a class="btn sm" href="${whURL(e.q,e.n)}" target="_blank" rel="noopener">Wowhead</a></div></div>`; }
+function fqPopHTML(q){ const e=foreverQuests().get(q); const f=fqStatus(q); return `<h4>${esc(e.n)}</h4><div class="it"><span class="note">Forever quest (not in Questie yet) · from ${esc(e.g)}${e.tgtA?' · '+esc(e.tgtA):''}</span><div class="row">${f?'':`<button class="btn sm gold" data-fqa="accept:${e.q}">Accept</button>`}${f==='log'||f==='ready'?fqObjBtns(e):''}${f?`<button class="btn sm gold" data-fqa="turnin:${e.q}">Turn in${e.tgtT?' to '+esc(e.tgtT):''}</button>`:''}<a class="btn sm" href="${whURL(e.q,e.n)}" target="_blank" rel="noopener">Wowhead</a></div></div>`; }
 function svcHTML(h){ let html='';
   if(h.kind==='ptrainer'){ const t=ptrainerOf(h.pid); html+=`<h4>${esc(t.name)}</h4><div class="it"><span class="note">${esc(t.sub)}</span><div class="row"><button class="btn sm gold" data-prof="learn:${t.id}">Learn ${esc(t.prof)}</button><button class="btn sm" data-prof="train:${t.id}">Train ${esc(t.prof)}</button><button class="btn sm" data-prof="craft:${t.id}">Craft…</button></div></div>`;
   } else if(h.kind==='gy'){ html+=`<h4>Spirit Healer</h4><div class="it"><span class="note">${esc(zoneName(gyAt(h.gi).z))} graveyard</span><div class="row"><button class="btn sm gold" data-dsk="${h.gi}">Die and res here</button></div></div>`;
@@ -1410,7 +1415,7 @@ function buildRXP(){
     if(s.unote) lines.push(...s.unote.split('\n').filter(l=>l.trim()).map(l=>'    >>'+l.trim()));
     L.push(...lines); if(!cont) L.push(...dgl);
     seg.items.push({rx:null,step:i,text:L.join('\n')});
-    if(stl&&s.t==='complete'&&s.q&&!r.inactive){ const P=pathOf(s); const F=['step'];
+    if(stl&&s.t==='complete'&&s.q&&!r.inactive&&r.passive==null){ const P=pathOf(s); const F=['step'];
       if(P&&P.length>=2){ if(s.loopRaw) F.push(...s.loopRaw); else { F.push('    #loop',gotoLine(P[0])+',0',...P.map(w=>gotoLine(w)+',30,0')); } } else { const g=gotoLine(p); if(g) F.push(g); }
       if(F.length>1){ if(s.cl?.length&&!Q(s.q)) F.push(...s.cl); else { const ol=objLines(s.q,s.obj); F.push(...ol.pre); const obs=objIndexList(s.q).filter(([n])=>!s.obj||n===s.obj); obs.forEach(([n,t])=>F.push(`    .complete ${s.q},${n} --${t}`)); ol.mobs.forEach(m=>F.push(`    .mob ${m}`)); }
         pendFin.push({q:s.q,text:F.join('\n')}); } }
