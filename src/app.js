@@ -290,7 +290,10 @@ function simulate(){
       st.log.set(s.q,{done:!hasObjectives(s.q)});
     } else if(s.t==='complete'){
       if(!st.log.has(s.q)) r.err.push('Not in your quest log yet'); else { const e=st.log.get(s.q); e.objs=e.objs||new Set();
-        if(s.obj){ if(e.objs.has(s.obj)||e.done) r.warn.push('This objective is already done'); const ke=killEstimate(s.q,s.counts,st,i=>i!==s.obj); e.objs.add(s.obj); if(ke.xp){ r.kill=ke; r.gained=ke.xp; addXP(st,ke.xp); } if(objNums(s.q).every(n=>e.objs.has(n))) e.done=true; }
+        if(s.obj){ if(e.objs.has(s.obj)||e.done) r.warn.push('This objective is already done'); e.prog=e.prog||{}; const had=e.prog[s.obj]||0; const tot=+(s.counts?.[s.obj])||0;
+          if(s.upto>0){ // partial: only up to this count now, the rest later (RestedXP .complete q,n,N)
+            const n=Math.max(0,s.upto-had); if(!n) r.warn.push(`Already at ${had} for this objective`); const ke=n?killEstimate(s.q,{[s.obj]:n},st,i=>i!==s.obj):null; e.prog[s.obj]=Math.max(had,s.upto); if(ke&&ke.xp){ r.kill=ke; r.gained=ke.xp; addXP(st,ke.xp); } }
+          else { const cnt=had?{[s.obj]:Math.max(1,(tot||killCfg().def)-had)}:s.counts; const ke=killEstimate(s.q,cnt,st,i=>i!==s.obj); e.objs.add(s.obj); if(ke.xp){ r.kill=ke; r.gained=ke.xp; addXP(st,ke.xp); } if(objNums(s.q).every(n=>e.objs.has(n))) e.done=true; } }
         else { const ke=killEstimate(s.q,s.counts,st,i=>e.objs.has(i)); e.done=true; objNums(s.q).forEach(n=>e.objs.add(n)); if(ke.xp){ r.kill=ke; r.gained=ke.xp; addXP(st,ke.xp); } } }
     } else if(s.t==='turnin'){
       if(!st.log.has(s.q)) r.err.push('Not in your quest log');
@@ -820,7 +823,7 @@ function stepText(s){
   const q=s.q?Q(s.q):null; const qn=q?q.n:(s.qn||('Quest '+s.q));
   switch(s.t){
     case 'accept': return {ic:'!',cls:'accept',t:'Accept '+qn,sub:s.shared?'Shared by a party member':(q?locSub(s):'')+(s.src?' · from guide':'')};
-    case 'complete': { if(!q&&s.objText) return {ic:'✓',cls:'complete',t:`${qn}: ${s.objText}`,sub:s.tgt?'Talk to '+s.tgt:'One objective'}; const ob=s.obj&&q?objectives(s.q).find(o=>o.rx===s.obj):null; return {ic:'✓',cls:'complete',t:ob?`${qn}: ${ob.text}`:'Complete '+qn,sub:ob?'One objective':(q?objectives(s.q).map(o=>o.text).join('; '):'')}; }
+    case 'complete': { if(!q&&s.objText) return {ic:'✓',cls:'complete',t:`${qn}: ${s.objText}`,sub:s.tgt?'Talk to '+s.tgt:'One objective'}; const ob=s.obj&&q?objectives(s.q).find(o=>o.rx===s.obj):null; return {ic:'✓',cls:'complete',t:ob?`${qn}: ${ob.text}${s.upto>0?` (up to ${s.upto})`:''}`:'Complete '+qn,sub:ob?'One objective':(q?objectives(s.q).map(o=>o.text).join('; '):'')}; }
     case 'turnin': return {ic:'?',cls:'turnin',t:'Turn in '+qn,sub:q?locSub(s):''};
     case 'abandon': return {ic:'×',cls:'abandon',t:'Abandon '+qn,sub:''};
     case 'prof': { if(s.act==='craft') return {ic:'⚒',cls:'travel',t:`Craft ${s.n>1?s.n+' × ':''}${s.item}`,sub:s.prof}; const t=ptrainerOf(s.npc); return {ic:'⚒',cls:'travel',t:s.act==='learn'?`Learn ${s.prof}`:`Train ${s.prof}`,sub:(t?.name||s.npcName||'')+(t?' · '+t.sub+' · '+zoneName(t.sp[0][0]):'')}; }
@@ -1004,11 +1007,11 @@ function startPathEdit(i){ const s=route.steps[i]; if(!pathOf(s)){ pushHistory()
 function stopPathEdit(){ pathEdit=null; pathDrag=null; $('#pathbar').style.display='none'; requestDraw(); }
 function editStep(i){ const s=route.steps[i], r=SIM.res[i]||{}; const d=$('#dlgEdit');
   const own=!s.src&&s.t==='travel'&&(s.kind==='note'||s.kind==='goto'); $('#edTextL').hidden=!own; $('#edText').value=own?(s.text||''):'';
-  $('#edTitle').textContent='Edit step '+(i+1); $('#edNote').value=s.unote||''; $('#edXp').value=s.xpo!=null?s.xpo:''; $('#edYpk').value=s.ypk!=null?s.ypk:''; $('#edYpk').placeholder=route.char.ypk?'route: '+route.char.ypk:'route: off';
+  $('#edTitle').textContent='Edit step '+(i+1); $('#edNote').value=s.unote||''; $('#edXp').value=s.xpo!=null?s.xpo:''; $('#edYpk').value=s.ypk!=null?s.ypk:''; const canPart=s.t==='complete'&&s.obj&&Q(s.q)&&s.obj<100; $('#edUptoL').hidden=!canPart; $('#edUpto').value=s.upto||''; $('#edYpk').placeholder=route.char.ypk?'route: '+route.char.ypk:'route: off';
   const calc=s.xpo!=null?r.xpCalc:r.gained; $('#edXp').placeholder=String(calc||0); $('#edXpHint').textContent=`Planner's estimate: ${fmt(calc||0)} XP. Leave empty to use it.`+(s.t==='grind'&&s.mode==='to'?' Setting XP here replaces the level target with that amount of XP.':'');
   const done=v=>{ d.close(); if(!v) return; pushHistory();
-    if(v==='reset'){ delete s.unote; delete s.xpo; delete s.ypk; }
-    else { const n=$('#edNote').value.replace(/\s+$/,''); if(n) s.unote=n; else delete s.unote; const x=$('#edXp').value.trim(); if(x!==''&&+x>=0) s.xpo=Math.round(+x); else delete s.xpo; const yk=$('#edYpk').value.trim(); if(yk!==''&&+yk>=0) s.ypk=+yk; else delete s.ypk; if(own){ const t=$('#edText').value.trim(); if(t) s.text=t; } }
+    if(v==='reset'){ delete s.unote; delete s.xpo; delete s.ypk; delete s.upto; }
+    else { const n=$('#edNote').value.replace(/\s+$/,''); if(n) s.unote=n; else delete s.unote; const x=$('#edXp').value.trim(); if(x!==''&&+x>=0) s.xpo=Math.round(+x); else delete s.xpo; const yk=$('#edYpk').value.trim(); if(yk!==''&&+yk>=0) s.ypk=+yk; else delete s.ypk; if(!$('#edUptoL').hidden){ const u=parseInt($('#edUpto').value); if(u>0) s.upto=u; else delete s.upto; } if(own){ const t=$('#edText').value.trim(); if(t) s.text=t; } }
     refresh(); };
   const pth=pathOf(s), canPath=s.t==='complete'&&s.q; $('#edPathRow').hidden=!canPath;
   if(canPath){ $('#edPathInfo').textContent=pth?`Path: ${pth.length} points (${s.path?(s.pathSrc==='generated'?'generated':s.pathSrc==='edited'?'edited by you':'from '+s.pathSrc):'from the guide, exported as is'})`:'No path: the arrow points at one spot.'; $('#edPathRm').hidden=!s.path; $('#edPathGen').textContent=pth?'Regenerate':'Make path'; }
@@ -1395,7 +1398,7 @@ function buildRXP(){
       for(const it of s.items||[]) if(it.id) lines.push(`    .collect ${it.id},${it.c} --Collect ${it.n||itemName(it.id)} (${it.c})`);
       lines.push(`    .target ${nm}`); }
     else if(s.t==='complete'&&s.cl?.length&&!Q(s.q)) lines.push(...s.cl);
-    else if(s.t==='complete'){ const ol=objLines(s.q,s.obj); if(Q(s.q)?.note&&!s.obj) lines.push(`    >>|cRXP_WARN_${Q(s.q).note}|r`); lines.push(...ol.pre); const obs=objIndexList(s.q).filter(([n])=>!s.obj||n===s.obj); if(obs.length) obs.forEach(([n,t])=>lines.push(`    .complete ${s.q},${n} --${t}`)); else if(!ol.pre.length) lines.push(`    >>Complete ${q.on||q.n}`); ol.mobs.forEach(m=>lines.push(`    .${Q(s.q)?.xk?.some(id=>entName('n',id)===m)?'unitscan':'mob'} ${m}`)); }
+    else if(s.t==='complete'){ const ol=objLines(s.q,s.obj); if(Q(s.q)?.note&&!s.obj) lines.push(`    >>|cRXP_WARN_${Q(s.q).note}|r`); lines.push(...ol.pre); const obs=objIndexList(s.q).filter(([n])=>!s.obj||n===s.obj); if(obs.length) obs.forEach(([n,t])=>lines.push(s.upto>0&&s.obj===n?`    .complete ${s.q},${n},${s.upto} --${t} (${s.upto})`:`    .complete ${s.q},${n} --${t}`)); else if(!ol.pre.length) lines.push(`    >>Complete ${q.on||q.n}`); ol.mobs.forEach(m=>lines.push(`    .${Q(s.q)?.xk?.some(id=>entName('n',id)===m)?'unitscan':'mob'} ${m}`)); }
     else if(s.t==='grind'){ const a=r.after; lines.push(`    .xp ${a.level}${a.xp?'+'+a.xp:''} >>Grind to ${a.level<MAXLVL&&a.xp?fmt(a.xp)+' XP into ':''}level ${a.level}${s.note?' ('+s.note+')':''}`); }
     else if(s.t==='custom'){ const verb={turnin:'Turn in',accept:'Accept',complete:'Complete'}[s.act||'turnin']; if(s.qid&&s.act!=='complete') lines.push(`    .${s.act==='accept'?'accept':'turnin'} ${s.qid} >>${verb} ${s.name}`); else lines.push(`    >>${verb} ${s.name}${s.xp&&s.act==='turnin'?' (+'+s.xp+' XP)':''}`); }
     else if(s.t==='party') lines.push(s.size>1?`    >>Group up with ${s.size-1} other player${s.size>2?'s':''}`:'    >>Continue solo');
