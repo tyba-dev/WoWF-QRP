@@ -263,7 +263,7 @@ function startExpl(r){ const s=new Set(); const h=START[r.char.race]; if(h&&META
 // a new character's hearthstone is bound to where they first spawn
 const START_NAME={Human:'Northshire Abbey',Dwarf:'Coldridge Valley',Gnome:'Coldridge Valley','Night Elf':'Shadowglen',Orc:'Valley of Trials',Troll:'Valley of Trials',Undead:'Deathknell',Tauren:'Camp Narache'};
 function startHome(r){ const s=START[r.char.race]; if(!s) return null; const p=zp2plane(...s); return p?{...p,label:START_NAME[r.char.race]||zoneName(s[0]),step:null,def:true}:null; }
-function cloneState(s){ return {level:s.level,xp:s.xp,party:s.party,log:new Map([...s.log].map(([k,v])=>[k,{...v,objs:v.objs?new Set(v.objs):undefined}])),turned:new Set(s.turned),fps:new Set(s.fps),home:s.home,fq:new Map(s.fq||[]),fqo:new Map([...(s.fqo||new Map())].map(([k,v])=>[k,new Set(v)])),expl:new Set(s.expl||[])}; }
+function cloneState(s){ return {level:s.level,xp:s.xp,party:s.party,log:new Map([...s.log].map(([k,v])=>[k,{...v,objs:v.objs?new Set(v.objs):undefined,stk:v.stk?new Set(v.stk):undefined}])),turned:new Set(s.turned),fps:new Set(s.fps),home:s.home,fq:new Map(s.fq||[]),fqs:s.fqs?new Map(s.fqs):undefined,fqo:new Map([...(s.fqo||new Map())].map(([k,v])=>[k,new Set(v)])),expl:new Set(s.expl||[])}; }
 // Forever: quest log holds 40, but escort quests can't be started with 25+ quests in the log
 const LOGMAX=40, ESC_LIMIT=25, ESCORT=new Set([155,219,309,435,648,660,665,667,731,836,863,898,938,945,976,994,995,1144,1222,1249,1270,1393,1440,1560,1651,2742,2767,2845,2904,2969,3382,3525,3982,4121,4245,4261,4265,4322,4491,4770,4901,4904,4966,5203,5321,5713,5821,5943,5944,6132,6403,6482,6523,6544,6641,8736]);
 const ESC_NOTE=`Escort quest: have fewer than ${ESC_LIMIT} quests in your log before accepting (Forever bug)`;
@@ -292,7 +292,9 @@ function simulate(){
     if(skip){ r.inactive=skip; }
     else if(r.passive!=null){ r.warn.push(`Done along the way if you can: counted at step ${r.passive+1}, where it has to be finished`); }
     else if((s.t==='accept'||s.t==='complete'||s.t==='turnin'||s.t==='abandon') && !q){ // Forever quest Questie doesn't know yet: kept as written, tracked like a custom quest
-      const xpSet=+(route.qxp?.[s.q])||0, xp=xpSet||fqXpEst(s.q); r.custom=true; if(!st.fq) st.fq=new Map(); if(s.t==='accept'&&!st.fq.has(s.q)) st.fq.set(s.q,'log'); else if(s.t==='complete'&&st.fq.get(s.q)==='log'){ const ob=Object.keys(foreverQuests().get(s.q)?.objs||{}).length; if(s.obj&&ob>1){ st.fqo=st.fqo||new Map(); const set=new Set(st.fqo.get(s.q)||[]); set.add(s.obj); st.fqo.set(s.q,set); if(set.size>=ob) st.fq.set(s.q,'ready'); } else st.fq.set(s.q,'ready'); } else if(s.t==='turnin') st.fq.set(s.q,'done'); else if(s.t==='abandon') st.fq.delete(s.q);
+      const xpSet=+(route.qxp?.[s.q])||0, xp=xpSet||fqXpEst(s.q); r.custom=true; if(!st.fq) st.fq=new Map(); if(s.t==='accept'&&!st.fq.has(s.q)) st.fq.set(s.q,'log'); else if(s.t==='complete'&&st.fq.get(s.q)==='log'){ const ob=Object.keys(foreverQuests().get(s.q)?.objs||{}).length; if(s.obj&&ob>1){ st.fqo=st.fqo||new Map(); const set=new Set(st.fqo.get(s.q)||[]); set.add(s.obj); st.fqo.set(s.q,set); if(set.size>=ob) st.fq.set(s.q,'ready'); } else st.fq.set(s.q,'ready');
+        st.fqs=new Map(st.fqs||[]); const ss=new Set(st.fqs.get(s.q)||[]); const key=s.obj&&ob>1?s.obj:'*'; if(isSticky(s)) ss.add(key); else if(key==='*') ss.clear(); else ss.delete(key); st.fqs.set(s.q,ss); }
+      else if(s.t==='complete'&&st.fq.get(s.q)==='ready'&&!isSticky(s)&&st.fqs?.get(s.q)?.size){ st.fqs=new Map(st.fqs); const ss=new Set(st.fqs.get(s.q)); if(s.obj) ss.delete(s.obj); else ss.clear(); st.fqs.set(s.q,ss); } else if(s.t==='turnin') st.fq.set(s.q,'done'); else if(s.t==='abandon') st.fq.delete(s.q);
       if(s.t==='turnin'&&xp){ r.gained=xp; addXP(st,xp); }
       r.warn.push(`Forever quest not in the Questie database${s.src?': kept exactly as the guide has it.':' (taken from your imported guides).'}${s.t==='turnin'?(xpSet?` Counting ${fmt(xp)} XP.`:xp?` Counting ≈${fmt(xp)} XP, estimated from its level (Wowhead): set it below if you know it.`:' Set its XP reward below if you know it.'):''}`); }
     else if(s.t==='accept'){
@@ -300,12 +302,13 @@ function simulate(){
       if(st.log.size>=LOGMAX) r.err.push(`Quest log is full (${LOGMAX})`); else if(ESCORT.has(s.q)&&st.log.size>=ESC_LIMIT) r.err.push(`Escort quest: you have ${st.log.size} quests in your log; drop below ${ESC_LIMIT} before accepting`);
       st.log.set(s.q,{done:!hasObjectives(s.q)});
     } else if(s.t==='complete'){
-      if(!st.log.has(s.q)) r.err.push('Not in your quest log yet'); else { const e=st.log.get(s.q); e.objs=e.objs||new Set(); e.stickyDone=isSticky(s);
+      if(!st.log.has(s.q)) r.err.push('Not in your quest log yet'); else { const e=st.log.get(s.q); e.objs=e.objs||new Set(); e.stickyDone=isSticky(s); const stkBefore=new Set(e.objs);
         if(s.obj){ if(e.objs.has(s.obj)||e.done) r.warn.push('This objective is already done'); e.prog=e.prog||{}; const had=e.prog[s.obj]||0; const tot=+(s.counts?.[s.obj])||0;
           if(s.upto>0){ // partial: only up to this count now, the rest later (RestedXP .complete q,n,N)
             const n=Math.max(0,s.upto-had); if(!n) r.warn.push(`Already at ${had} for this objective`); const ke=n?killEstimate(s.q,{[s.obj]:n},st,i=>i!==s.obj):null; e.prog[s.obj]=Math.max(had,s.upto); if(ke&&ke.xp){ r.kill=ke; r.gained=ke.xp; addXP(st,ke.xp); } }
           else { const cnt=had?{[s.obj]:Math.max(1,(tot||killCfg().def)-had)}:s.counts; const ke=killEstimate(s.q,cnt,st,i=>i!==s.obj); e.objs.add(s.obj); if(ke.xp){ r.kill=ke; r.gained=ke.xp; addXP(st,ke.xp); } if(objNums(s.q).every(n=>e.objs.has(n))) e.done=true; } }
-        else { const ke=killEstimate(s.q,s.counts,st,i=>e.objs.has(i)); e.done=true; objNums(s.q).forEach(n=>e.objs.add(n)); if(ke.xp){ r.kill=ke; r.gained=ke.xp; addXP(st,ke.xp); } } }
+        else { const ke=killEstimate(s.q,s.counts,st,i=>e.objs.has(i)); e.done=true; objNums(s.q).forEach(n=>e.objs.add(n)); if(ke.xp){ r.kill=ke; r.gained=ke.xp; addXP(st,ke.xp); } }
+        e.stk=new Set(e.stk||[]); if(isSticky(s)){ for(const n of e.objs) if(!stkBefore.has(n)) e.stk.add(n); } else { if(s.obj&&!(s.upto>0)) e.stk.delete(s.obj); else if(!s.obj) e.stk.clear(); } }
     } else if(s.t==='turnin'){
       if(!st.log.has(s.q)) r.err.push('Not in your quest log');
       else if(!st.log.get(s.q).done){ const e=st.log.get(s.q); const miss=objectives(s.q).filter(o=>o.rx&&!(e.objs&&e.objs.has(o.rx))).map(o=>o.text); r.err.push('Objectives not done'+(miss.length?': '+miss.join('; '):'')); }
@@ -351,7 +354,7 @@ function nearest(pts,ref){
 /* ---------- Forever quests known only from your imported guides ---------- */
 function drawFQ(){ const s=view.s, st=SIM.st;
   if(layers.avail&&s>=0.015) for(const a of fqAvail(st,true)){ if(a.lock.length&&!layers.locked) continue; const e=a.e;
-    const obl=Object.values(e.objs||{}), dn=st.fqo?.get(e.q)||new Set(); const marks=!a.f?[[e.acc[0],'!',1]]:[[e.tin[0],'?',a.f==='ready'?1:.6],...(a.f==='log'?(obl.length>1?obl.filter(o=>o.loc&&!dn.has(o.n)).map(o=>[o.loc,'◆',1,o.text]):e.cmp.length?[[e.cmp[0],'◆',1]]:[]):[])];
+    const obl=Object.values(e.objs||{}), dn=st.fqo?.get(e.q)||new Set(); const sk=st.fqs?.get(e.q)||new Set(); const open=a.f==='log'||(a.f==='ready'&&sk.size); const marks=!a.f?[[e.acc[0],'!',1]]:[[e.tin[0],'?',a.f==='ready'?1:.6],...(open?(obl.length>1?obl.filter(o=>o.loc&&(!dn.has(o.n)||sk.has(o.n)||sk.has('*'))).map(o=>[o.loc,'◆',dn.has(o.n)?.5:1,o.text]):e.cmp.length&&(a.f==='log'||sk.has('*'))?[[e.cmp[0],'◆',a.f==='ready'?.5:1]]:[]):[])];
     for(const [l,ch,al,otx] of marks){ if(!l) continue; const p=zp2plane(l.z,l.px,l.py); if(!p) continue; const [x,y]=toS(p); if(x<-12||x>W+12||y<-12||y>H+12) continue;
     const soon=!a.f&&st.level<e.minL; ctx.globalAlpha=soon?.55:al; ctx.fillStyle='#07363a'; ctx.beginPath(); ctx.arc(x,y,10,0,7); ctx.fill(); ctx.strokeStyle='#4fe3d0'; ctx.lineWidth=2; ctx.stroke();
     ctx.font='900 14px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillStyle='#4fe3d0'; ctx.fillText(ch,x,y+.5); ctx.globalAlpha=1;
@@ -379,7 +382,9 @@ function fqStatus(q,st){ return (st||SIM.st).fq?.get(q)||null; }
 function fqAvail(st,soon){ const out=[]; for(const e of foreverQuests().values()){ const f=fqStatus(e.q,st); if(f==='done') continue; if(!f&&!e.acc.length) continue; if(!f&&st.level<e.minL-(soon?3:0)) continue; const lock=f?[]:fqPrevMissing(e,st); out.push({e,f,lock}); } return out; }
 function fqStep(t,q,n){ const e=foreverQuests().get(+q); if(!e) return null;
   if(t==='complete'&&n&&e.objs?.[n]){ const o=e.objs[n]; const s={t,q:e.q,qn:e.n,obj:+n,objText:o.text,cl:[...o.lines]}; if(o.loc) s.loc={...o.loc}; if(o.tgt) s.tgt=o.tgt; return s; } const loc=(t==='accept'?e.acc:t==='turnin'?e.tin:e.cmp)[0]||e.acc[0]||null; const s={t,q:e.q,qn:e.n}; if(loc) s.loc={...loc}; const tg=t==='accept'?e.tgtA:t==='turnin'?e.tgtT:null; if(tg) s.tgt=tg; if(t==='complete'&&e.cl) s.cl=[...e.cl]; return s; }
-function fqObjBtns(e,st){ const ob=Object.values(e.objs||{}); if(ob.length<2) return `<button class="btn sm" data-fqa="complete:${e.q}">Complete</button>`; const done=(st||SIM.st).fqo?.get(e.q)||new Set(); return ob.map(o=>`<button class="btn sm" data-fqa="complete:${e.q}:${o.n}" ${done.has(o.n)?'title="Already done at an earlier step: adds another complete step"':''}>${done.has(o.n)?'✓ ':''}${esc(o.text)}</button>`).join(''); }
+function fqObjBtns(e,st){ st=st||SIM.st; const ob=Object.values(e.objs||{}); const sk=st.fqs?.get(e.q)||new Set(); const nowT='title="Sticky so far: adds a normal complete step here, the sticky one becomes \'if you can on the way\'"';
+  if(ob.length<2) return sk.has('*')?`<button class="btn sm gold" data-fqa="complete:${e.q}::now" ${nowT}>Complete now</button>`:`<button class="btn sm" data-fqa="complete:${e.q}">Complete</button>`; const done=st.fqo?.get(e.q)||new Set();
+  return ob.map(o=>sk.has(o.n)||sk.has('*')?`<button class="btn sm gold" data-fqa="complete:${e.q}:${o.n}:now" ${nowT}>Complete now: ${esc(o.text)}</button>`:`<button class="btn sm" data-fqa="complete:${e.q}:${o.n}" ${done.has(o.n)?'title="Already done at an earlier step: adds another complete step"':''}>${done.has(o.n)?'✓ ':''}${esc(o.text)}</button>`).join(''); }
 function fqRow(a){ const e=a.e; const xp=+(route.qxp?.[e.q])||0, est=xp?0:fqXpEst(e.q); const nx=(e.next||[]).map(n=>foreverQuests().get(n)?.n||META.fqw?.[n]?.[4]||Q(n)?.n).filter(Boolean); return `<div class="qrow" data-fq="${e.q}"><span class="lv">${e.lv||e.l}</span><span class="nm"><span>${a.lock.length?'🔒 ':''}${esc(e.n)}</span><br><span class="meta">${esc(e.g)} · ${a.f==='log'?'in your log':a.f==='ready'?'ready to turn in':SIM.st.level<e.minL?'from level '+e.minL:'Forever quest'}${xp?' · +'+fmt(xp)+' XP':est?' · ≈'+fmt(est)+' XP (est.)':''}${e.req?' · needs level '+e.req:''}${a.lock.length?' · Needs: '+esc(a.lock.join(', ')):''}${nx.length?' · leads to '+esc(nx.join(', ')):''}</span></span><span class="row" style="gap:3px">${a.f?'':`<button class="btn sm" data-fqa="accept:${e.q}">Accept</button>`}${a.f==='log'?accNowBtn(e.q,true):''}${a.f==='log'||a.f==='ready'?fqObjBtns(e):''}${a.f?`<button class="btn sm" data-fqa="turnin:${e.q}">Turn in</button>`:''}</span></div>`; }
 /* ---------- vendors ---------- */
 function vendorOf(id){ const v=META.vend?.[id]; return v?{id:+id,name:v[0],sub:v[1],fac:v[2],sp:v[3],items:v[4]}:null; }
@@ -716,12 +721,12 @@ function drawQuests(){
   const dgAgg=new Map();
   if(layers.objectives){
     for(const [qid,v] of st.log){ if(v.done&&!v.stickyDone) continue; const col=qColor(qid); const sel=selQuest===qid;
-      for(const ob of objectives(qid)) for(const p of (v.objs&&ob.rx&&v.objs.has(ob.rx))?[]:ob.pts){ if(p.dg){ const k=p.X.toFixed(0)+','+p.Y.toFixed(0); if(!dgAgg.has(k)) dgAgg.set(k,{p,q:new Set()}); dgAgg.get(k).q.add(qid); continue; } const [x,y]=toS(p); if(x<-10||x>W+10||y<-10||y>H+10) continue;
+      for(const ob of objectives(qid)){ const sd=!!(ob.rx&&v.stk?.has(ob.rx)); for(const p of (v.objs&&ob.rx&&v.objs.has(ob.rx)&&!sd)||(v.done&&!ob.rx&&!v.stk?.size)?[]:ob.pts){ if(p.dg){ const k=p.X.toFixed(0)+','+p.Y.toFixed(0); if(!dgAgg.has(k)) dgAgg.set(k,{p,q:new Set()}); dgAgg.get(k).q.add(qid); continue; } const [x,y]=toS(p); if(x<-10||x>W+10||y<-10||y>H+10) continue;
         const r=(small?2.2:3.6)+(sel?1.4:0); ctx.fillStyle=col; ctx.strokeStyle='#120c04'; ctx.lineWidth=1.3; ctx.beginPath();
         if(p.kind==='obj'||p.kind==='loot'&&p.ent?.[0]==='o'){ ctx.rect(x-r,y-r,2*r,2*r);} else if(p.kind==='event'){ ctx.moveTo(x,y-r-1);ctx.lineTo(x+r+1,y);ctx.lineTo(x,y+r+1);ctx.lineTo(x-r-1,y);ctx.closePath(); } else ctx.arc(x,y,r,0,7);
-        ctx.fill(); ctx.stroke(); if(p.kind==='loot'&&!small){ ctx.fillStyle='#120c04'; ctx.beginPath(); ctx.arc(x,y,1.2,0,7); ctx.fill(); }
-        hits.push({x,y,r:r+3,kind:'obj',qids:[qid],label:p.label,obText:ob.text,obRx:ob.rx});
-      }
+        if(sd) ctx.globalAlpha=.5; ctx.fill(); ctx.stroke(); if(p.kind==='loot'&&!small){ ctx.fillStyle='#120c04'; ctx.beginPath(); ctx.arc(x,y,1.2,0,7); ctx.fill(); } ctx.globalAlpha=1;
+        hits.push({x,y,r:r+3,kind:'obj',qids:[qid],label:p.label,obText:ob.text,obRx:ob.rx,stk:sd||(v.done&&v.stickyDone&&!!v.stk?.size)});
+      } }
     }
   }
   for(const {p,q} of dgAgg.values()){ const [x,y]=toS(p); if(x<-20||x>W+20||y<-20||y>H+20) continue; const bx=x+11, by=y-11; const sel=[...q].includes(selQuest);
@@ -1147,10 +1152,11 @@ function renderDetail(){
   <div class="row" style="margin-top:10px">${act}<button class="btn" data-show="${qid}">Show on map</button></div></div>`;
 }
 document.addEventListener('click',e=>{
-  const t=e.target.closest('[data-accnow],[data-ride],[data-flynode],[data-fpnode],[data-cobj],[data-accept],[data-complete],[data-turnin],[data-sel],[data-show],[data-q],[data-fp],[data-fly],[data-home],[data-hs],[data-goto]'); if(!t||t.closest('#steps')) return;
+  const t=e.target.closest('[data-cnow],[data-accnow],[data-ride],[data-flynode],[data-fpnode],[data-cobj],[data-accept],[data-complete],[data-turnin],[data-sel],[data-show],[data-q],[data-fp],[data-fly],[data-home],[data-hs],[data-goto]'); if(!t||t.closest('#steps')) return;
   if(t.tagName==='A') e.preventDefault();
   const d=t.dataset;
-  if(d.cobj){ const [q,n]=d.cobj.split(':').map(Number); addStep({t:'complete',q,obj:n}); hidePop(); }
+  if(d.cnow){ const [q,n]=d.cnow.split(':').map(Number); addStep(n?{t:'complete',q,obj:n,stk:false}:{t:'complete',q,stk:false}); hidePop(); }
+  else if(d.cobj){ const [q,n]=d.cobj.split(':').map(Number); addStep({t:'complete',q,obj:n}); hidePop(); }
   else if(d.accept){ addStep({t:'accept',q:+d.accept}); hidePop(); }
   else if(d.accnow){ const k=stickyAccIdx(+d.accnow); if(k>=0) stepNow(k,cursor+1); hidePop(); }
   else if(d.complete){ addStep({t:'complete',q:+d.complete}); hidePop(); }
@@ -1190,7 +1196,7 @@ function showPop(h,x,y){
     for(const q of h.sel||[]) html+=`<div class="it">${esc(Q(q).n)}<div class="row"><button class="btn sm" data-sel="${q}">Details</button>${whLink(q,true)}</div></div>`;
     if(h.npcLoc) html+=`<div class="it"><div class="row">${flyBtn(h.npcLoc)}<button class="btn sm" data-goto="${esc(h.label)}" ${locAttr({z:h.npcLoc.z,px:h.npcLoc.px,py:h.npcLoc.py})}>Go to</button></div></div>`;
   } else if(h.kind==='obj'){
-    const q=h.qids[0]; html+=`<h4>${esc(Q(q).n)}</h4><div class="it">${esc(h.obText)}<br><span class="note">${esc(h.label||'')}</span><div class="row">${h.obRx&&objNums(q).length>1?`<button class="btn sm gold" data-cobj="${q}:${h.obRx}">This objective done</button><button class="btn sm" data-complete="${q}">All objectives done</button>`:`<button class="btn sm gold" data-complete="${q}">Objectives done</button>`}<button class="btn sm" data-sel="${q}">Details</button>${whLink(q,true)}</div></div>`;
+    const q=h.qids[0]; html+=`<h4>${esc(Q(q).n)}</h4><div class="it">${esc(h.obText)}<br><span class="note">${esc(h.label||'')}</span>${h.stk?`<div class="note">📌 Sticky: done on the way if you can</div>`:''}<div class="row">${h.stk?`<button class="btn sm gold" data-cnow="${q}:${h.obRx||0}" title="Add a normal complete step here: the earlier sticky step becomes 'if you can on the way'">Complete now</button>`:''}${h.obRx&&objNums(q).length>1?`<button class="btn sm gold" data-cobj="${q}:${h.obRx}">This objective done</button><button class="btn sm" data-complete="${q}">All objectives done</button>`:`<button class="btn sm gold" data-complete="${q}">Objectives done</button>`}<button class="btn sm" data-sel="${q}">Details</button>${whLink(q,true)}</div></div>`;
   } else if(h.kind==='fp'){
     html+=fpHTML(h);
   } else if(h.kind==='town'){
@@ -1305,7 +1311,7 @@ $('#buyNo').addEventListener('click',()=>$('#dlgBuy').close());
 $('#buyOk').addEventListener('click',()=>{ if(buyCtx.vid==null){ $('#buyMsg').textContent='Pick a vendor first.'; return; } if(!buyCtx.items.size){ $('#buyMsg').textContent='Tick at least one item.'; return; }
   const v=vendorOf(buyCtx.vid); const step={t:'buy',npc:v.id,npcName:v.name,items:[...buyCtx.items.values()].map(it=>({id:it.id||null,n:it.n||itemName(it.id),c:it.c}))}; $('#dlgBuy').close();
   if(buyCtx.i!=null){ pushHistory(); Object.assign(route.steps[buyCtx.i],step); refresh(); } else addStep(step); });
-document.addEventListener('click',e=>{ const b=e.target.closest('[data-fqa]'); if(!b) return; e.stopPropagation(); hidePop(); const [t,q,n]=b.dataset.fqa.split(':'); const st=fqStep(t,+q,n?+n:null); if(st){ addStep(st); if(t==='turnin'&&!route.qxp?.[+q]) toast('Set its XP reward with “Set XP” on the step if you know it.',4000); } });
+document.addEventListener('click',e=>{ const b=e.target.closest('[data-fqa]'); if(!b) return; e.stopPropagation(); hidePop(); const [t,q,n,now]=b.dataset.fqa.split(':'); const st=fqStep(t,+q,n?+n:null); if(st){ if(now) st.stk=false; addStep(st); if(t==='turnin'&&!route.qxp?.[+q]) toast('Set its XP reward with “Set XP” on the step if you know it.',4000); } });
 document.addEventListener('click',e=>{ const b=e.target.closest('[data-buyv]'); if(!b) return; hidePop(); openBuy(null,+b.dataset.buyv); });
 $('#pathDone').addEventListener('click',stopPathEdit); document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&pathEdit!=null) stopPathEdit(); });
 $('#pickCancel').addEventListener('click',()=>{ const cb=picking; stopPick(); cb&&cb(null); });
