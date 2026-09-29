@@ -263,7 +263,7 @@ function startExpl(r){ const s=new Set(); const h=START[r.char.race]; if(h&&META
 // a new character's hearthstone is bound to where they first spawn
 const START_NAME={Human:'Northshire Abbey',Dwarf:'Coldridge Valley',Gnome:'Coldridge Valley','Night Elf':'Shadowglen',Orc:'Valley of Trials',Troll:'Valley of Trials',Undead:'Deathknell',Tauren:'Camp Narache'};
 function startHome(r){ const s=START[r.char.race]; if(!s) return null; const p=zp2plane(...s); return p?{...p,label:START_NAME[r.char.race]||zoneName(s[0]),step:null,def:true}:null; }
-function cloneState(s){ return {level:s.level,xp:s.xp,party:s.party,log:new Map([...s.log].map(([k,v])=>[k,{...v,objs:v.objs?new Set(v.objs):undefined,stk:v.stk?new Set(v.stk):undefined}])),turned:new Set(s.turned),fps:new Set(s.fps),home:s.home,fq:new Map(s.fq||[]),fqs:s.fqs?new Map(s.fqs):undefined,fqo:new Map([...(s.fqo||new Map())].map(([k,v])=>[k,new Set(v)])),expl:new Set(s.expl||[])}; }
+function cloneState(s){ return {level:s.level,xp:s.xp,party:s.party,log:new Map([...s.log].map(([k,v])=>[k,{...v,objs:v.objs?new Set(v.objs):undefined,stk:v.stk?new Set(v.stk):undefined}])),turned:new Set(s.turned),fps:new Set(s.fps),home:s.home,fq:new Map(s.fq||[]),fqs:s.fqs?new Map(s.fqs):undefined,stkT:s.stkT,fqo:new Map([...(s.fqo||new Map())].map(([k,v])=>[k,new Set(v)])),expl:new Set(s.expl||[])}; }
 // Forever: quest log holds 40, but escort quests can't be started with 25+ quests in the log
 const LOGMAX=40, ESC_LIMIT=25, ESCORT=new Set([155,219,309,435,648,660,665,667,731,836,863,898,938,945,976,994,995,1144,1222,1249,1270,1393,1440,1560,1651,2742,2767,2845,2904,2969,3382,3525,3982,4121,4245,4261,4265,4322,4491,4770,4901,4904,4966,5203,5321,5713,5821,5943,5944,6132,6403,6482,6523,6544,6641,8736]);
 const ESC_NOTE=`Escort quest: have fewer than ${ESC_LIMIT} quests in your log before accepting (Forever bug)`;
@@ -271,7 +271,7 @@ function simulate(){
   const st=initState(route); const res=[]; let atCursor=cloneState(st); const optQ=new Set(route.optOff?route.steps.filter(x=>x.opt&&x.t==='accept'&&x.q).map(x=>x.q):[]);
   let lastPt=null; const rqC=new Map();
   // a sticky "complete" followed later by a normal one for the same quest/objective is a passive attempt: the later step is where it's counted
-  const passive=new Map(); { const lastAcc=new Map(); for(let k=route.steps.length-1;k>=0;k--){ const x=route.steps[k]; if(x.t!=='accept'||!x.q) continue; if(isSticky(x)){ if(lastAcc.has(x.q)) passive.set(k,lastAcc.get(x.q)); } else lastAcc.set(x.q,k); } }
+  const passive=new Map(); { const lastAcc=new Map(); for(let k=route.steps.length-1;k>=0;k--){ const x=route.steps[k]; if((x.t!=='accept'&&x.t!=='turnin')||!x.q) continue; const kk=x.t+':'+x.q; if(isSticky(x)){ if(lastAcc.has(kk)) passive.set(k,lastAcc.get(kk)); } else lastAcc.set(kk,k); } }
   { const lastFinal=new Map(); for(let k=route.steps.length-1;k>=0;k--){ const x=route.steps[k]; if(x.t!=='complete'||!x.q) continue; const key=x.q+':'+(x.obj||0), keyQ=x.q+':0';
       if(isSticky(x)){ const f=lastFinal.get(key)??lastFinal.get(keyQ); if(f!=null) passive.set(k,f); } else { lastFinal.set(key,k); if(x.obj) { if(!lastFinal.has(keyQ)) {} } else { for(const kk of [...lastFinal.keys()]) if(kk.startsWith(x.q+':')) lastFinal.set(kk,k); } } } }
   route.steps.forEach((s,i)=>{
@@ -312,7 +312,7 @@ function simulate(){
     } else if(s.t==='turnin'){
       if(!st.log.has(s.q)) r.err.push('Not in your quest log');
       else if(!st.log.get(s.q).done){ const e=st.log.get(s.q); const miss=objectives(s.q).filter(o=>o.rx&&!(e.objs&&e.objs.has(o.rx))).map(o=>o.text); r.err.push('Objectives not done'+(miss.length?': '+miss.join('; '):'')); }
-      const xp=questXP(s.q,st.level); r.gained=xp;
+      const xp=questXP(s.q,st.level); r.gained=xp; if(isSticky(s)){ st.stkT=new Map(st.stkT||[]); st.stkT.set(s.q,i); }
       if(q.xp&&st.level<MAXLVL&&st.level>q.xp[0]+5){ const full=questXP(s.q,q.xp[0]); r.warn.push(`XP penalty: you are level ${st.level}, the quest is level ${q.xp[0]}, so it gives ${Math.round(Math.max(1,Math.min(10,2*(q.xp[0]-st.level)+20))*10)}% (${fmt(xp)} of ${fmt(full)} XP, losing ${fmt(full-xp)}). Turn it in by level ${q.xp[0]+5} for full XP.`); }
       addXP(st,xp); st.log.delete(s.q); st.turned.add(s.q);
     } else if(s.t==='abandon'){ st.log.delete(s.q); }
@@ -738,6 +738,7 @@ function drawQuests(){
   // turn-ins
   const groups=new Map();
   for(const [qid,v] of st.log){ for(const p of finisherPts(qid).slice(0,3)){ const k=p.ent+'@'+p.X.toFixed(0)+','+p.Y.toFixed(0); if(!groups.has(k)) groups.set(k,{p,t:[],a:[],l:[]}); groups.get(k).t.push(qid); } }
+  for(const [qid,si] of st.stkT||[]){ if(si>cursor||!Q(qid)) continue; for(const p of finisherPts(qid).slice(0,3)){ const k=p.ent+'@'+p.X.toFixed(0)+','+p.Y.toFixed(0); if(!groups.has(k)) groups.set(k,{p,t:[],a:[],l:[]}); const g=groups.get(k); (g.s=g.s||[]).push(qid); } }
   if(layers.avail||layers.trivial){
     for(const a of SIM.avail){ if(!a.ok) continue; const q=Q(a.qid); const triv=diffClass(q.l,lv)==='grey'; if(triv&&!layers.trivial) continue; if(!triv&&!layers.avail) continue;
       for(const p of starterPts(a.qid).slice(0,3)){ const k=p.ent+'@'+p.X.toFixed(0)+','+p.Y.toFixed(0); if(!groups.has(k)) groups.set(k,{p,t:[],a:[],l:[]}); groups.get(k).a.push(a.qid); } }
@@ -750,11 +751,12 @@ function drawQuests(){
     if(hasSel){ ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(x,y,size*0.8,0,7); ctx.stroke(); }
     const DGC='#ff8a1f', DGG='#b98a5e';
     if(g.t.length){ const done=g.t.some(q=>st.log.get(q).done); const dq=g.t.every(isDungeonQuest); qmark(x,y,'?',done?(dq?DGC:'#ffd100'):(dq?DGG:'#b5b5b5'),size); }
+    else if(!g.a.length&&!g.l.length&&g.s){ ctx.globalAlpha=.55; qmark(x,y,'?','#ffd100',size*0.85); ctx.globalAlpha=1; }
     else if(!g.a.length){ qmark(x,y,'!','#8fb3d9',size*0.8); }
     else { const allTriv=g.a.every(q=>diffClass(Q(q).l,lv)==='grey'); const allD=g.a.every(isDungeonQuest), anyD=g.a.some(isDungeonQuest);
       qmark(x,y,'!',allTriv?'#a8a8a8':(allD?DGC:'#ffd100'),size); if(anyD&&!allD&&!allTriv) qmark(x-size*0.5,y-size*0.45,'!',DGC,size*0.6); }
     if(g.t.length&&g.a.length){ qmark(x+size*0.5,y-size*0.45,'!',g.a.every(isDungeonQuest)?'#ff8a1f':'#ffd100',size*0.6); }
-    hits.push({x,y,r:size*0.7,kind:'quest',avail:g.a,turn:g.t,locked:g.l,label:g.p.label,npcLoc:g.p});
+    hits.push({x,y,r:size*0.7,kind:'quest',avail:g.a,turn:g.t,locked:g.l,stkT:g.s||[],label:g.p.label,npcLoc:g.p});
   }
   // selected quest extra: show starter/finisher even if not available
   if(selQuest && Q(selQuest) && !st.log.has(selQuest) && !SIM.avail.some(a=>a.ok&&a.qid===selQuest)){
@@ -960,11 +962,11 @@ function renderSteps(){
 }
 let selSteps=new Set(), selAnchor=null;
 // RestedXP keeps #completewith/#sticky steps on screen alongside later steps; show that in the list
-function nowSel(s,i){ if(!['accept','complete'].includes(s.t)||!s.q||!isSticky(s)||SIM.res[i]?.passive!=null) return ''; const w=s.t==='accept'?'Accept':'Complete';
+function nowSel(s,i){ if(!['accept','complete','turnin'].includes(s.t)||!s.q||!isSticky(s)||SIM.res[i]?.passive!=null) return ''; const w=s.t==='accept'?'Accept':s.t==='turnin'?'Turn in':'Complete';
   return `<select class="stknow" data-now="${i}" title="Add a normal ${w.toLowerCase()} step later in the route: this sticky step then becomes 'if you can on the way' and the new one is where it has to be done"><option value="">${w} now…</option><option value="here">…right after this step</option>${cursor>i?`<option value="cur">…after step ${cursor+1} (highlighted)</option>`:''}</select>`; }
 function stepNow(i,at){ const s=route.steps[i]; const n={t:s.t,q:s.q,stk:false}; for(const k of ['obj','qn','objText','cl','tgt','loc','counts','pin']) if(s[k]!=null) n[k]=Array.isArray(s[k])?[...s[k]]:typeof s[k]==='object'?{...s[k]}:s[k];
   const P=pathOf(s); if(P&&P.length>1&&s.t==='complete'){ n.path=P.map(l=>({...l})); n.pathSrc=s.pathSrc||'guide'; }
-  cursor=at-1; addStep(n); toast(`Added "${s.t==='accept'?'Accept':'Complete'} now" as step ${cursor+1}: step ${i+1} is now done on the way if you can.`,4500); }
+  cursor=at-1; addStep(n); toast(`Added "${s.t==='accept'?'Accept':s.t==='turnin'?'Turn in':'Complete'} now" as step ${cursor+1}: step ${i+1} is now done on the way if you can.`,4500); }
 function stickyAccIdx(q){ for(let k=Math.min(cursor,route.steps.length-1);k>=0;k--){ const x=route.steps[k]; if(x.t==='accept'&&x.q===q&&!SIM.res[k]?.inactive) return isSticky(x)&&SIM.res[k]?.passive==null?k:-1; } return -1; }
 const accNowBtn=(q,sm)=>stickyAccIdx(q)>=0?`<button class="btn${sm?' sm':''}" data-accnow="${q}" title="You have it from a sticky accept (step ${stickyAccIdx(q)+1}); add the step where you must have it">Accept now</button>`:'';
 document.addEventListener('change',e=>{ const t=e.target.closest('select.stknow'); if(!t||!t.value) return; const i=+t.dataset.now; stepNow(i,t.value==='here'?i+1:cursor+1); });
@@ -1134,6 +1136,7 @@ function renderDetail(){
   const itemStart=q.s.i.map(i=>DB.i[i]?.n||('Item '+i));
   const pre=[...(q.pg||[]),...(q.ps||[])].filter(Q);
   let act='';
+  if(!inLog&&st.stkT?.has(qid)) act+=`<button class="btn gold" data-tinnow="${qid}">Turn in now</button>`;
   if(inLog){ act+=accNowBtn(qid); if(hasObjectives(qid)) act+=`<button class="btn" data-complete="${qid}">${inLog.done?'Add another complete step':'Mark objectives done'}</button>`; act+=`<button class="btn gold" data-turnin="${qid}">Turn in</button>`; }
   else if(!w) act+=`<button class="btn gold" data-accept="${qid}">Accept</button>`;
   else if(!st.turned.has(qid)) act+=`<button class="btn" data-accept="${qid}">Accept anyway</button>`;
@@ -1152,12 +1155,13 @@ function renderDetail(){
   <div class="row" style="margin-top:10px">${act}<button class="btn" data-show="${qid}">Show on map</button></div></div>`;
 }
 document.addEventListener('click',e=>{
-  const t=e.target.closest('[data-cnow],[data-accnow],[data-ride],[data-flynode],[data-fpnode],[data-cobj],[data-accept],[data-complete],[data-turnin],[data-sel],[data-show],[data-q],[data-fp],[data-fly],[data-home],[data-hs],[data-goto]'); if(!t||t.closest('#steps')) return;
+  const t=e.target.closest('[data-tinnow],[data-cnow],[data-accnow],[data-ride],[data-flynode],[data-fpnode],[data-cobj],[data-accept],[data-complete],[data-turnin],[data-sel],[data-show],[data-q],[data-fp],[data-fly],[data-home],[data-hs],[data-goto]'); if(!t||t.closest('#steps')) return;
   if(t.tagName==='A') e.preventDefault();
   const d=t.dataset;
   if(d.cnow){ const [q,n]=d.cnow.split(':').map(Number); addStep(n?{t:'complete',q,obj:n,stk:false}:{t:'complete',q,stk:false}); hidePop(); }
   else if(d.cobj){ const [q,n]=d.cobj.split(':').map(Number); addStep({t:'complete',q,obj:n}); hidePop(); }
   else if(d.accept){ addStep({t:'accept',q:+d.accept}); hidePop(); }
+  else if(d.tinnow){ const k=SIM.st.stkT?.get(+d.tinnow); if(k!=null) stepNow(k,cursor+1); hidePop(); }
   else if(d.accnow){ const k=stickyAccIdx(+d.accnow); if(k>=0) stepNow(k,cursor+1); hidePop(); }
   else if(d.complete){ addStep({t:'complete',q:+d.complete}); hidePop(); }
   else if(d.turnin){ addStep({t:'turnin',q:+d.turnin}); hidePop(); }
@@ -1191,6 +1195,7 @@ function showPop(h,x,y){
   if(h.kind==='quest'){
     html+=`<h4>${esc(h.label)}</h4>`;
     for(const q of h.turn){ const v=st.log.get(q); html+=`<div class="it"><b>${esc(Q(q).n)}</b> <span class="note">${v.done?'ready':'in progress'} · +${fmt(questXP(q,lv))} XP</span><div class="row">${hasObjectives(q)?`<button class="btn sm" data-complete="${q}">${v.done?'Complete again':'Objectives done'}</button>`:''}${accNowBtn(q,true)}<button class="btn sm gold" data-turnin="${q}">Turn in</button><button class="btn sm" data-sel="${q}">Details</button>${whLink(q,true)}</div></div>`; }
+    for(const q of h.stkT||[]){ html+=`<div class="it"><b>${esc(Q(q).n)}</b> <span class="note">📌 sticky turn-in at step ${(SIM.st.stkT?.get(q)??0)+1}: if you can on the way</span><div class="row"><button class="btn sm gold" data-tinnow="${q}" title="Add a normal turn-in step here: the sticky one becomes 'if you can on the way'">Turn in now</button><button class="btn sm" data-sel="${q}">Details</button></div></div>`; }
     for(const q of h.avail){ const dc=diffClass(Q(q).l,lv); html+=`<div class="it"><span class="c-${dc}">[${Q(q).l}] ${esc(Q(q).n)}</span> <span class="note">+${fmt(questXP(q,lv))} XP</span><div class="row"><button class="btn sm gold" data-accept="${q}">Accept</button><button class="btn sm" data-sel="${q}">Details</button>${whLink(q,true)}</div></div>`; }
     for(const a of h.locked||[]){ const q=a.qid; html+=`<div class="it"><span class="c-${diffClass(Q(q).l,lv)}">🔒 [${Q(q).l}] ${esc(Q(q).n)}</span> <span class="note">+${fmt(questXP(q,lv))} XP</span><div class="note">Needs: ${rootsHTML(a)}</div><div class="row"><button class="btn sm" data-sel="${q}">Details</button>${whLink(q,true)}</div></div>`; }
     for(const q of h.sel||[]) html+=`<div class="it">${esc(Q(q).n)}<div class="row"><button class="btn sm" data-sel="${q}">Details</button>${whLink(q,true)}</div></div>`;
