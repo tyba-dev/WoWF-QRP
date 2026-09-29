@@ -291,6 +291,7 @@ function simulate(){
     if(!skip&&passive.has(i)){ r.passive=passive.get(i); }
     if(skip){ r.inactive=skip; }
     else if(r.passive!=null){ r.warn.push(`Done along the way if you can: counted at step ${r.passive+1}, where it has to be finished`); }
+    else if(s.t==='turnin'&&s.q&&isSticky(s)&&!stepGuide(s)){ /* your own 'if you can' hand-in; guide #sticky turn-ins are real hand-ins */ r.warn.push('Sticky hand-in: no XP and the quest stays in your log until a normal turn-in step. Use “Turn in now…” to add one.'); st.stkT=new Map(st.stkT||[]); st.stkT.set(s.q,i); }
     else if((s.t==='accept'||s.t==='complete'||s.t==='turnin'||s.t==='abandon') && !q){ // Forever quest Questie doesn't know yet: kept as written, tracked like a custom quest
       const xpSet=+(route.qxp?.[s.q])||0, xp=xpSet||fqXpEst(s.q); r.custom=true; if(!st.fq) st.fq=new Map(); if(s.t==='accept'&&!st.fq.has(s.q)) st.fq.set(s.q,'log'); else if(s.t==='complete'&&st.fq.get(s.q)==='log'){ const ob=Object.keys(foreverQuests().get(s.q)?.objs||{}).length; if(s.obj&&ob>1){ st.fqo=st.fqo||new Map(); const set=new Set(st.fqo.get(s.q)||[]); set.add(s.obj); st.fqo.set(s.q,set); if(set.size>=ob) st.fq.set(s.q,'ready'); } else st.fq.set(s.q,'ready');
         st.fqs=new Map(st.fqs||[]); const ss=new Set(st.fqs.get(s.q)||[]); const key=s.obj&&ob>1?s.obj:'*'; if(isSticky(s)) ss.add(key); else if(key==='*') ss.clear(); else ss.delete(key); st.fqs.set(s.q,ss); }
@@ -312,7 +313,7 @@ function simulate(){
     } else if(s.t==='turnin'){
       if(!st.log.has(s.q)) r.err.push('Not in your quest log');
       else if(!st.log.get(s.q).done){ const e=st.log.get(s.q); const miss=objectives(s.q).filter(o=>o.rx&&!(e.objs&&e.objs.has(o.rx))).map(o=>o.text); r.err.push('Objectives not done'+(miss.length?': '+miss.join('; '):'')); }
-      const xp=questXP(s.q,st.level); r.gained=xp; if(isSticky(s)){ st.stkT=new Map(st.stkT||[]); st.stkT.set(s.q,i); }
+      const xp=questXP(s.q,st.level); r.gained=xp; if(st.stkT?.has(s.q)){ st.stkT=new Map(st.stkT); st.stkT.delete(s.q); }
       if(q.xp&&st.level<MAXLVL&&st.level>q.xp[0]+5){ const full=questXP(s.q,q.xp[0]); r.warn.push(`XP penalty: you are level ${st.level}, the quest is level ${q.xp[0]}, so it gives ${Math.round(Math.max(1,Math.min(10,2*(q.xp[0]-st.level)+20))*10)}% (${fmt(xp)} of ${fmt(full)} XP, losing ${fmt(full-xp)}). Turn it in by level ${q.xp[0]+5} for full XP.`); }
       addXP(st,xp); st.log.delete(s.q); st.turned.add(s.q);
     } else if(s.t==='abandon'){ st.log.delete(s.q); }
@@ -738,7 +739,7 @@ function drawQuests(){
   // turn-ins
   const groups=new Map();
   for(const [qid,v] of st.log){ for(const p of finisherPts(qid).slice(0,3)){ const k=p.ent+'@'+p.X.toFixed(0)+','+p.Y.toFixed(0); if(!groups.has(k)) groups.set(k,{p,t:[],a:[],l:[]}); groups.get(k).t.push(qid); } }
-  for(const [qid,si] of st.stkT||[]){ if(si>cursor||!Q(qid)) continue; for(const p of finisherPts(qid).slice(0,3)){ const k=p.ent+'@'+p.X.toFixed(0)+','+p.Y.toFixed(0); if(!groups.has(k)) groups.set(k,{p,t:[],a:[],l:[]}); const g=groups.get(k); (g.s=g.s||[]).push(qid); } }
+  for(const [qid,si] of st.stkT||[]){ if(si>cursor||!Q(qid)||st.log.has(qid)) continue; for(const p of finisherPts(qid).slice(0,3)){ const k=p.ent+'@'+p.X.toFixed(0)+','+p.Y.toFixed(0); if(!groups.has(k)) groups.set(k,{p,t:[],a:[],l:[]}); const g=groups.get(k); (g.s=g.s||[]).push(qid); } }
   if(layers.avail||layers.trivial){
     for(const a of SIM.avail){ if(!a.ok) continue; const q=Q(a.qid); const triv=diffClass(q.l,lv)==='grey'; if(triv&&!layers.trivial) continue; if(!triv&&!layers.avail) continue;
       for(const p of starterPts(a.qid).slice(0,3)){ const k=p.ent+'@'+p.X.toFixed(0)+','+p.Y.toFixed(0); if(!groups.has(k)) groups.set(k,{p,t:[],a:[],l:[]}); groups.get(k).a.push(a.qid); } }
@@ -911,7 +912,7 @@ function addStep(step){
     pushHistory(); for(const o of order){ route.steps.splice(cursor+1,0,{t:'complete',q:step.q,obj:o.rx}); cursor++; } refresh(); scrollCursor(); toast(`Added ${order.length} kill steps: ${order.map(o=>o.text.replace(/ slain$/,'')).join(', ')}`); return; }
   const pre=preLootSteps(step); if(pre.length){ pushHistory(); route.steps.splice(cursor+1,0,...pre); cursor+=pre.length; toast(`Added a step to loot ${pre.map(x=>DB.i[x.item]?.n).join(', ')} first: the objective needs it.`,4500); }
   const pk=defaultPath(step,cursor+1); const msgs=[]; if(pk) msgs.push(pk==='guide'?`Path copied from ${step.pathSrc}.`:`Rough path generated through the spawns (${step.path.length} points): click 🔁 on the step to adjust it.`);
-  let d=null; if(!step.src&&step.q&&['accept','complete','turnin'].includes(step.t)&&step.stk===undefined){ d=guideStickyDefault(step.t,step.q); if(d) step.stk=d.stk; }
+  let d=null; if(!step.src&&step.q&&['accept','complete'].includes(step.t)&&step.stk===undefined){ d=guideStickyDefault(step.t,step.q); if(d) step.stk=d.stk; }
   if(d) msgs.push(`Made sticky (${d.stk==='next'?'done with the next step':'stays on screen until done'}) as in ${d.g}: click 📌 to change.`);
   if(msgs.length) setTimeout(()=>toast(msgs.join(' '),5000),0);
   pushHistory(); route.steps.splice(cursor+1,0,step); cursor++; refresh(); scrollCursor(); }
@@ -1136,8 +1137,8 @@ function renderDetail(){
   const itemStart=q.s.i.map(i=>DB.i[i]?.n||('Item '+i));
   const pre=[...(q.pg||[]),...(q.ps||[])].filter(Q);
   let act='';
-  if(!inLog&&st.stkT?.has(qid)) act+=`<button class="btn gold" data-tinnow="${qid}">Turn in now</button>`;
-  if(inLog){ act+=accNowBtn(qid); if(hasObjectives(qid)) act+=`<button class="btn" data-complete="${qid}">${inLog.done?'Add another complete step':'Mark objectives done'}</button>`; act+=`<button class="btn gold" data-turnin="${qid}">Turn in</button>`; }
+  if(st.stkT?.has(qid)) act+=`<button class="btn gold" data-tinnow="${qid}">Turn in now</button>`;
+  if(inLog){ act+=accNowBtn(qid); if(hasObjectives(qid)) act+=`<button class="btn" data-complete="${qid}">${inLog.done?'Add another complete step':'Mark objectives done'}</button>`; if(!st.stkT?.has(qid)) act+=`<button class="btn gold" data-turnin="${qid}">Turn in</button>`; }
   else if(!w) act+=`<button class="btn gold" data-accept="${qid}">Accept</button>`;
   else if(!st.turned.has(qid)) act+=`<button class="btn" data-accept="${qid}">Accept anyway</button>`;
   const obs=objectives(qid);
@@ -1194,7 +1195,7 @@ function showPop(h,x,y){
   const locAttr=l=>`data-loc='${esc(JSON.stringify(l))}'`;
   if(h.kind==='quest'){
     html+=`<h4>${esc(h.label)}</h4>`;
-    for(const q of h.turn){ const v=st.log.get(q); html+=`<div class="it"><b>${esc(Q(q).n)}</b> <span class="note">${v.done?'ready':'in progress'} · +${fmt(questXP(q,lv))} XP</span><div class="row">${hasObjectives(q)?`<button class="btn sm" data-complete="${q}">${v.done?'Complete again':'Objectives done'}</button>`:''}${accNowBtn(q,true)}<button class="btn sm gold" data-turnin="${q}">Turn in</button><button class="btn sm" data-sel="${q}">Details</button>${whLink(q,true)}</div></div>`; }
+    for(const q of h.turn){ const v=st.log.get(q); html+=`<div class="it"><b>${esc(Q(q).n)}</b> <span class="note">${v.done?'ready':'in progress'} · +${fmt(questXP(q,lv))} XP</span><div class="row">${hasObjectives(q)?`<button class="btn sm" data-complete="${q}">${v.done?'Complete again':'Objectives done'}</button>`:''}${accNowBtn(q,true)}${st.stkT?.has(q)?`<button class="btn sm gold" data-tinnow="${q}" title="You have a sticky hand-in at step ${st.stkT.get(q)+1}; add the step where it must be handed in">Turn in now</button>`:`<button class="btn sm gold" data-turnin="${q}">Turn in</button>`}<button class="btn sm" data-sel="${q}">Details</button>${whLink(q,true)}</div></div>`; }
     for(const q of h.stkT||[]){ html+=`<div class="it"><b>${esc(Q(q).n)}</b> <span class="note">📌 sticky turn-in at step ${(SIM.st.stkT?.get(q)??0)+1}: if you can on the way</span><div class="row"><button class="btn sm gold" data-tinnow="${q}" title="Add a normal turn-in step here: the sticky one becomes 'if you can on the way'">Turn in now</button><button class="btn sm" data-sel="${q}">Details</button></div></div>`; }
     for(const q of h.avail){ const dc=diffClass(Q(q).l,lv); html+=`<div class="it"><span class="c-${dc}">[${Q(q).l}] ${esc(Q(q).n)}</span> <span class="note">+${fmt(questXP(q,lv))} XP</span><div class="row"><button class="btn sm gold" data-accept="${q}">Accept</button><button class="btn sm" data-sel="${q}">Details</button>${whLink(q,true)}</div></div>`; }
     for(const a of h.locked||[]){ const q=a.qid; html+=`<div class="it"><span class="c-${diffClass(Q(q).l,lv)}">🔒 [${Q(q).l}] ${esc(Q(q).n)}</span> <span class="note">+${fmt(questXP(q,lv))} XP</span><div class="note">Needs: ${rootsHTML(a)}</div><div class="row"><button class="btn sm" data-sel="${q}">Details</button>${whLink(q,true)}</div></div>`; }
