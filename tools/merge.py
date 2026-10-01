@@ -25,6 +25,7 @@ for m in ('0', '1'):
     M['labels'].update(G['labels'])
 M['zones']['16591'].update(b=[-2208, -6758, -6533, -9566], ap=0)
 M['relief'] = json.load(open('relief.json'))
+M['fqb'] = json.load(open('fqb.json')); M['fqbRev'] = 'QuestieDB '+json.load(open('fqb_rev.json'))['rev']
 try: M['fqw'] = json.load(open('fqw.json'))  # optional local Wowhead lookups, not shipped
 except FileNotFoundError: pass
 V = json.load(open('vend.json')); M['vend'] = V['vend']; M['trn'] = V['trn']; M['vi'] = V['vi']
