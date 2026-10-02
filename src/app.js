@@ -836,8 +836,8 @@ let HEAT=null;
 function heatCells(){ const L=SIM.st.level, party=Math.max(1,SIM.st.party||1); const key=L+':'+party; if(HEAT&&HEAT.key===key) return HEAT; const G=META.mobl?.g||{}, C=+(META.mobl?.c||150); const out=[];
   for(const k in G){ let num=0,cnt=0,best=null,mg=0; const mobs=[]; for(const [lv,hp,n,arm,uc,nid] of G[k]){ const ml=Math.round(lv); if(ml>L+5||!hp) continue; const xp=mobXP(L,ml,false,party); if(!xp) continue;
       const A=arm>=0?arm:45*ml, dr=Math.min(.75,A/(A+400+85*L)); /* armor from CMaNGOS classic-db (else estimated from level); hunter damage is physical */
-      let rate=xp*(1-dr)/hp; if(ml>=L+3) rate*=.6; /* orange/red: slower, riskier pulls */ num+=rate*n; cnt+=n; const m={lv,hp,xp,rate,A,uc,nid,n}; mobs.push(m); if(!best||rate>best.rate) best=m; if(uc===8) mg+=n; }
-    if(!cnt) continue; const [cx,cy]=k.split(',').map(Number); out.push({X:(cx+.5)*C,Y:(cy+.5)*C,v:num/cnt*Math.sqrt(Math.min(1,cnt/12)),cnt,best,mg,mobs:mobs.sort((a,b)=>b.rate-a.rate),all:G[k]}); }
+      let rate=xp*(1-dr)/hp; if(ml>=L+3) rate*=.6; /* orange/red: slower, riskier pulls */ rate*=Math.min(1,n/4); /* 4+ spawns of a mob in the square = fully grindable */ cnt+=n; const m={lv,hp,xp,rate,A,uc,nid,n}; mobs.push(m); if(!best||rate>best.rate) best=m; if(uc===8) mg+=n; }
+    if(!cnt) continue; const [cx,cy]=k.split(',').map(Number); out.push({X:(cx+.5)*C,Y:(cy+.5)*C,v:best?best.rate:0,cnt,best,mg,mobs:mobs.sort((a,b)=>b.rate-a.rate),all:G[k]}); }
   const vs=out.map(o=>o.v).sort((a,b)=>a-b); const ref=vs[Math.floor(vs.length*.98)]||1; for(const o of out) o.h=Math.min(1,o.v/ref);
   return HEAT={key,cells:out,C}; }
 function drawHeat(){ const HC=heatCells(), sz=HC.C*view.s, H_=H; if(sz<1.2) return; for(const o of HC.cells){ if(o.h<.08) continue; const [x,y]=toS(o); if(x<-sz||y<-sz||x>W+sz||y>H_+sz) continue;
