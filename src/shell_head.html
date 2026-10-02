@@ -205,7 +205,7 @@ canvas#map.picking{cursor:crosshair}
 .rxnotes>span{display:block}
 .gmark{font-size:11px;padding:0 5px;border-radius:3px;background:var(--panel3);color:var(--gold);margin-left:4px}
 /* xp bar */
-.xpbar{background:var(--panel);border-top:1px solid var(--line);padding:6px 12px 8px;display:grid;grid-template-columns:auto 1fr auto auto;gap:12px;align-items:center}
+.xpbar{background:var(--panel);border-top:1px solid var(--line);padding:6px 12px 8px;display:grid;grid-template-columns:auto 1fr auto auto auto;gap:12px;align-items:center}
 .lvl{font-family:var(--display);font-size:22px;color:var(--gold);min-width:74px}
 .lvl small{font-family:var(--body);font-size:12px;color:var(--muted);display:block;line-height:1}
 .bar{position:relative;height:18px;border-radius:3px;background:#0d0a07;border:1px solid #6b5630;overflow:hidden}
@@ -340,7 +340,7 @@ dialog textarea{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-
     <div class="lvl" id="lvl"></div>
     <div class="bar" aria-live="polite"><div class="fill" id="xpfill"></div><div class="ticks"></div><div class="lbl" id="xplbl"></div></div>
     <label class="grp">Group<select id="groupSel" aria-label="Group size from the selected step"><option value="1">Solo</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select></label>
-    <div class="sum" id="xpsum"></div>
+    <div class="played" id="played" style="white-space:nowrap;font-size:13px"></div><div class="sum" id="xpsum"></div>
   </footer>
 </div>
 
@@ -366,6 +366,10 @@ dialog textarea{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-
     <p class="note" style="margin:0">XP per kill uses the average level of the mobs along each walking leg and your group size. Lower = more grinding (a priest dotting and running might be ~100 yards, stopping to kill everything ~40).</p>
     <div class="grid4"><label>Calibrate: at step<input type="number" name="calStep" min="1"></label><label>I was level<input type="number" name="calLvl" min="1" max="60"></label><label>with XP<input type="number" name="calXp" min="0"></label><label>&nbsp;<button type="button" class="btn sm" id="calBtn">Calibrate</button></label></div>
     <p class="note" id="calMsg" style="margin:0"></p>
+  </fieldset>
+  <fieldset style="border:1px solid var(--line);border-radius:8px;padding:6px 10px;display:flex;flex-direction:column;gap:8px"><legend class="note">/played estimate</legend>
+    <div class="grid2"><label>Your damage per second per level (default 2.5)<input type="number" name="dpsl" min="0.5" max="20" step="0.1" placeholder="2.5"></label><label>Downtime per kill, seconds (loot, eat/drink; default 10)<input type="number" name="kdown" min="0" max="120" placeholder="10"></label></div>
+    <p class="note" style="margin:0">Time to kill = mob HP ÷ (DPS × armor reduction) + downtime, using average mob HP/armor for the mob level. DPS = this × your level + 4. Walking 7 yd/s (11.2 mounted from the travel-kill mount level), flights ~32 yd/s, boats ~2.5 min, hearth 25 s, 5 s per NPC.</p>
   </fieldset>
   <fieldset style="border:1px solid var(--line);border-radius:8px;padding:6px 10px;display:flex;flex-direction:column;gap:8px"><legend class="note">Kill XP while questing</legend>
     <label class="inline"><input type="checkbox" name="killxp"> Add estimated kill XP to "complete objectives" steps</label>

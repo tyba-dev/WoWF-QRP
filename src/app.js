@@ -344,7 +344,8 @@ function simulate(){
     if(i===cursor) atCursor=cloneState(st);
   });
   if(cursor<0) atCursor=initState(route);
-  SIM={res,st:atCursor,end:{level:st.level,xp:st.xp,log:st.log.size}};
+  estimateTimes(res);
+  SIM={res,st:atCursor,end:{level:st.level,xp:st.xp,log:st.log.size,t:res.length?res[res.length-1].tAt:0}};
   SIM.avail=computeAvailable(SIM.st);
   SIM.near=nearZones();
 }
@@ -445,6 +446,21 @@ function exploreAlong(pts,st,r){ if(route.char.explore===false||!META.expl) retu
 function mobLevelAt(X,Y){ const M=META.mobl; if(!M) return null; const c=M.c, cx=Math.floor(X/c), cy=Math.floor(Y/c); let sum=0,n=0;
   for(let dx=-1;dx<=1;dx++) for(let dy=-1;dy<=1;dy++){ const v=M.cells[(cx+dx)+','+(cy+dy)]; if(v){ const w=v[1]*(dx||dy?0.5:1); sum+=v[0]*w; n+=w; } } return n?sum/n:null; }
 function isKillObjStep(s){ if(!s.q||!Q(s.q)) return false; const ob=objectives(s.q).filter(o=>!o.pre&&(!s.obj||o.rx===s.obj)); return ob.length>0&&ob.some(o=>o.kind==='kill'||(o.kind==='loot'&&o.pts.some(p=>p.ent?.[0]==='n'))); }
+/* ---------- /played estimate: travel time + kills × time-to-kill + talking ---------- */
+let MOBLV=null; function mobStatsAt(lv){ if(!MOBLV){ MOBLV={}; for(const k in META.mobl?.g||{}) for(const [l,hp,n,arm] of META.mobl.g[k]){ const L=Math.round(l); const o=MOBLV[L]=MOBLV[L]||{hp:0,a:0,n:0}; o.hp+=hp*n; o.a+=(arm>=0?arm:45*L)*n; o.n+=n; } }
+  const o=MOBLV[Math.max(1,Math.min(63,Math.round(lv)))]; return o&&o.n?{hp:o.hp/o.n,a:o.a/o.n}:{hp:40+25*lv,a:45*lv}; }
+function killSecs(L,ml){ const c=route.char; const dps=Math.max(1,(+c.dpsl>0?+c.dpsl:2.5)*L+4), down=+c.kdown>=0&&c.kdown!==''&&c.kdown!=null?+c.kdown:10; const m=mobStatsAt(ml); const dr=Math.min(.75,m.a/(m.a+400+85*L)); return m.hp/(dps*(1-dr))+down; }
+function estimateTimes(res){ let t=0; const c=route.char; const mountL=+c.ypkUntil||40;
+  res.forEach((r,i)=>{ const s=route.steps[i]; let dt=0; if(r.inactive||r.passive!=null){ r.dt=0; r.tAt=t; return; } const L=r.before?.level||1; const run=L>=mountL?11.2:7; const lt=r.leg?.type;
+    const dist=(a,b)=>{ if(!a||!b) return 0; const d=Math.hypot(b.X-a.X,b.Y-a.Y); if(!Number.isFinite(d)) return 0; const ma=a.z!=null?META.zones[a.z]?.m:null, mb=b.z!=null?META.zones[b.z]?.m:null; if(ma!=null&&mb!=null&&ma!=mb) return 0; return Math.min(d,5000); }; /* other continent / huge jump: some other transport, not walking */
+    if(!r.stk){ if(lt==='fly'){ dt+=dist(r.from,r.dep)*1.25/run+dist(r.dep,r.pt)/32+10; } else if(lt==='ride'){ dt+=dist(r.from,r.dep)*1.25/run+150; } else if(lt==='hs'){ dt+=25; } else if(lt==='death'){ dt+=dist(r.from,r.dep)*1.25/run+40; } else dt+=dist(r.from,r.pt)*1.25/run;
+      if(r.path&&r.path.length>1) { let d=0; for(let k=0;k<r.path.length;k++) d+=dist(r.path[k],r.path[(k+1)%r.path.length]); dt+=d/run; } }
+    if(['accept','turnin','train','buy','prof'].includes(s.t)) dt+=5;
+    let kills=0, ml=L; if(r.kill?.kills){ kills+=r.kill.kills; ml=Q(s.q)?Math.min(Q(s.q).l,L+2):L; } dt+=kills*killSecs(L,ml);
+    if(r.walk?.kills) dt+=r.walk.kills*killSecs(L,r.walk.lv||L);
+    if(s.t==='grind'&&r.gained>0&&(!s.src||s.src==='mobs'||s.src==='both')){ const g=Math.max(1,L-2); const per=mobXP(L,g,false,1)||1; dt+=r.gained/per*killSecs(L,g); }
+    r.dt=dt; t+=dt; r.tAt=t; }); }
+const fmtT=sec=>{ sec=Math.round(sec||0); const d=Math.floor(sec/86400), h=Math.floor(sec%86400/3600), m=Math.floor(sec%3600/60); return d?`${d}d ${h}h ${m}m`:h?`${h}h ${m}m`:`${m}m`; };
 function travelKills(a,b,st,yp){ const ypk=+(yp??route.char.ypk)||0; if(!ypk||!a||!b) return null; const d=Math.hypot(b.X-a.X,b.Y-a.Y); if(d<30||d>6000) return null;
   const walk=d*1.2, n=Math.max(1,Math.ceil(d/60)); let xp=0,kills=0,lvs=0,m=0;
   for(let k=0;k<n;k++){ const t=(k+0.5)/n; const lv=mobLevelAt(a.X+(b.X-a.X)*t,a.Y+(b.Y-a.Y)*t); if(lv==null) continue; const kk=walk/n/ypk; const per=mobXP(st.level,Math.round(lv),false,st.party||1); kills+=kk; xp+=kk*per; lvs+=lv; m++; }
@@ -1129,9 +1145,10 @@ function renderXP(){
   $('#lvl').innerHTML=`${st.level}<small>${cursor<0?'at start':'after step '+(cursor+1)}</small>`;
   $('#xpfill').style.width=pct+'%';
   $('#xplbl').textContent=st.level<MAXLVL?`${fmt(st.xp)} / ${fmt(need)} XP (${pct.toFixed(0)}%)`:'Level 60';
+  { const tc=cursor>=0?SIM.res[cursor]?.tAt||0:0; $('#played').innerHTML=`/played ≈ <b>${fmtT(tc)}</b>`; $('#played').title=`Estimated time played by the end of step ${cursor+1}: walking/flying between steps, kills × time to kill (your DPS vs mob HP and armor, plus downtime) and talking. Set DPS and downtime in Settings. Route total ≈ ${fmtT(SIM.end.t)}.`; }
   const e=SIM.end; const quests=route.steps.filter(s=>s.t==='turnin').length; const endL=e.level+(e.level<MAXLVL?e.xp/XP_TABLE[e.level]:0);
   $('#groupSel').value=String(SIM.st.party||1);
-  $('#xpsum').innerHTML=`Route end: <b>level ${endL.toFixed(2)}</b> · ${quests} turn-ins · ${SIM.st.log.size+[...(SIM.st.fq||new Map()).values()].filter(v=>v!=='done').length}/${LOGMAX} in log`;
+  $('#xpsum').innerHTML=`Route end: <b>level ${endL.toFixed(2)}</b> · ${quests} turn-ins · ${SIM.st.log.size+[...(SIM.st.fq||new Map()).values()].filter(v=>v!=='done').length}/${LOGMAX} in log · /played ≈ ${fmtT(SIM.end.t)}`;
 }
 function renderRouteHead(){
   $('#routeSel').innerHTML=store.routes.map(r=>`<option value="${r.id}" ${r.id===route.id?'selected':''}>${esc(r.name)}</option>`).join('');
@@ -1404,7 +1421,7 @@ $('#undoBtn').addEventListener('click',undo);
 document.addEventListener('keydown',e=>{ if((e.ctrlKey||e.metaKey)&&e.key==='z'&&!e.target.closest('input,textarea')){ e.preventDefault(); undo(); } if(e.key==='Escape') hidePop(); });
 
 function fillRaces(f){ const fac=f.faction.value; f.race.innerHTML=Object.entries(RACES).filter(([n,[b,fa]])=>!fa||fa===fac).map(([n])=>`<option>${n}</option>`).join(''); }
-function openChar(){ const f=$('#charForm'); const c=route.char; f.name.value=route.name; f.faction.value=c.faction; fillRaces(f); f.race.value=c.race; f.cls.innerHTML=Object.keys(CLASSES).map(n=>`<option>${n}</option>`).join(''); f.cls.value=c.cls; f.level.value=c.level; f.xp.value=c.xp; f.party.value=c.party; f.rep.checked=!!c.rep; f.prof.checked=!!c.prof; f.event.checked=!!c.event; $('#dgSettings').innerHTML=dungeonChecks('dgset'); f.xprate.value=c.xprate||1; f.dqmult.value=c.dqmult||2.5; fillFpSettings(c); f.killxp.checked=c.killxp!==false; f.droprate.value=c.droprate||60; f.defcount.value=c.defcount||8; f.dgdiv.value=c.dgdiv||3.5; f.ypk.value=c.ypk||''; f.explore.checked=c.explore!==false; f.ypkUntil.value=c.ypkUntil||40; f.calStep.value=cursor>=0?cursor+1:''; f.calLvl.value=''; f.calXp.value=''; $('#calMsg').textContent=''; $('#dlgChar').showModal(); }
+function openChar(){ const f=$('#charForm'); const c=route.char; f.name.value=route.name; f.faction.value=c.faction; fillRaces(f); f.race.value=c.race; f.cls.innerHTML=Object.keys(CLASSES).map(n=>`<option>${n}</option>`).join(''); f.cls.value=c.cls; f.level.value=c.level; f.xp.value=c.xp; f.party.value=c.party; f.rep.checked=!!c.rep; f.prof.checked=!!c.prof; f.event.checked=!!c.event; $('#dgSettings').innerHTML=dungeonChecks('dgset'); f.xprate.value=c.xprate||1; f.dqmult.value=c.dqmult||2.5; fillFpSettings(c); f.killxp.checked=c.killxp!==false; f.droprate.value=c.droprate||60; f.defcount.value=c.defcount||8; f.dgdiv.value=c.dgdiv||3.5; f.ypk.value=c.ypk||''; f.explore.checked=c.explore!==false; f.ypkUntil.value=c.ypkUntil||40; f.dpsl.value=c.dpsl||''; f.kdown.value=c.kdown??''; f.calStep.value=cursor>=0?cursor+1:''; f.calLvl.value=''; f.calXp.value=''; $('#calMsg').textContent=''; $('#dlgChar').showModal(); }
 $('#charForm').faction.addEventListener('change',e=>fillRaces(e.target.form));
 $('#calBtn').addEventListener('click',()=>{ const f=$('#charForm'); const i=(+f.calStep.value||0)-1, L=+f.calLvl.value, X=+f.calXp.value||0; if(!(i>=0&&i<route.steps.length)||!(L>=1)) { $('#calMsg').textContent='Enter a step number, and your real level and XP at that step.'; return; }
   const party=route.char.party; route.char.party=Math.max(1,+f.party.value||1); route.char.ypkUntil=Math.max(2,+f.ypkUntil.value||40); const r=calibrateYpk(i,L,X); route.char.party=party;
@@ -1412,7 +1429,7 @@ $('#calBtn').addEventListener('click',()=>{ const f=$('#charForm'); const i=(+f.
 $('#dlgChar').addEventListener('close',()=>{ if($('#dlgChar').returnValue!=='ok') return; const f=$('#charForm');
   route.name=f.name.value||'Route'; Object.assign(route.char,{faction:f.faction.value,race:f.race.value,cls:f.cls.value,level:Math.max(1,Math.min(60,+f.level.value||1)),xp:Math.max(0,+f.xp.value||0),party:Math.max(1,Math.min(5,+f.party.value||1)),rep:f.rep.checked,prof:f.prof.checked,event:f.event.checked});
   const prev={...(route.char.dungeons||{})}; const next={}; $$('#dgSettings [data-dgset]').forEach(cb=>{ if(cb.checked) next[cb.dataset.dgset]=true; });
-  route.char.xprate=Math.max(0.5,Math.min(5,+f.xprate.value||1)); pruneXpRate(); route.char.fps=$$('#fpSettings [data-fpk]').filter(x=>x.checked).map(x=>x.dataset.fpk); route.char.allfps=$('#fpAll').checked; route.char.dqmult=Math.max(0.1,Math.min(10,+f.dqmult.value||2.5)); route.char.killxp=f.killxp.checked; route.char.droprate=Math.max(5,Math.min(100,+f.droprate.value||60)); route.char.defcount=Math.max(1,+f.defcount.value||8); route.char.dgdiv=Math.max(0.1,+f.dgdiv.value||3.5); route.char.ypk=Math.max(0,+f.ypk.value||0); route.char.explore=f.explore.checked; route.char.ypkUntil=Math.max(2,Math.min(60,+f.ypkUntil.value||40));
+  route.char.xprate=Math.max(0.5,Math.min(5,+f.xprate.value||1)); pruneXpRate(); route.char.fps=$$('#fpSettings [data-fpk]').filter(x=>x.checked).map(x=>x.dataset.fpk); route.char.allfps=$('#fpAll').checked; route.char.dqmult=Math.max(0.1,Math.min(10,+f.dqmult.value||2.5)); route.char.killxp=f.killxp.checked; route.char.droprate=Math.max(5,Math.min(100,+f.droprate.value||60)); route.char.defcount=Math.max(1,+f.defcount.value||8); route.char.dgdiv=Math.max(0.1,+f.dgdiv.value||3.5); route.char.ypk=Math.max(0,+f.ypk.value||0); route.char.explore=f.explore.checked; route.char.ypkUntil=Math.max(2,Math.min(60,+f.ypkUntil.value||40)); route.char.dpsl=+f.dpsl.value>0?+f.dpsl.value:''; route.char.kdown=f.kdown.value===''?'':Math.max(0,+f.kdown.value);
   route.char.dungeons=next; const turnedOn=Object.keys(next).some(t=>!prev[t]); if(turnedOn) insertNewlyEnabled(); refresh(); });
 $('#charBtn').addEventListener('click',openChar); $('#whoBtn').addEventListener('click',openChar);
 $('#stepFind').addEventListener('input',()=>{ findPos=-1; runFind(); if(findHits.length) findGo(1); });
