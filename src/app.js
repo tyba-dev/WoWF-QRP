@@ -299,7 +299,7 @@ function simulate(){
       if(s.t==='turnin'&&xp){ r.gained=xp; addXP(st,xp); }
       { const fe=foreverQuests().get(s.q); const known=!!(fe?.qb); const msg=s.t==='turnin'?(xpSet?`Forever quest: counting ${fmt(xp)} XP (set by you).`:xp?`Forever quest: Questie has no XP for it yet. Counting ≈${fmt(xp)} XP, estimated from its quest level: set it if you know it.`:'Forever quest with no XP data: set its XP reward if you know it.'):known?null:`Forever quest Questie doesn't know yet${s.src?': kept exactly as the guide has it.':' (taken from your imported guides).'}`; if(msg) r.warn.push(msg); } }
     else if(s.t==='accept'){
-      const w=whyUnavailable(s.q,st,route); if(w) r.err.push(w.why);
+      const w=whyUnavailable(s.q,st,route); if(w) r.err.push(w.why); r.lvAt=st.level;
       if(st.log.size>=LOGMAX) r.err.push(`Quest log is full (${LOGMAX})`); else if(ESCORT.has(s.q)&&st.log.size>=ESC_LIMIT) r.err.push(`Escort quest: you have ${st.log.size} quests in your log; drop below ${ESC_LIMIT} before accepting`);
       st.log.set(s.q,{done:!hasObjectives(s.q)});
     } else if(s.t==='complete'){
@@ -314,7 +314,7 @@ function simulate(){
       if(!st.log.has(s.q)) r.err.push('Not in your quest log');
       else if(!st.log.get(s.q).done){ const e=st.log.get(s.q); const miss=objectives(s.q).filter(o=>o.rx&&!(e.objs&&e.objs.has(o.rx))).map(o=>o.text); r.err.push('Objectives not done'+(miss.length?': '+miss.join('; '):'')); }
       const xp=questXP(s.q,st.level); r.gained=xp; if(st.stkT?.has(s.q)){ st.stkT=new Map(st.stkT); st.stkT.delete(s.q); }
-      if(q.xp&&st.level<MAXLVL&&st.level>q.xp[0]+5){ const full=questXP(s.q,q.xp[0]); r.warn.push(`XP penalty: you are level ${st.level}, the quest is level ${q.xp[0]}, so it gives ${Math.round(Math.max(1,Math.min(10,2*(q.xp[0]-st.level)+20))*10)}% (${fmt(xp)} of ${fmt(full)} XP, losing ${fmt(full-xp)}). Turn it in by level ${q.xp[0]+5} for full XP.`); }
+      if(q.xp&&st.level<MAXLVL&&st.level>q.xp[0]+5){ const full=questXP(s.q,q.xp[0]); r.pen={lvl:st.level,ql:q.xp[0],xp,full}; r.warn.push(`XP penalty: you are level ${st.level}, the quest is level ${q.xp[0]}, so it gives ${Math.round(Math.max(1,Math.min(10,2*(q.xp[0]-st.level)+20))*10)}% (${fmt(xp)} of ${fmt(full)} XP, losing ${fmt(full-xp)}). Turn it in by level ${q.xp[0]+5} for full XP.`); }
       addXP(st,xp); st.log.delete(s.q); st.turned.add(s.q);
     } else if(s.t==='abandon'){ st.log.delete(s.q); }
     else if(s.t==='grind'){
@@ -980,6 +980,20 @@ function nowSel(s,i){ if(!['accept','complete','turnin'].includes(s.t)||!s.q||!i
 function stepNow(i,at){ const s=route.steps[i]; const n={t:s.t,q:s.q,stk:false}; for(const k of ['obj','qn','objText','cl','tgt','loc','counts','pin']) if(s[k]!=null) n[k]=Array.isArray(s[k])?[...s[k]]:typeof s[k]==='object'?{...s[k]}:s[k];
   const P=pathOf(s); if(P&&P.length>1&&s.t==='complete'){ n.path=P.map(l=>({...l})); n.pathSrc=s.pathSrc||'guide'; }
   cursor=at-1; addStep(n); toast(`Added "${s.t==='accept'?'Accept':s.t==='turnin'?'Turn in':'Complete'} now" as step ${cursor+1}: step ${i+1} is now done on the way if you can.`,4500); }
+function healthReport(){ simulate(); const rows={err:[],pen:[],hard:[],warn:[],open:[]}; const N=i=>rxpPlain(stepText(route.steps[i]).t);
+  SIM.res.forEach((r,i)=>{ const s=route.steps[i]; if(r.inactive||r.skip) return;
+    for(const e of r.err) rows.err.push({i,t:N(i),why:e});
+    if(r.pen) rows.pen.push({i,t:N(i),why:`level ${r.pen.lvl}, quest level ${r.pen.ql}: ${fmt(r.pen.xp)} of ${fmt(r.pen.full)} XP (−${fmt(r.pen.full-r.pen.xp)})`,lost:r.pen.full-r.pen.xp});
+    if(s.t==='accept'&&Q(s.q)&&r.lvAt!=null&&!r.err.length){ const d=diffClass(Q(s.q).l,r.lvAt); if(d==='red'||d==='orange') rows.hard.push({i,t:N(i),why:`quest level ${Q(s.q).l} at your level ${r.lvAt} (${d==='red'?'red: very hard':'orange: hard'})`}); }
+    for(const w of r.warn) if(!r.pen&&!/^(Forever quest|Done along the way|XP penalty)/.test(w)) rows.warn.push({i,t:N(i),why:w}); });
+  for(const [q,v] of SIM.st.log) rows.open.push({i:null,t:Q(q)?.n||('Quest '+q),why:v.done?'ready to turn in but never handed in':'still in your log at the end of the route'});
+  const lost=rows.pen.reduce((a,x)=>a+x.lost,0);
+  const sec=(k,title,note)=>rows[k].length?`<details ${k==='err'||k==='pen'?'open':''} class="hsec"><summary><b>${title}</b> (${rows[k].length})${note?' · '+note:''}</summary>${rows[k].map(x=>`<div class="hrow"${x.i!=null?` data-hgo="${x.i}"`:''}>${x.i!=null?`<span class="hn">${x.i+1}</span>`:''}<span><b>${esc(x.t)}</b><br><span class="note">${esc(x.why)}</span></span></div>`).join('')}</details>`:'';
+  const tot=rows.err.length+rows.pen.length+rows.hard.length;
+  $('#hlBody').innerHTML=(tot?'':'<p>✅ No problems, XP penalties or hard pick-ups found.</p>')+sec('err','Problems','steps that can\'t be done as planned (level too low, not in log, log full…)')+sec('pen','XP penalty hand-ins',`${fmt(lost)} XP lost in total`)+sec('hard','Hard pick-ups','quests 3+ levels above you when accepted')+sec('warn','Other warnings','')+sec('open','Quests left in your log','');
+  $('#hlSum').textContent=`${rows.err.length} problem${rows.err.length===1?'':'s'} · ${rows.pen.length} penalised hand-in${rows.pen.length===1?'':'s'} (−${fmt(lost)} XP) · ${rows.hard.length} hard pick-up${rows.hard.length===1?'':'s'}`;
+  $('#dlgHealth').showModal(); }
+document.addEventListener('click',e=>{ const h=e.target.closest('[data-hgo]'); if(h){ $('#dlgHealth').close(); setCursor(+h.dataset.hgo); } });
 function stickyAccIdx(q){ for(let k=Math.min(cursor,route.steps.length-1);k>=0;k--){ const x=route.steps[k]; if(x.t==='accept'&&x.q===q&&!SIM.res[k]?.inactive) return isSticky(x)&&SIM.res[k]?.passive==null?k:-1; } return -1; }
 const accNowBtn=(q,sm)=>stickyAccIdx(q)>=0?`<button class="btn${sm?' sm':''}" data-accnow="${q}" title="You have it from a sticky accept (step ${stickyAccIdx(q)+1}); add the step where you must have it">Accept now</button>`:'';
 document.addEventListener('change',e=>{ const t=e.target.closest('select.stknow'); if(!t||!t.value) return; const i=+t.dataset.now; stepNow(i,t.value==='here'?i+1:cursor+1); });
@@ -1369,6 +1383,7 @@ $('#charBtn').addEventListener('click',openChar); $('#whoBtn').addEventListener(
 $('#stepFind').addEventListener('input',()=>{ findPos=-1; runFind(); if(findHits.length) findGo(1); });
 $('#stepFind').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); findGo(e.shiftKey?-1:1); } else if(e.key==='Escape'){ $('#stepFind').value=''; findPos=-1; runFind(); } });
 $('#stepFindNext').addEventListener('click',()=>findGo(1)); $('#stepFindPrev').addEventListener('click',()=>findGo(-1));
+$('#healthBtn').addEventListener('click',healthReport); $('#hlClose').addEventListener('click',()=>$('#dlgHealth').close());
 $('#copyRoute').addEventListener('click',async()=>{ const name=await askText('Name for the copy:',route.name+' (copy)','Copy','text'); if(name==null) return;
   const src=route; await rawLoad((src.guides||[]).map(g=>g.id)); const r=JSON.parse(JSON.stringify(src)); r.id=uid(); r.name=name.trim()||src.name+' (copy)'; delete r.savedAt;
   const map=new Map(); for(const g of r.guides||[]){ const nid=uid(); map.set(g.id,nid); if(rawCache.has(g.id)) rawPut(nid,rawCache.get(g.id)); g.id=nid; }

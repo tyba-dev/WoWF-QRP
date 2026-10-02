@@ -272,7 +272,7 @@ dialog textarea{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-
       <div class="phead">
         <div class="row">
           <select id="routeSel" aria-label="Route" style="flex:1"></select>
-          <button class="btn sm" id="newRoute">New</button><button class="btn sm" id="copyRoute" title="Make a copy of this route to try a variant">Copy</button>
+          <button class="btn sm" id="newRoute">New</button><button class="btn sm" id="copyRoute" title="Make a copy of this route to try a variant">Copy</button><button class="btn sm" id="healthBtn" title="Route health: problems, XP-penalty hand-ins, hard pick-ups">Health</button>
           <button class="btn sm" id="charBtn">Settings</button>
         </div>
         <div class="row note" id="routeInfo"></div>
@@ -403,6 +403,8 @@ dialog textarea{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-
   <div class="actions"><button class="btn" value="cancel" formnovalidate>Cancel</button><button class="btn gold" value="ok">Add step</button></div>
 </form></dialog>
 
+<dialog id="dlgHealth"><div class="dl" style="max-width:640px"><h2 style="margin:0 0 4px">Route health</h2><p class="note" id="hlSum" style="margin:0 0 8px"></p><div id="hlBody" style="max-height:60vh;overflow:auto"></div><div class="actions"><button class="btn" id="hlClose">Close</button></div></div></dialog>
+<style>.hsec{margin:6px 0}.hsec summary{cursor:pointer}.hrow{display:flex;gap:8px;padding:4px 6px;border-radius:4px;align-items:flex-start}.hrow[data-hgo]{cursor:pointer}.hrow[data-hgo]:hover{background:rgba(255,209,0,.12)}.hn{min-width:34px;text-align:right;font-weight:700;opacity:.8}</style>
 <dialog id="dlgBuy"><div class="dl" style="min-width:min(520px,92vw)">
   <h2>Buy from vendor</h2>
   <label>Vendor<input type="text" id="buyFind" placeholder="Name or type, e.g. General Supplies" autocomplete="off"></label>
