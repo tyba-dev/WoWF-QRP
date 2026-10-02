@@ -368,8 +368,8 @@ dialog textarea{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-
     <p class="note" id="calMsg" style="margin:0"></p>
   </fieldset>
   <fieldset style="border:1px solid var(--line);border-radius:8px;padding:6px 10px;display:flex;flex-direction:column;gap:8px"><legend class="note">/played estimate</legend>
-    <div class="grid2"><label>Your damage per second per level (default 2.5)<input type="number" name="dpsl" min="0.5" max="20" step="0.1" placeholder="2.5"></label><label>Downtime per kill, seconds (loot, eat/drink; default 0 for hunters, 10 others)<input type="number" name="kdown" min="0" max="120" placeholder="10"></label></div>
-    <p class="note" style="margin:0">Time to kill = mob HP ÷ (DPS × armor reduction) + downtime, using average mob HP/armor for the mob level. DPS = this × your level + 4. Walking 7 yd/s (11.2 mounted from the travel-kill mount level), flights ~32 yd/s, boats ~2.5 min, hearth 25 s, 5 s per NPC.</p>
+    <div class="grid2"><label>Your damage per second per level (default 5)<input type="number" name="dpsl" min="0.5" max="40" step="0.1" placeholder="5"></label><label>Downtime per kill, seconds (loot, eat/drink; default 0 for hunters, 10 others)<input type="number" name="kdown" min="0" max="120" placeholder="10"></label></div>
+    <p class="note" style="margin:0">Time to kill = mob HP ÷ (DPS × armor reduction) + downtime, using average mob HP/armor for the mob level. DPS = this × your level + 8. Walking 7 yd/s (11.2 mounted from the travel-kill mount level), flights ~32 yd/s, boats ~2.5 min, hearth 25 s, 5 s per NPC.</p>
   </fieldset>
   <fieldset style="border:1px solid var(--line);border-radius:8px;padding:6px 10px;display:flex;flex-direction:column;gap:8px"><legend class="note">Kill XP while questing</legend>
     <label class="inline"><input type="checkbox" name="killxp"> Add estimated kill XP to "complete objectives" steps</label>

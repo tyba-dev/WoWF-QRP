@@ -450,7 +450,7 @@ function isKillObjStep(s){ if(!s.q||!Q(s.q)) return false; const ob=objectives(s
 let MOBLV=null; function mobStatsAt(lv){ if(!MOBLV){ MOBLV={}; for(const k in META.mobl?.g||{}) for(const [l,hp,n,arm] of META.mobl.g[k]){ const L=Math.round(l); const o=MOBLV[L]=MOBLV[L]||{hp:0,a:0,n:0}; o.hp+=hp*n; o.a+=(arm>=0?arm:45*L)*n; o.n+=n; } }
   const o=MOBLV[Math.max(1,Math.min(63,Math.round(lv)))]; return o&&o.n?{hp:o.hp/o.n,a:o.a/o.n}:{hp:40+25*lv,a:45*lv}; }
 const defDown=()=>route.char.cls==='Hunter'?0:10; /* hunters kill on the move with the pet, no eat/drink */
-function killSecs(L,ml){ const c=route.char; const dps=Math.max(1,(+c.dpsl>0?+c.dpsl:2.5)*L+4), down=c.kdown!==''&&c.kdown!=null&&+c.kdown>=0?+c.kdown:defDown(); const m=mobStatsAt(ml); const dr=Math.min(.75,m.a/(m.a+400+85*L)); return m.hp/(dps*(1-dr))+down; }
+function killSecs(L,ml){ const c=route.char; const dps=Math.max(1,(+c.dpsl>0?+c.dpsl:5)*L+8), down=c.kdown!==''&&c.kdown!=null&&+c.kdown>=0?+c.kdown:defDown(); const m=mobStatsAt(ml); const dr=Math.min(.75,m.a/(m.a+400+85*L)); return m.hp/(dps*(1-dr))+down; }
 function estimateTimes(res){ let t=0; const c=route.char; const mountL=+c.ypkUntil||40;
   res.forEach((r,i)=>{ const s=route.steps[i]; let dt=0; if(r.inactive||r.passive!=null){ r.dt=0; r.tAt=t; return; } const L=r.before?.level||1; const run=L>=mountL?11.2:7; const lt=r.leg?.type;
     const dist=(a,b)=>{ if(!a||!b) return 0; const d=Math.hypot(b.X-a.X,b.Y-a.Y); if(!Number.isFinite(d)) return 0; const ma=a.z!=null?META.zones[a.z]?.m:null, mb=b.z!=null?META.zones[b.z]?.m:null; if(ma!=null&&mb!=null&&ma!=mb) return 0; return Math.min(d,5000); }; /* other continent / huge jump: some other transport, not walking */
