@@ -1632,7 +1632,7 @@ document.addEventListener('keydown',e=>{ if((e.key==='Delete'||e.key==='Backspac
 
 $('#groupSel').addEventListener('change',e=>{ const v=+e.target.value; if(v===(SIM.st.party||1)) return; addStep({t:'party',size:v}); toast(v>1?`Group of ${v} from step ${cursor+1}`:`Solo from step ${cursor+1}`); });
 
-function whURL(qid,alt){ const q=Q(qid); return (qid>=90000||!q)?'https://www.wowhead.com/classic/search?q='+encodeURIComponent(q?.on||q?.n||alt||qid):'https://www.wowhead.com/classic/quest='+qid; }
+function whURL(qid,alt){ const q=Q(qid); return (qid>=90000||!q||foreverQuests().has(+qid))?'https://www.wowhead.com/forever/quest='+qid:'https://www.wowhead.com/classic/quest='+qid; } /* Forever-only quests live on Wowhead's Forever branch */
 function whLink(qid,btn){ const url=whURL(qid);
   return btn?`<a class="btn sm" href="${url}" target="_blank" rel="noopener" style="text-decoration:none">Wowhead ↗</a>`:`<a href="${url}" target="_blank" rel="noopener">Wowhead ↗</a>`; }
 
