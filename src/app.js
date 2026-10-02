@@ -834,14 +834,22 @@ const HIT_PRI={fq:0,dgobj:0,quest:0,obj:1,route:1,ghost:2,fp:3,dungeon:3,town:4}
 /* ---------- grinding heatmap: XP per time-to-kill of the hostile non-elite mobs in each 150-yd cell ---------- */
 let HEAT=null;
 function heatCells(){ const L=SIM.st.level, party=Math.max(1,SIM.st.party||1); const key=L+':'+party; if(HEAT&&HEAT.key===key) return HEAT; const G=META.mobl?.g||{}, C=+(META.mobl?.c||150); const out=[];
-  for(const k in G){ let num=0,cnt=0,best=null,mg=0; for(const [lv,hp,n,arm,uc] of G[k]){ const ml=Math.round(lv); if(ml>L+5||!hp) continue; const xp=mobXP(L,ml,false,party); if(!xp) continue;
+  for(const k in G){ let num=0,cnt=0,best=null,mg=0; const mobs=[]; for(const [lv,hp,n,arm,uc,nid] of G[k]){ const ml=Math.round(lv); if(ml>L+5||!hp) continue; const xp=mobXP(L,ml,false,party); if(!xp) continue;
       const A=arm>=0?arm:45*ml, dr=Math.min(.75,A/(A+400+85*L)); /* armor from CMaNGOS classic-db (else estimated from level); hunter damage is physical */
-      let rate=xp*(1-dr)/hp; if(ml>=L+3) rate*=.6; /* orange/red: slower, riskier pulls */ num+=rate*n; cnt+=n; if(!best||rate>best.rate) best={lv,hp,xp,rate,A,uc}; if(uc===8) mg+=n; }
-    if(!cnt) continue; const [cx,cy]=k.split(',').map(Number); out.push({X:(cx+.5)*C,Y:(cy+.5)*C,v:num/cnt*Math.sqrt(Math.min(1,cnt/12)),cnt,best,mg}); }
+      let rate=xp*(1-dr)/hp; if(ml>=L+3) rate*=.6; /* orange/red: slower, riskier pulls */ num+=rate*n; cnt+=n; const m={lv,hp,xp,rate,A,uc,nid,n}; mobs.push(m); if(!best||rate>best.rate) best=m; if(uc===8) mg+=n; }
+    if(!cnt) continue; const [cx,cy]=k.split(',').map(Number); out.push({X:(cx+.5)*C,Y:(cy+.5)*C,v:num/cnt*Math.sqrt(Math.min(1,cnt/12)),cnt,best,mg,mobs:mobs.sort((a,b)=>b.rate-a.rate),all:G[k]}); }
   const vs=out.map(o=>o.v).sort((a,b)=>a-b); const ref=vs[Math.floor(vs.length*.98)]||1; for(const o of out) o.h=Math.min(1,o.v/ref);
   return HEAT={key,cells:out,C}; }
 function drawHeat(){ const HC=heatCells(), sz=HC.C*view.s, H_=H; if(sz<1.2) return; for(const o of HC.cells){ if(o.h<.08) continue; const [x,y]=toS(o); if(x<-sz||y<-sz||x>W+sz||y>H_+sz) continue;
     const h=o.h, r=255, g=Math.round(230-200*h), b=Math.round(60-60*h); ctx.fillStyle=`rgba(${r},${g},${b},${(.12+.5*h).toFixed(2)})`; ctx.fillRect(x-sz/2,y-sz/2,sz+.5,sz+.5); } }
+const UCN={1:'warrior',2:'paladin',8:'mage'};
+function heatPop(c,x,y){ const top=c.mobs[0]?.rate||1, mobN=id=>META.mobl?.n?.[id]||('NPC '+id);
+  const zz=plane2zone(c.X,c.Y); const loc=zz?{z:zz.z,px:+zz.px.toFixed(1),py:+zz.py.toFixed(1)}:null;
+  let html=`<h4>Grinding here · ${Math.round(c.h*100)}% heat</h4><div class="note">${zz?esc(zoneName(zz.z))+' '+zz.px.toFixed(0)+', '+zz.py.toFixed(0)+' · ':''}at level ${SIM.st.level} · best first (XP ÷ time to kill)</div>`;
+  html+=c.mobs.map(m=>`<div class="it"><b>${esc(mobN(m.nid))}</b> <span class="note">lvl ${m.lv%1?Math.floor(m.lv)+'–'+Math.ceil(m.lv):m.lv} ${UCN[m.uc]||''} · ${m.n} here</span><div class="note">${fmt(m.hp)} HP · ${fmt(m.A)} armor · ≈${fmt(m.xp)} XP each · ${Math.round(m.rate/top*100)}%</div><div class="row"><button class="btn sm gold" data-hgrind="${m.nid}">Grind these…</button><a class="btn sm" href="https://www.wowhead.com/classic/npc=${m.nid}" target="_blank" rel="noopener">Wowhead</a></div></div>`).join('');
+  const skipped=c.all.filter(a=>!c.mobs.some(m=>m.nid===a[5])); if(skipped.length) html+=`<div class="note">Not worth it at your level: ${skipped.map(a=>esc(mobN(a[5]))+' ('+a[0]+')').join(', ')}</div>`;
+  showPop({kind:'heat',html},x,y); HEATSEL={c,loc}; }
+let HEATSEL=null;
 function heatAt(x,y){ if(!HEAT) return null; const X=(x-view.tx)/view.s, Y=(y-view.ty)/view.s; const k=Math.floor(X/HEAT.C)+','+Math.floor(Y/HEAT.C); return HEAT.cells.find(o=>Math.floor(o.X/HEAT.C)+','+Math.floor(o.Y/HEAT.C)===k)||null; }
 function hitAt(x,y){ let best=null,bd=1e9; for(const h of hits){ const d=Math.hypot(h.x-x,h.y-y); if(d>h.r+3) continue; const s=d+(HIT_PRI[h.kind]??3)*4; if(s<bd){ bd=s; best=h; } } return best; }
 function dungeonAt(p){ let best='Dungeon',bd=1e12; for(const d of Object.values(META.dungeons)) for(const [z,x0,y0] of d.l){ const t=zp2plane(z,x0,y0); if(!t) continue; const dd=(t.X-p.X)**2+(t.Y-p.Y)**2; if(dd<bd){bd=dd;best=d.n;} } return best; }
@@ -865,7 +873,7 @@ function click(x,y){ if(pathEdit!=null&&pathClick(x,y)) return;
   return click0(x,y); }
 function click0(x,y){
   if(picking){ const X=(x-view.tx)/view.s, Y=(y-view.ty)/view.s; const z=plane2zone(X,Y); if(!z){ toast('That spot is outside every zone'); return; } const cb=picking; stopPick(); cb({z:z.z,px:z.px,py:z.py}); return; }
-  const h=hitAt(x,y); if(!h){ hidePop(); return; }
+  const h=hitAt(x,y); if(!h){ hidePop(); const c=layers.heat?heatAt(x,y):null; if(c&&c.h>=.08) heatPop(c,x,y); return; }
   if(h.kind==='route'){ setCursor(h.step); const under=hits.filter(t=>t.kind!=='route'&&Math.hypot(t.x-x,t.y-y)<=t.r+6).sort((a,b)=>((HIT_PRI[a.kind]??3)-(HIT_PRI[b.kind]??3))||(Math.hypot(a.x-x,a.y-y)-Math.hypot(b.x-x,b.y-y)))[0]; if(under) showPop(under,x,y); return; }
   showPop(h,x,y);
 }
@@ -1208,12 +1216,13 @@ function renderDetail(){
   <div class="row" style="margin-top:10px">${act}<button class="btn" data-show="${qid}">Show on map</button></div></div>`;
 }
 document.addEventListener('click',e=>{
-  const t=e.target.closest('[data-tinnow],[data-cnow],[data-accnow],[data-ride],[data-flynode],[data-fpnode],[data-cobj],[data-accept],[data-complete],[data-turnin],[data-sel],[data-show],[data-q],[data-fp],[data-fly],[data-home],[data-hs],[data-goto]'); if(!t||t.closest('#steps')) return;
+  const t=e.target.closest('[data-hgrind],[data-tinnow],[data-cnow],[data-accnow],[data-ride],[data-flynode],[data-fpnode],[data-cobj],[data-accept],[data-complete],[data-turnin],[data-sel],[data-show],[data-q],[data-fp],[data-fly],[data-home],[data-hs],[data-goto]'); if(!t||t.closest('#steps')) return;
   if(t.tagName==='A') e.preventDefault();
   const d=t.dataset;
   if(d.cnow){ const [q,n]=d.cnow.split(':').map(Number); addStep(n?{t:'complete',q,obj:n,stk:false}:{t:'complete',q,stk:false}); hidePop(); }
   else if(d.cobj){ const [q,n]=d.cobj.split(':').map(Number); addStep({t:'complete',q,obj:n}); hidePop(); }
   else if(d.accept){ addStep({t:'accept',q:+d.accept}); hidePop(); }
+  else if(d.hgrind){ const id=+d.hgrind, m=HEATSEL?.c.mobs.find(x=>x.nid===id); const nm=META.mobl?.n?.[id]||('NPC '+id); hidePop(); openStepDialog('grind',null,{loc:HEATSEL?.loc,mlevel:Math.round(m?.lv||SIM.st.level),note:'Grind '+nm,mobs:[nm]}); }
   else if(d.tinnow){ const k=SIM.st.stkT?.get(+d.tinnow); if(k!=null) stepNow(k,cursor+1); hidePop(); }
   else if(d.accnow){ const k=stickyAccIdx(+d.accnow); if(k>=0) stepNow(k,cursor+1); hidePop(); }
   else if(d.complete){ addStep({t:'complete',q:+d.complete}); hidePop(); }
@@ -1243,7 +1252,7 @@ function showQuestOnMap(qid,soft){
 /* ---------- popups ---------- */
 function hidePop(){ $('.pop')?.remove(); }
 function showPop(h,x,y){
-  hidePop(); const st=SIM.st; const lv=st.level; let html='';
+  hidePop(); const st=SIM.st; const lv=st.level; let html=h.kind==='heat'?h.html:'';
   const locAttr=l=>`data-loc='${esc(JSON.stringify(l))}'`;
   if(h.kind==='quest'){
     html+=`<h4>${esc(h.label)}</h4>`;
@@ -1310,14 +1319,14 @@ $('#results').addEventListener('click',e=>{ const b=e.target.closest('[data-pick
 document.addEventListener('click',e=>{ if(!e.target.closest('.search')) $('#results').hidden=true; });
 
 /* ---------- dialogs ---------- */
-function openStepDialog(kind,editIndex){
+function openStepDialog(kind,editIndex,pre){
   const dlg={grind:'#dlgGrind',travel:'#dlgTravel',custom:'#dlgCustom'}[kind]; const d=$(dlg); const f=d.querySelector('form');
-  const s=editIndex!=null?route.steps[editIndex]:null; let loc=s?.loc||null;
+  const s=editIndex!=null?route.steps[editIndex]:null; let loc=s?.loc||pre?.loc||null; const mobs=s?.mobs||pre?.mobs||null;
   const locEl=d.querySelector('[id$="Loc"]'); const showLoc=()=>locEl.textContent=loc?`${zoneName(loc.z)} ${loc.px}, ${loc.py}`:'No location'; showLoc();
   d._setLoc=l=>{ loc=l; showLoc(); };
   f.reset();
   const lv=SIM.st.level;
-  if(kind==='grind'){ setSeg('#grindMode',s?.mode||'add'); f.amount.value=s?.amount||''; f.src.value=s?.src||'mobs'; f.tlevel.value=s?.level||Math.min(60,lv+1); f.txp.value=s?.xp||0; f.note.value=s?.note||''; f.mlevel.value=lv; f.kills.value=''; updEst(); }
+  if(kind==='grind'){ setSeg('#grindMode',s?.mode||'add'); f.amount.value=s?.amount||''; f.src.value=s?.src||'mobs'; f.tlevel.value=s?.level||Math.min(60,lv+1); f.txp.value=s?.xp||0; f.note.value=s?.note||pre?.note||''; f.mlevel.value=pre?.mlevel||lv; f.kills.value=''; updEst(); }
   if(kind==='travel'){ f.kind.value=s?.kind||'fly'; f.text.value=s?.text||''; fillNodeSel(f,s?.node||(s?resolveNode(s):null)); }
   if(kind==='custom'){ f.name.value=s?.name||''; f.xp.value=s?.xp||''; f.qid.value=s?.qid||''; f.act.value=s?.act||'turnin'; }
   d.querySelector('.gold').textContent=s?'Save step':'Add step';
@@ -1326,7 +1335,7 @@ function openStepDialog(kind,editIndex){
     if(kind==='grind'){ const m=$('#grindMode [aria-pressed="true"]').dataset.m; step=m==='to'?{t:'grind',mode:'to',level:Math.max(1,Math.min(60,+f.tlevel.value||lv+1)),xp:Math.max(0,+f.txp.value||0),note:f.note.value}:{t:'grind',mode:'add',amount:Math.max(0,+f.amount.value||0),src:f.src.value,note:f.note.value}; }
     if(kind==='travel'){ step={t:'travel',kind:f.kind.value,text:f.text.value}; if((step.kind==='fly'||step.kind==='fp')&&f.node.value){ step.node=f.node.value; step.text=taxiShort(step.node); loc=null; } }
     if(kind==='custom') step={t:'custom',name:f.name.value||'Custom quest',xp:+f.xp.value||0,qid:+f.qid.value||null,act:f.act.value};
-    if(loc) step.loc=loc;
+    if(loc) step.loc=loc; if(kind==='grind'&&mobs) step.mobs=mobs;
     if(s){ pushHistory(); route.steps[editIndex]=step; refresh(); } else addStep(step);
   };
   d.showModal();
@@ -1500,7 +1509,7 @@ function buildRXP(){
       lines.push(`    .target ${nm}`); }
     else if(s.t==='complete'&&s.cl?.length&&!Q(s.q)) lines.push(...s.cl);
     else if(s.t==='complete'){ const ol=objLines(s.q,s.obj); if(Q(s.q)?.note&&!s.obj) lines.push(`    >>|cRXP_WARN_${Q(s.q).note}|r`); lines.push(...ol.pre); const obs=objIndexList(s.q).filter(([n])=>!s.obj||n===s.obj); if(obs.length) obs.forEach(([n,t])=>lines.push(s.upto>0&&s.obj===n?`    .complete ${s.q},${n},${s.upto} --${t} (${s.upto})`:`    .complete ${s.q},${n} --${t}`)); else if(!ol.pre.length) lines.push(`    >>Complete ${q.on||q.n}`); ol.mobs.forEach(m=>lines.push(`    .${Q(s.q)?.xk?.some(id=>entName('n',id)===m)?'unitscan':'mob'} ${m}`)); }
-    else if(s.t==='grind'){ const a=r.after; lines.push(`    .xp ${a.level}${a.xp?'+'+a.xp:''} >>Grind to ${a.level<MAXLVL&&a.xp?fmt(a.xp)+' XP into ':''}level ${a.level}${s.note?' ('+s.note+')':''}`); }
+    else if(s.t==='grind'){ const a=r.after; if(s.mobs?.length) lines.push(`    >>Kill |cRXP_ENEMY_${s.mobs.join('|r and |cRXP_ENEMY_')}|r`); lines.push(`    .xp ${a.level}${a.xp?'+'+a.xp:''} >>Grind to ${a.level<MAXLVL&&a.xp?fmt(a.xp)+' XP into ':''}level ${a.level}${s.note?' ('+s.note+')':''}`); for(const m of s.mobs||[]) lines.push(`    .mob ${m}`); }
     else if(s.t==='custom'){ const verb={turnin:'Turn in',accept:'Accept',complete:'Complete'}[s.act||'turnin']; if(s.qid&&s.act!=='complete') lines.push(`    .${s.act==='accept'?'accept':'turnin'} ${s.qid} >>${verb} ${s.name}`); else lines.push(`    >>${verb} ${s.name}${s.xp&&s.act==='turnin'?' (+'+s.xp+' XP)':''}`); }
     else if(s.t==='party') lines.push(s.size>1?`    >>Group up with ${s.size-1} other player${s.size>2?'s':''}`:'    >>Continue solo');
     else if(s.t==='travel'&&s.kind==='fly'&&r.dest){ const t=taxiShort(r.dest); lines.push(`    .fly ${t} >>Fly to ${t}`); if(r.dep?.label&&r.dep.node) lines.push(`    .target ${r.dep.label}`); }
