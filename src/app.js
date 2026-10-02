@@ -335,7 +335,8 @@ function simulate(){
     { const lt=r.leg?.type; const until=+route.char.ypkUntil||40; const tgt=lt==='hs'?null:(lt==='fly'||lt==='ride'||lt==='death')?r.dep:r.pt;
       let pj=i-1; while(pj>=0&&res[pj]?.inactive) pj--; const afterGrind=pj>=0&&route.steps[pj].t==='grind'; /* you've just been grinding: no extra travel kills on the next leg */
       const own=s.ypk!=null&&s.ypk!==''; const yp=own?+s.ypk:+route.char.ypk; if(own&&!(yp>0)) r.walkOff=true;
-      if((own||!afterGrind)&&!r.inactive&&tgt&&lastPt&&!isSticky(s)&&yp>0&&st.level<until&&st.level<MAXLVL){ const w=travelKills(lastPt,tgt,st,yp); if(w){ r.walk=w; r.gained+=w.xp; addXP(st,w.xp); r.after={level:st.level,xp:st.xp}; } } }
+      const killQ=s.t==='complete'&&(r.path&&r.path.length>1||isKillObjStep(s)); if(killQ&&!own) r.walkKill=true; /* a kill/loot objective: the kills are the quest's own, not 'on the way' */
+      if((own||!afterGrind&&!killQ)&&!r.inactive&&tgt&&lastPt&&!isSticky(s)&&yp>0&&st.level<until&&st.level<MAXLVL){ const w=travelKills(lastPt,tgt,st,yp); if(w){ r.walk=w; r.gained+=w.xp; addXP(st,w.xp); r.after={level:st.level,xp:st.xp}; } } }
     if(!r.inactive){ const lt=r.leg?.type; const pts=[]; if(lastPt&&!isSticky(s)){ if(lt==='fly'||lt==='ride'||lt==='death'){ if(r.dep) pts.push(lastPt,r.dep,null); } else if(lt!=='hs'&&r.pt) pts.push(lastPt,r.pt); }
       if(r.path&&r.path.length>1&&!isSticky(s)) pts.push(null,...r.path,r.path[0]); /* sticky / done-along-the-way steps don't walk their loop */ if(r.pt&&(lt==='fly'||lt==='ride'||lt==='hs'||lt==='death')) pts.push(null,r.pt); exploreAlong(pts,st,r); }
     r.from=lastPt; r.stk=isSticky(s)&&!['hs','fly','ride','death'].includes(r.leg?.type); /* a hearth / flight still moves you even when the guide shows it as #completewith */ if(r.pt&&!r.stk) lastPt=r.pt;
@@ -443,6 +444,7 @@ function exploreAlong(pts,st,r){ if(route.char.explore===false||!META.expl) retu
   const shown=found.filter(f=>f.xp||!/^Area \d+$/.test(f.n)); if(shown.length){ const xp=found.reduce((t,f)=>t+f.xp,0); r.expl=shown; r.gained+=xp; r.after={level:st.level,xp:st.xp}; } }
 function mobLevelAt(X,Y){ const M=META.mobl; if(!M) return null; const c=M.c, cx=Math.floor(X/c), cy=Math.floor(Y/c); let sum=0,n=0;
   for(let dx=-1;dx<=1;dx++) for(let dy=-1;dy<=1;dy++){ const v=M.cells[(cx+dx)+','+(cy+dy)]; if(v){ const w=v[1]*(dx||dy?0.5:1); sum+=v[0]*w; n+=w; } } return n?sum/n:null; }
+function isKillObjStep(s){ if(!s.q||!Q(s.q)) return false; const ob=objectives(s.q).filter(o=>!o.pre&&(!s.obj||o.rx===s.obj)); return ob.length>0&&ob.some(o=>o.kind==='kill'||(o.kind==='loot'&&o.pts.some(p=>p.ent?.[0]==='n'))); }
 function travelKills(a,b,st,yp){ const ypk=+(yp??route.char.ypk)||0; if(!ypk||!a||!b) return null; const d=Math.hypot(b.X-a.X,b.Y-a.Y); if(d<30||d>6000) return null;
   const walk=d*1.2, n=Math.max(1,Math.ceil(d/60)); let xp=0,kills=0,lvs=0,m=0;
   for(let k=0;k<n;k++){ const t=(k+0.5)/n; const lv=mobLevelAt(a.X+(b.X-a.X)*t,a.Y+(b.Y-a.Y)*t); if(lv==null) continue; const kk=walk/n/ypk; const per=mobXP(st.level,Math.round(lv),false,st.party||1); kills+=kk; xp+=kk*per; lvs+=lv; m++; }
