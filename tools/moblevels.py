@@ -8,7 +8,7 @@ def plane(z,px,py):
     if not zz or zz.get('city') is None: return None
     L,R,T,B=zz['b']; off=OFF[str(zz['m'])] if str(zz['m']) in OFF else OFF[zz['m']]
     wy=L-px/100*(L-R); wx=T-py/100*(T-B); return (-wy+off[0], -wx+off[1])
-C=150; acc={}; n=0
+C=150; acc={}; n=0; grp={}  # grp: per cell, per mob type: [level, health, spawns] for the grinding heatmap
 for nid,f in rows(Q+'foreverNpcDB.lua'):
     if len(f)<15: continue
     fr=f[12].strip(); fl=f[14].strip()
@@ -18,12 +18,16 @@ for nid,f in rows(Q+'foreverNpcDB.lua'):
     except ValueError: continue
     if rank in (1,2,3) or hi<1: continue           # elites / rare elites / bosses
     lv=(lo+hi)/2
+    try: hp=(int(f[1])+int(f[2]))/2
+    except ValueError: hp=0
     for z,pts in re.findall(r'\[(\d+)\]=\{((?:\{[-\d.]+,[-\d.]+\},?)*)\}', f[6] or ''):
         for x,y in re.findall(r'\{([-\d.]+),([-\d.]+)\}', pts):
             if float(x)<0: continue
             p=plane(int(z),float(x),float(y))
             if not p: continue
             k=f"{math.floor(p[0]/C)},{math.floor(p[1]/C)}"; a=acc.setdefault(k,[0,0]); a[0]+=lv; a[1]+=1; n+=1
+            if hp>0: g=grp.setdefault(k,{}).setdefault(nid,[lv,hp,0]); g[2]+=1
 cells={k:[round(v[0]/v[1],1),v[1]] for k,v in acc.items()}
-json.dump({'c':C,'cells':cells},open('mobl.json','w'),separators=(',',':'))
+G={k:[[round(v[0],1),int(v[1]),v[2]] for v in d.values()] for k,d in grp.items()}
+json.dump({'c':C,'cells':cells,'g':G},open('mobl.json','w'),separators=(',',':'))
 print('spawns',n,'cells',len(cells))

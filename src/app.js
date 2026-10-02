@@ -533,7 +533,7 @@ const mctx=document.createElement('canvas').getContext('2d');
 let W=0,H=0,DPR=1;
 const view={s:0.03,tx:0,ty:0};
 const zonePaths=new Map(); let landPaths=[];
-const layers={vendors:true,avail:true,locked:true,trivial:false,objectives:true,route:true,fp:true,towns:true,dungeons:true,relief:true};
+const layers={vendors:true,avail:true,locked:true,trivial:false,objectives:true,route:true,fp:true,towns:true,dungeons:true,relief:true,heat:false};
 const reliefImgs=[];
 function loadRelief(){ for(const [m,r] of Object.entries(META.relief||{})){ const o={...r,m,ri:new Image(),wi:new Image(),rs:new Set(r.tile?.r||[]),ws:new Set(r.tile?.w||[])}; o.ri.onload=o.wi.onload=requestDraw; o.ri.src='data:image/webp;base64,'+r.rel; o.wi.src='data:image/webp;base64,'+r.wat; reliefImgs.push(o);} }
 const _cv={}; function offCtx(n){ let c=_cv[n]; if(!c){ c=_cv[n]=document.createElement('canvas').getContext('2d'); } if(c.canvas.width!==canvas.width||c.canvas.height!==canvas.height){ c.canvas.width=canvas.width; c.canvas.height=canvas.height; } return c; }
@@ -734,6 +734,7 @@ function drawQuests(){
   const s=view.s; const st=SIM.st; const lv=st.level; const small=s<0.02;
   // objectives for quests in log
   const dgAgg=new Map();
+  if(layers.heat) drawHeat();
   if(layers.objectives){
     for(const [qid,v] of st.log){ if(v.done&&!v.stickyDone) continue; const col=qColor(qid); const sel=selQuest===qid;
       for(const ob of objectives(qid)){ const sd=!!(ob.rx&&v.stk?.has(ob.rx)); for(const p of (v.objs&&ob.rx&&v.objs.has(ob.rx)&&!sd)||(v.done&&!ob.rx&&!v.stk?.size)?[]:ob.pts){ if(p.dg){ const k=p.X.toFixed(0)+','+p.Y.toFixed(0); if(!dgAgg.has(k)) dgAgg.set(k,{p,q:new Set()}); dgAgg.get(k).q.add(qid); continue; } const [x,y]=toS(p); if(x<-10||x>W+10||y<-10||y>H+10) continue;
@@ -830,19 +831,33 @@ canvas.addEventListener('pointerleave',()=>{$('#tip').style.display='none';});
 canvas.addEventListener('wheel',e=>{ e.preventDefault(); zoomAt(Math.exp(-e.deltaY*(e.deltaMode?0.05:0.0016)),e.offsetX,e.offsetY); },{passive:false});
 canvas.addEventListener('keydown',e=>{ const k=e.key; if(k==='+'||k==='=') zoomAt(1.3,W/2,H/2); else if(k==='-') zoomAt(1/1.3,W/2,H/2); else if(k.startsWith('Arrow')){ const d=60; if(k==='ArrowLeft')view.tx+=d; if(k==='ArrowRight')view.tx-=d; if(k==='ArrowUp')view.ty+=d; if(k==='ArrowDown')view.ty-=d; requestDraw(); } else return; e.preventDefault(); });
 const HIT_PRI={fq:0,dgobj:0,quest:0,obj:1,route:1,ghost:2,fp:3,dungeon:3,town:4};
+/* ---------- grinding heatmap: XP per time-to-kill of the hostile non-elite mobs in each 150-yd cell ---------- */
+let HEAT=null;
+function heatCells(){ const L=SIM.st.level, party=Math.max(1,SIM.st.party||1); const key=L+':'+party; if(HEAT&&HEAT.key===key) return HEAT; const G=META.mobl?.g||{}, C=+(META.mobl?.c||150); const out=[];
+  for(const k in G){ let num=0,cnt=0,best=null; for(const [lv,hp,n] of G[k]){ const ml=Math.round(lv); if(ml>L+5||!hp) continue; const xp=mobXP(L,ml,false,party); if(!xp) continue;
+      const A=45*ml, dr=Math.min(.75,A/(A+400+85*L)); /* armor estimated from mob level (Questie has no armor); hunter damage is physical */
+      let rate=xp*(1-dr)/hp; if(ml>=L+3) rate*=.6; /* orange/red: slower, riskier pulls */ num+=rate*n; cnt+=n; if(!best||rate>best.rate) best={lv,hp,xp,rate}; }
+    if(!cnt) continue; const [cx,cy]=k.split(',').map(Number); out.push({X:(cx+.5)*C,Y:(cy+.5)*C,v:num/cnt*Math.sqrt(Math.min(1,cnt/12)),cnt,best}); }
+  const vs=out.map(o=>o.v).sort((a,b)=>a-b); const ref=vs[Math.floor(vs.length*.98)]||1; for(const o of out) o.h=Math.min(1,o.v/ref);
+  return HEAT={key,cells:out,C}; }
+function drawHeat(){ const HC=heatCells(), sz=HC.C*view.s, H_=H; if(sz<1.2) return; for(const o of HC.cells){ if(o.h<.08) continue; const [x,y]=toS(o); if(x<-sz||y<-sz||x>W+sz||y>H_+sz) continue;
+    const h=o.h, r=255, g=Math.round(230-200*h), b=Math.round(60-60*h); ctx.fillStyle=`rgba(${r},${g},${b},${(.12+.5*h).toFixed(2)})`; ctx.fillRect(x-sz/2,y-sz/2,sz+.5,sz+.5); } }
+function heatAt(x,y){ if(!HEAT) return null; const X=(x-view.tx)/view.s, Y=(y-view.ty)/view.s; const k=Math.floor(X/HEAT.C)+','+Math.floor(Y/HEAT.C); return HEAT.cells.find(o=>Math.floor(o.X/HEAT.C)+','+Math.floor(o.Y/HEAT.C)===k)||null; }
 function hitAt(x,y){ let best=null,bd=1e9; for(const h of hits){ const d=Math.hypot(h.x-x,h.y-y); if(d>h.r+3) continue; const s=d+(HIT_PRI[h.kind]??3)*4; if(s<bd){ bd=s; best=h; } } return best; }
 function dungeonAt(p){ let best='Dungeon',bd=1e12; for(const d of Object.values(META.dungeons)) for(const [z,x0,y0] of d.l){ const t=zp2plane(z,x0,y0); if(!t) continue; const dd=(t.X-p.X)**2+(t.Y-p.Y)**2; if(dd<bd){bd=dd;best=d.n;} } return best; }
 function hover(x,y){
   const tip=$('#tip'); const h=picking?null:hitAt(x,y);
-  if(!h){ tip.style.display='none'; canvas.style.cursor=picking?'crosshair':''; return; }
-  canvas.style.cursor='pointer';
   let html='';
+  if(!h){ const c=layers.heat&&!picking?heatAt(x,y):null; if(!c||c.h<.08){ tip.style.display='none'; canvas.style.cursor=picking?'crosshair':''; return; }
+    canvas.style.cursor=''; html=`<b>Grinding: ${Math.round(c.h*100)}% heat</b><div>${c.cnt} mob spawns here · best: level ${c.best.lv} (${fmt(c.best.hp)} HP) ≈${fmt(c.best.xp)} XP each</div><div style="opacity:.75">At your level ${SIM.st.level}. XP ÷ kill time, from mob HP and level-estimated armor.</div>`; }
+  else { canvas.style.cursor='pointer'; }
+  if(h){
   if(h.kind==='quest'){ html=`<b>${esc(h.label)}</b>`; for(const q of h.turn) html+=`<div>? ${esc(Q(q).n)}</div>`; for(const q of h.avail) html+=`<div>! [${Q(q).l}] ${esc(Q(q).n)}${isDungeonQuest(q)?' <span style="color:#ff9a3c">(dungeon)</span>':''}</div>`; for(const q of h.sel||[]) html+=`<div>[${Q(q).l}] ${esc(Q(q).n)} (not available)</div>`; for(const a of h.locked||[]) html+=`<div>🔒 [${Q(a.qid).l}] ${esc(Q(a.qid).n)} <span style="opacity:.75">needs ${esc(a.roots.map(r=>Q(r).n).join(', '))}</span></div>`; }
   else if(h.kind==='obj') html=`<b>${esc(Q(h.qids[0]).n)}</b><div>${esc(h.obText)}</div><div style="opacity:.75">${esc(h.label||'')}</div>`;
   else if(h.kind==='dgobj') html=`<b>${esc(h.label)}</b><div>Objectives inside for:</div>${h.qids.map(q=>`<div>· ${esc(Q(q).n)}</div>`).join('')}`;
   else if(h.kind==='ghost'){ const g=G(h.g); const r=GH.get(h.g).res[h.i]; html=`<b>${esc(g.name)} · step ${h.i+1}</b><div>${esc(rxpPlain(ghostText(g.steps[h.i])))}</div><div style="opacity:.8">${esc(STLBL[r.status]||'')}${r.why?': '+esc(r.why):''}</div>`; }
   else if(h.kind==='route') html=`Step ${h.step+1}: ${esc(rxpPlain(stepText(route.steps[h.step]).t))}`;
-  else html=`<b>${esc(h.label)}</b>`;
+  else html=`<b>${esc(h.label)}</b>`; }
   tip.innerHTML=html; tip.style.display='block';
   const tw=tip.offsetWidth; tip.style.left=Math.min(W-tw-8,x+14)+'px'; tip.style.top=(y+14)+'px';
 }
