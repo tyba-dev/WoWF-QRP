@@ -834,10 +834,10 @@ const HIT_PRI={fq:0,dgobj:0,quest:0,obj:1,route:1,ghost:2,fp:3,dungeon:3,town:4}
 /* ---------- grinding heatmap: XP per time-to-kill of the hostile non-elite mobs in each 150-yd cell ---------- */
 let HEAT=null;
 function heatCells(){ const L=SIM.st.level, party=Math.max(1,SIM.st.party||1); const key=L+':'+party; if(HEAT&&HEAT.key===key) return HEAT; const G=META.mobl?.g||{}, C=+(META.mobl?.c||150); const out=[];
-  for(const k in G){ let num=0,cnt=0,best=null; for(const [lv,hp,n] of G[k]){ const ml=Math.round(lv); if(ml>L+5||!hp) continue; const xp=mobXP(L,ml,false,party); if(!xp) continue;
-      const A=45*ml, dr=Math.min(.75,A/(A+400+85*L)); /* armor estimated from mob level (Questie has no armor); hunter damage is physical */
-      let rate=xp*(1-dr)/hp; if(ml>=L+3) rate*=.6; /* orange/red: slower, riskier pulls */ num+=rate*n; cnt+=n; if(!best||rate>best.rate) best={lv,hp,xp,rate}; }
-    if(!cnt) continue; const [cx,cy]=k.split(',').map(Number); out.push({X:(cx+.5)*C,Y:(cy+.5)*C,v:num/cnt*Math.sqrt(Math.min(1,cnt/12)),cnt,best}); }
+  for(const k in G){ let num=0,cnt=0,best=null,mg=0; for(const [lv,hp,n,arm,uc] of G[k]){ const ml=Math.round(lv); if(ml>L+5||!hp) continue; const xp=mobXP(L,ml,false,party); if(!xp) continue;
+      const A=arm>=0?arm:45*ml, dr=Math.min(.75,A/(A+400+85*L)); /* armor from CMaNGOS classic-db (else estimated from level); hunter damage is physical */
+      let rate=xp*(1-dr)/hp; if(ml>=L+3) rate*=.6; /* orange/red: slower, riskier pulls */ num+=rate*n; cnt+=n; if(!best||rate>best.rate) best={lv,hp,xp,rate,A,uc}; if(uc===8) mg+=n; }
+    if(!cnt) continue; const [cx,cy]=k.split(',').map(Number); out.push({X:(cx+.5)*C,Y:(cy+.5)*C,v:num/cnt*Math.sqrt(Math.min(1,cnt/12)),cnt,best,mg}); }
   const vs=out.map(o=>o.v).sort((a,b)=>a-b); const ref=vs[Math.floor(vs.length*.98)]||1; for(const o of out) o.h=Math.min(1,o.v/ref);
   return HEAT={key,cells:out,C}; }
 function drawHeat(){ const HC=heatCells(), sz=HC.C*view.s, H_=H; if(sz<1.2) return; for(const o of HC.cells){ if(o.h<.08) continue; const [x,y]=toS(o); if(x<-sz||y<-sz||x>W+sz||y>H_+sz) continue;
@@ -849,7 +849,7 @@ function hover(x,y){
   const tip=$('#tip'); const h=picking?null:hitAt(x,y);
   let html='';
   if(!h){ const c=layers.heat&&!picking?heatAt(x,y):null; if(!c||c.h<.08){ tip.style.display='none'; canvas.style.cursor=picking?'crosshair':''; return; }
-    canvas.style.cursor=''; html=`<b>Grinding: ${Math.round(c.h*100)}% heat</b><div>${c.cnt} mob spawns here · best: level ${c.best.lv} (${fmt(c.best.hp)} HP) ≈${fmt(c.best.xp)} XP each</div><div style="opacity:.75">At your level ${SIM.st.level}. XP ÷ kill time, from mob HP and level-estimated armor.</div>`; }
+    canvas.style.cursor=''; html=`<b>Grinding: ${Math.round(c.h*100)}% heat</b><div>${c.cnt} mob spawns here${c.mg?` (${c.mg} caster/mage-type)`:''}</div><div>Best: level ${c.best.lv} ${({1:'warrior-type',2:'paladin-type',8:'mage-type'})[c.best.uc]||''} · ${fmt(c.best.hp)} HP · ${fmt(c.best.A)} armor · ≈${fmt(c.best.xp)} XP each</div><div style="opacity:.75">At your level ${SIM.st.level}. XP ÷ time to kill (HP and armor vs physical damage). Mob stats: CMaNGOS classic-db.</div>`; }
   else { canvas.style.cursor='pointer'; }
   if(h){
   if(h.kind==='quest'){ html=`<b>${esc(h.label)}</b>`; for(const q of h.turn) html+=`<div>? ${esc(Q(q).n)}</div>`; for(const q of h.avail) html+=`<div>! [${Q(q).l}] ${esc(Q(q).n)}${isDungeonQuest(q)?' <span style="color:#ff9a3c">(dungeon)</span>':''}</div>`; for(const q of h.sel||[]) html+=`<div>[${Q(q).l}] ${esc(Q(q).n)} (not available)</div>`; for(const a of h.locked||[]) html+=`<div>🔒 [${Q(a.qid).l}] ${esc(Q(a.qid).n)} <span style="opacity:.75">needs ${esc(a.roots.map(r=>Q(r).n).join(', '))}</span></div>`; }
