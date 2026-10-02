@@ -18,14 +18,15 @@ def rows(vals):
         elif c==',' and depth==1: row.append(cur); cur=''
         elif depth==1: cur+=c
         i+=1
-with gzip.open(src,'rt',encoding='utf-8',errors='replace') as f:
-    sql=f.read()
-m=re.search(r'CREATE TABLE `creature_template` \((.*?)\n\)',sql,re.S)
-cols=[c for c in re.findall(r'^\s*`(\w+)`',m.group(1),re.M)]
-ix={c:i for i,c in enumerate(cols)}
-for im in re.finditer(r'INSERT INTO `creature_template` VALUES (.*?);\n',sql,re.S):
-    for r in rows(im.group(1)):
-        try: out[int(r[ix['Entry']])]=[int(r[ix['UnitClass']]),int(r[ix['Armor']])]
-        except (ValueError,IndexError): pass
-json.dump(out,open('npcstats.json','w'),separators=(',',':'))
-import collections; print(len(out),collections.Counter(v[0] for v in out.values()))
+if __name__=='__main__':
+  with gzip.open(src,'rt',encoding='utf-8',errors='replace') as f:
+      sql=f.read()
+  m=re.search(r'CREATE TABLE `creature_template` \((.*?)\n\)',sql,re.S)
+  cols=[c for c in re.findall(r'^\s*`(\w+)`',m.group(1),re.M)]
+  ix={c:i for i,c in enumerate(cols)}
+  for im in re.finditer(r'INSERT INTO `creature_template` VALUES (.*?);\n',sql,re.S):
+      for r in rows(im.group(1)):
+          try: out[int(r[ix['Entry']])]=[int(r[ix['UnitClass']]),int(r[ix['Armor']])]
+          except (ValueError,IndexError): pass
+  json.dump(out,open('npcstats.json','w'),separators=(',',':'))
+  import collections; print(len(out),collections.Counter(v[0] for v in out.values()))
