@@ -157,7 +157,7 @@ function questXP(qid,level){
   if(xp<=100) xp=5*Math.floor((xp+2)/5); else if(xp<=500) xp=10*Math.floor((xp+5)/10); else if(xp<=1000) xp=25*Math.floor((xp+12)/25); else xp=50*Math.floor((xp+25)/50);
   return Math.floor(xp);
 }
-function dqMult(){ const m=+route?.char?.dqmult; return m>0?m:3.5; }
+function dqMult(){ const m=+route?.char?.dqmult; return m>0?m:2.5; }
 function addXP(st,amt){
   st.xp+=amt;
   while(st.level<MAXLVL && st.xp>=XP_TABLE[st.level]){ st.xp-=XP_TABLE[st.level]; st.level++; }
@@ -250,7 +250,7 @@ function reqFail(s,st){ if(!s.reqs) return '';
       case 'isquestnotcomplete': if(comp) return nm(ids)+' already complete'; break;
       case 'isquestavailable': if(ids.every(id=>st.turned.has(id)||st.log.has(id))) return nm(ids)+' no longer available'; break; } }
   return ''; }
-function migrateRoute(r){ r.guides=r.guides||[];
+function migrateRoute(r){ if(r.char&&+r.char.dqmult===3.5&&!r.char.dq25){ r.char.dqmult=2.5; } if(r.char) r.char.dq25=1; /* Forever nerfed dungeon quest XP from ×3.5 to ~×2.5 */ r.guides=r.guides||[];
   const TM=META.taxiMig||{}; if(r.char&&Array.isArray(r.char.fps)) r.char.fps=r.char.fps.map(x=>META.taxi.nodes[x]?x:(TM[x]||x));
   for(const st of r.steps||[]) if(st.node&&!META.taxi.nodes[st.node]&&TM[st.node]) st.node=TM[st.node];
   if((r.notesMig||0)<2){ r.notesMig=2; for(const g of r.guides){ g.includeNotes=true; g.stopAtBlocked=false; } }
@@ -1369,7 +1369,7 @@ $('#undoBtn').addEventListener('click',undo);
 document.addEventListener('keydown',e=>{ if((e.ctrlKey||e.metaKey)&&e.key==='z'&&!e.target.closest('input,textarea')){ e.preventDefault(); undo(); } if(e.key==='Escape') hidePop(); });
 
 function fillRaces(f){ const fac=f.faction.value; f.race.innerHTML=Object.entries(RACES).filter(([n,[b,fa]])=>!fa||fa===fac).map(([n])=>`<option>${n}</option>`).join(''); }
-function openChar(){ const f=$('#charForm'); const c=route.char; f.name.value=route.name; f.faction.value=c.faction; fillRaces(f); f.race.value=c.race; f.cls.innerHTML=Object.keys(CLASSES).map(n=>`<option>${n}</option>`).join(''); f.cls.value=c.cls; f.level.value=c.level; f.xp.value=c.xp; f.party.value=c.party; f.rep.checked=!!c.rep; f.prof.checked=!!c.prof; f.event.checked=!!c.event; $('#dgSettings').innerHTML=dungeonChecks('dgset'); f.xprate.value=c.xprate||1; f.dqmult.value=c.dqmult||3.5; fillFpSettings(c); f.killxp.checked=c.killxp!==false; f.droprate.value=c.droprate||60; f.defcount.value=c.defcount||8; f.dgdiv.value=c.dgdiv||3.5; f.ypk.value=c.ypk||''; f.explore.checked=c.explore!==false; f.ypkUntil.value=c.ypkUntil||40; f.calStep.value=cursor>=0?cursor+1:''; f.calLvl.value=''; f.calXp.value=''; $('#calMsg').textContent=''; $('#dlgChar').showModal(); }
+function openChar(){ const f=$('#charForm'); const c=route.char; f.name.value=route.name; f.faction.value=c.faction; fillRaces(f); f.race.value=c.race; f.cls.innerHTML=Object.keys(CLASSES).map(n=>`<option>${n}</option>`).join(''); f.cls.value=c.cls; f.level.value=c.level; f.xp.value=c.xp; f.party.value=c.party; f.rep.checked=!!c.rep; f.prof.checked=!!c.prof; f.event.checked=!!c.event; $('#dgSettings').innerHTML=dungeonChecks('dgset'); f.xprate.value=c.xprate||1; f.dqmult.value=c.dqmult||2.5; fillFpSettings(c); f.killxp.checked=c.killxp!==false; f.droprate.value=c.droprate||60; f.defcount.value=c.defcount||8; f.dgdiv.value=c.dgdiv||3.5; f.ypk.value=c.ypk||''; f.explore.checked=c.explore!==false; f.ypkUntil.value=c.ypkUntil||40; f.calStep.value=cursor>=0?cursor+1:''; f.calLvl.value=''; f.calXp.value=''; $('#calMsg').textContent=''; $('#dlgChar').showModal(); }
 $('#charForm').faction.addEventListener('change',e=>fillRaces(e.target.form));
 $('#calBtn').addEventListener('click',()=>{ const f=$('#charForm'); const i=(+f.calStep.value||0)-1, L=+f.calLvl.value, X=+f.calXp.value||0; if(!(i>=0&&i<route.steps.length)||!(L>=1)) { $('#calMsg').textContent='Enter a step number, and your real level and XP at that step.'; return; }
   const party=route.char.party; route.char.party=Math.max(1,+f.party.value||1); route.char.ypkUntil=Math.max(2,+f.ypkUntil.value||40); const r=calibrateYpk(i,L,X); route.char.party=party;
@@ -1377,7 +1377,7 @@ $('#calBtn').addEventListener('click',()=>{ const f=$('#charForm'); const i=(+f.
 $('#dlgChar').addEventListener('close',()=>{ if($('#dlgChar').returnValue!=='ok') return; const f=$('#charForm');
   route.name=f.name.value||'Route'; Object.assign(route.char,{faction:f.faction.value,race:f.race.value,cls:f.cls.value,level:Math.max(1,Math.min(60,+f.level.value||1)),xp:Math.max(0,+f.xp.value||0),party:Math.max(1,Math.min(5,+f.party.value||1)),rep:f.rep.checked,prof:f.prof.checked,event:f.event.checked});
   const prev={...(route.char.dungeons||{})}; const next={}; $$('#dgSettings [data-dgset]').forEach(cb=>{ if(cb.checked) next[cb.dataset.dgset]=true; });
-  route.char.xprate=Math.max(0.5,Math.min(5,+f.xprate.value||1)); pruneXpRate(); route.char.fps=$$('#fpSettings [data-fpk]').filter(x=>x.checked).map(x=>x.dataset.fpk); route.char.allfps=$('#fpAll').checked; route.char.dqmult=Math.max(0.1,Math.min(10,+f.dqmult.value||3.5)); route.char.killxp=f.killxp.checked; route.char.droprate=Math.max(5,Math.min(100,+f.droprate.value||60)); route.char.defcount=Math.max(1,+f.defcount.value||8); route.char.dgdiv=Math.max(0.1,+f.dgdiv.value||3.5); route.char.ypk=Math.max(0,+f.ypk.value||0); route.char.explore=f.explore.checked; route.char.ypkUntil=Math.max(2,Math.min(60,+f.ypkUntil.value||40));
+  route.char.xprate=Math.max(0.5,Math.min(5,+f.xprate.value||1)); pruneXpRate(); route.char.fps=$$('#fpSettings [data-fpk]').filter(x=>x.checked).map(x=>x.dataset.fpk); route.char.allfps=$('#fpAll').checked; route.char.dqmult=Math.max(0.1,Math.min(10,+f.dqmult.value||2.5)); route.char.killxp=f.killxp.checked; route.char.droprate=Math.max(5,Math.min(100,+f.droprate.value||60)); route.char.defcount=Math.max(1,+f.defcount.value||8); route.char.dgdiv=Math.max(0.1,+f.dgdiv.value||3.5); route.char.ypk=Math.max(0,+f.ypk.value||0); route.char.explore=f.explore.checked; route.char.ypkUntil=Math.max(2,Math.min(60,+f.ypkUntil.value||40));
   route.char.dungeons=next; const turnedOn=Object.keys(next).some(t=>!prev[t]); if(turnedOn) insertNewlyEnabled(); refresh(); });
 $('#charBtn').addEventListener('click',openChar); $('#whoBtn').addEventListener('click',openChar);
 $('#stepFind').addEventListener('input',()=>{ findPos=-1; runFind(); if(findHits.length) findGo(1); });
