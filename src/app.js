@@ -335,8 +335,8 @@ function simulate(){
     { const lt=r.leg?.type; const until=+route.char.ypkUntil||40; const tgt=lt==='hs'?null:(lt==='fly'||lt==='ride'||lt==='death')?r.dep:r.pt;
       let pj=i-1; while(pj>=0&&res[pj]?.inactive) pj--; const afterGrind=pj>=0&&route.steps[pj].t==='grind'; /* you've just been grinding: no extra travel kills on the next leg */
       const own=s.ypk!=null&&s.ypk!==''; const yp=own?+s.ypk:+route.char.ypk; if(own&&!(yp>0)) r.walkOff=true;
-      const killQ=s.t==='complete'&&(r.path&&r.path.length>1||isKillObjStep(s)); if(killQ&&!own) r.walkKill=true; /* a kill/loot objective: the kills are the quest's own, not 'on the way' */
-      if((own||!afterGrind&&!killQ)&&!r.inactive&&tgt&&lastPt&&!isSticky(s)&&yp>0&&st.level<until&&st.level<MAXLVL){ const w=travelKills(lastPt,tgt,st,yp); if(w){ r.walk=w; r.gained+=w.xp; addXP(st,w.xp); r.after={level:st.level,xp:st.xp}; } } }
+      const toObj=s.t==='complete'; /* travel kills only on the way to an objective: not on accept / turn-in / travel legs, never on the objective's own loop */
+      if((own||!afterGrind&&toObj)&&!r.inactive&&tgt&&lastPt&&!isSticky(s)&&yp>0&&st.level<until&&st.level<MAXLVL){ const w=travelKills(lastPt,tgt,st,yp); if(w){ r.walk=w; r.gained+=w.xp; addXP(st,w.xp); r.after={level:st.level,xp:st.xp}; } } }
     if(!r.inactive){ const lt=r.leg?.type; const pts=[]; if(lastPt&&!isSticky(s)){ if(lt==='fly'||lt==='ride'||lt==='death'){ if(r.dep) pts.push(lastPt,r.dep,null); } else if(lt!=='hs'&&r.pt) pts.push(lastPt,r.pt); }
       if(r.path&&r.path.length>1&&!isSticky(s)) pts.push(null,...r.path,r.path[0]); /* sticky / done-along-the-way steps don't walk their loop */ if(r.pt&&(lt==='fly'||lt==='ride'||lt==='hs'||lt==='death')) pts.push(null,r.pt); exploreAlong(pts,st,r); }
     r.from=lastPt; r.stk=isSticky(s)&&!['hs','fly','ride','death'].includes(r.leg?.type); /* a hearth / flight still moves you even when the guide shows it as #completewith */ if(r.pt&&!r.stk) lastPt=r.pt;
