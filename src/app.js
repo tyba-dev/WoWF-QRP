@@ -1447,6 +1447,7 @@ $('#routeSel').addEventListener('change',e=>{ route=store.routes.find(r=>r.id===
 
 /* ---------- export ---------- */
 function rxpZone(z){ return zoneName(z); }
+const STEP_DONE_RE=/^\s*(\+|\.(goto|accept|turnin|complete|collect|xp|hs|home|fly|fp|trainer|vendor|deathskip|zone|subzone|reputation|skill|abandon|money|itemcount|buy|cast|isQuestComplete|isOnQuest)\b)/i;
 function gotoLine(p){ if(!p||p.z==null) return null; const Z=META.zones[p.z]; if(Z&&Z.ui&&Z.b){ const [L,R,T,B]=Z.b; const a=L-(+p.px)/100*(L-R), b=T-(+p.py)/100*(T-B); return `    .goto ${Z.ui}/${Z.m},${a.toFixed(2)},${b.toFixed(2)}`; } return `    .goto ${rxpZone(p.z)},${(+p.px).toFixed(1)},${(+p.py).toFixed(1)}`; }
 function talkLines(p,tgt){ const ent=p?.ent||''; const name=tgt||(ent?entName(ent[0],+ent.slice(1)):null); if(!name) return {pre:[],post:[]}; if(!tgt&&ent[0]==='o') return {pre:[`    >>Click the |cRXP_PICK_${name}|r`],post:[]};
   return {pre:[`    >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_${name}|r`],post:[`    .target ${name}`]}; }
@@ -1536,6 +1537,9 @@ function buildRXP(){
     else if(s.t==='travel'&&s.kind==='hs'){ lines.push(`    .hs >>Hearth to ${r.pt?.label||rxpPlain(s.text||'')}`); lines.push('    .use 6948'); }
     else if(s.t==='travel'){ const t=s.text||''; lines.push(({fly:`    .fly ${t} >>Fly to ${t}`,fp:`    .fp ${t} >>Get the ${t} flight path`,home:`    .home >>Set your Hearthstone to ${t}`,hs:`    .hs >>Hearth to ${t}`,goto:`    >>Go to ${t}`,note:`    >>${t}`})[s.kind]); }
     if(s.unote) lines.push(...s.unote.split('\n').filter(l=>l.trim()).map(l=>'    >>'+l.trim()));
+    if(!cont){ /* RestedXP auto-completes (skips) a step made only of text: give it a manual checkbox (+line) so notes always stay until ticked */
+      const st0=L.lastIndexOf('step'); const all=[...L.slice(st0+1),...lines];
+      if(!all.some(l=>STEP_DONE_RE.test(l))){ const k=lines.findIndex(l=>/^\s*>>/.test(l)); if(k>=0) lines[k]=lines[k].replace(/^(\s*)>>\s*/,'$1+'); else lines.push('    +'+(rxpPlain(stepText(s).t)||'Done')); } }
     L.push(...lines); if(!cont) L.push(...dgl);
     seg.items.push({rx:null,step:i,text:L.join('\n')});
     if(stl&&s.t==='complete'&&s.q&&!r.inactive&&r.passive==null){ const P=pathOf(s); const F=['step'];
