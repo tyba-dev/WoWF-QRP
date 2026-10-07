@@ -663,7 +663,7 @@ function draw(){
   // Zephras Isle (floating, position illustrative)
   ctx.beginPath(); ctx.ellipse(11200,-9800,900,600,0,0,Math.PI*2); ctx.fillStyle=mix('#b6c7d9','#d9c69a',0.35); ctx.fill(); ctx.setLineDash([6/s,5/s]); ctx.strokeStyle='#3a2915'; ctx.stroke(); ctx.setLineDash([]);
   ctx.setTransform(DPR,0,0,DPR,0,0);
-  drawLabels(); drawPOIs(); drawGhosts(); if(layers.route) drawRoute(); drawQuests(); drawFQ();
+  drawLabels(); drawPOIs(); drawGhosts(); if(layers.route){ drawPaths(); drawRoute(); } drawQuests(); drawFQ();
   $('#status').textContent=s>=0.035?'':'Zoom in to see towns'+(s<0.03?', flight paths and dungeons':'');
 }
 function haloText(t,x,y,font,fill,stroke,lw){ ctx.font=font; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.lineJoin='round'; ctx.strokeStyle=stroke; ctx.lineWidth=lw; ctx.strokeText(t,x,y); ctx.fillStyle=fill; ctx.fillText(t,x,y); }
@@ -1015,6 +1015,7 @@ function renderSteps(){
       <span class="x">${r.gained||s.xpo!=null?`<b${s.xpo!=null?' title="XP set by you"':''}>+${fmt(r.gained)}${s.xpo!=null?'*':''}</b><br>`:''}${lvl.toFixed(1)}</span>
       <span class="sbtns">${s.q?`<a class="wh" href="${whURL(s.q,s.qn)}" target="_blank" rel="noopener" title="Open this quest on Wowhead">wh↗</a>`:''}<button class="opt ${s.opt?'on':''}" data-opt="${i}" title="${s.opt?'Optional (click to make required)':'Mark as optional'}" aria-pressed="${!!s.opt}">opt</button>${!stepGuide(s)&&s.t==='accept'&&Q(s.q)?.sh?`<button class="ed ${s.shared?'on':''}" data-shr="${i}" title="${s.shared?'Shared by a party member (click to pick it up from the NPC instead)':'Shareable quest: click if a party member will share it with you'}" aria-label="Shared quest for step ${i+1}">🤝</button>`:''}${!stepGuide(s)&&['accept','complete','turnin','custom','grind','travel'].includes(s.t)?`<button class="ed ${s.stk?'on':''}" data-stk="${i}" title="Sticky: ${s.stk==='next'?'with next step':s.stk==='sticky'?'until done':'off'} (click to change)" aria-label="Sticky for step ${i+1}">📌</button>`:''}<button class="ed ${s.unote||s.xpo!=null||s.ypk!=null?'on':''}" data-edit="${i}" title="Edit step: note, XP${s.src?'':', text'}" aria-label="Edit step ${i+1}">✎</button><button class="del" data-del="${i}" aria-label="Delete step ${i+1}">×</button></span></li>`);
     if(i===cursor && i<route.steps.length-1) parts.push(`<li class="insert">New steps are added here</li>`);
+    { const fm=forkMark(i); if(fm) parts.push(fm); }
   });
   if(selSteps.size>1) parts.unshift(`<li class="selbar"><b>${selSteps.size} steps selected</b> <button class="btn sm" data-blk="up" title="Move the block up one step">▲ Up</button><button class="btn sm" data-blk="down" title="Move the block down one step">▼ Down</button><button class="btn sm" data-blk="cursor" title="Move the block to just after the highlighted step">Move after step…</button><button class="btn sm" data-blk="ypk" title="Kills on the way for these steps: yards per kill, 0 = none, empty = route setting">Travel kills…</button><button class="btn sm" data-blk="sec" title="Group steps ${'${'}Math.min(...selSteps)+1}–${'${'}Math.max(...selSteps)+1} into a named, coloured section">Make section</button><button class="btn sm" data-blk="del">Delete</button><button class="btn sm" data-blk="clear">Clear</button><span class="note">Drag any selected step to move them all</span></li>`);
   ul.innerHTML=parts.join(''); if(findQ) markFind();
@@ -1097,6 +1098,44 @@ async function secAction(a,id){ const S=route.sections?.[id]; if(!S) return;
   if(a==='ren'){ const v=await askText('Section name:',S.name,'Rename','text'); if(v==null) return; pushHistory(); S.name=v.trim()||S.name; const k=SEC_COLS.indexOf(S.color); refresh(); return; }
   if(a==='color'){ pushHistory(); S.color=SEC_COLS[(SEC_COLS.indexOf(S.color)+1)%SEC_COLS.length]; refresh(); return; }
   if(a==='del'){ pushHistory(); for(const st of route.steps) if(st.sec===id) delete st.sec; delete route.sections[id]; if(SEC_ONLY===id) SEC_ONLY=null; refresh(); return; } }
+/* ---------- parallel paths: routes in the same set, simulated side by side; a shared start = the fork point ---------- */
+const PATH_COLS=['#ffcd46','#4fc3f7','#ff8a65','#ba68c8','#81c784','#f06292'];
+const pathSet=()=>route.group?store.routes.filter(r=>r.group===route.group):[route];
+const stepSig=s=>[s.t,s.q||'',s.obj||'',s.kind||'',s.text||'',s.mode||'',s.level||'',s.amount||'',s.npc||'',s.item||'',s.node||'',s.gy??''].join('|');
+function sharedPrefix(a,b){ const n=Math.min(a.steps.length,b.steps.length); let k=0; while(k<n&&stepSig(a.steps[k])===stepSig(b.steps[k])) k++; return k; }
+const PSIM=new Map();
+function simRoute(r){ const key=(r.savedAt||0)+':'+r.steps.length+':'+(r.char.level||1); const c=PSIM.get(r.id); if(r!==route&&c&&c.key===key) return c.d;
+  let d; if(r===route){ d=pathData(SIM,r); } else { const R0=route, C0=cursor, S0=SIM; try{ route=r; cursor=r.steps.length-1; simulate(); d=pathData(SIM,r); } finally { route=R0; cursor=C0; SIM=S0; } }
+  PSIM.set(r.id,{key,d}); return d; }
+function pathData(S,r){ const lvT={}; let ti=0; const pts=[]; S.res.forEach((x,i)=>{ if(x.inactive) return; if(r.steps[i].t==='turnin') ti++; if(x.pt&&!x.stk) pts.push({X:x.pt.X,Y:x.pt.Y,z:x.pt.z,i}); const a=x.after; if(a) for(let L=(x.before?.level||1)+1;L<=a.level;L++) if(lvT[L]==null) lvT[L]=x.tAt; });
+  const e=S.end; return {pts,lvT,endL:e.level+(e.level<MAXLVL?e.xp/XP_TABLE[e.level]:0),endT:e.t||0,ti,n:r.steps.length,start:+r.char.level||1}; }
+function drawPaths(){ if(!route.group) return; for(const r of pathSet()){ if(r===route||r.cmpHide) continue; const d=simRoute(r); const k=sharedPrefix(route,r); const P=d.pts.filter(p=>p.i>=Math.max(0,k-1)); if(P.length<2) continue;
+    const col=r.char.rcol||'#cccccc'; ctx.strokeStyle=col; ctx.globalAlpha=.75; ctx.lineWidth=2.5; ctx.setLineDash([8,6]); ctx.beginPath(); let last=null;
+    for(const p of P){ const [x,y]=toS(p); const far=last&&Math.hypot(p.X-last.X,p.Y-last.Y)>5000; if(!last||far) ctx.moveTo(x,y); else ctx.lineTo(x,y); last=p; } ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha=1;
+    const e=P[P.length-1]; const [x,y]=toS(e); haloText(r.name,x,y-14,'600 12px "Alegreya Sans", sans-serif',col,'rgba(20,12,4,.85)',3); } }
+function openPaths(){ const set=pathSet(); const rows=set.map(r=>{ const d=simRoute(r); const k=r===route?null:sharedPrefix(route,r);
+    return `<tr><td><input type="color" data-pcol="${r.id}" value="${r.char.rcol||'#ffcd46'}" style="width:24px;height:20px;padding:0;border:0;background:none"></td><td><b>${esc(r.name)}</b>${r===route?' <span class="note">(editing)</span>':''}<br><span class="note">${k==null?'':k?`shares steps 1–${k} with this path · forks after step ${k}`:'no shared start yet'}</span></td><td>${d.endL.toFixed(2)}</td><td>${fmtT(d.endT)}</td><td>${d.ti}</td><td>${d.n}</td><td style="white-space:nowrap">${r===route?'':`<button class="btn sm" data-pact="go:${r.id}">Edit</button><label class="note"><input type="checkbox" data-pshow="${r.id}" ${r.cmpHide?'':'checked'}> map</label>`}${set.length>1?`<button class="btn sm" data-pact="keep:${r.id}" title="Keep only this path: the others leave the set (not deleted)">Keep</button><button class="btn sm" data-pact="drop:${r.id}" title="Remove from the set (the route itself is kept)">Remove</button><button class="btn sm" data-pact="del:${r.id}" title="Delete this route">🗑</button>`:''}</td></tr>`; }).join('');
+  const D=set.map(r=>simRoute(r)); const lo=Math.min(...D.map(d=>d.start))+1, hi=Math.max(...D.map(d=>Math.floor(d.endL))); let race='';
+  if(set.length>1&&hi>=lo){ race=`<h4 style="margin:10px 0 4px">Time to reach each level</h4><table class="ptab"><tr><th>Level</th>${set.map(r=>`<th style="color:${r.char.rcol||'inherit'}">${esc(r.name)}</th>`).join('')}</tr>${Array.from({length:hi-lo+1},(_,j)=>lo+j).map(L=>{ const ts=D.map(d=>d.lvT[L]); const best=Math.min(...ts.filter(t=>t!=null)); return `<tr><td>${L}</td>${ts.map(t=>`<td${t!=null&&t===best?' style="color:var(--gold);font-weight:700"':''}>${t==null?'–':fmtT(t)}</td>`).join('')}</tr>`; }).join('')}</table>`; }
+  const others=store.routes.filter(r=>!set.includes(r));
+  $('#pathBody').innerHTML=`<table class="ptab"><tr><th></th><th>Path</th><th>End level</th><th>/played</th><th>Turn-ins</th><th>Steps</th><th></th></tr>${rows}</table>${race}
+    <div class="row" style="margin-top:10px;gap:6px;flex-wrap:wrap"><button class="btn sm gold" data-pact="fork:after">Fork at highlighted step (${cursor+1})</button><button class="btn sm" data-pact="fork:copy">Fork: copy the whole route</button><button class="btn sm" data-pact="new:">New empty path</button>${others.length?`<select id="pathAdd"><option value="">Add an existing route…</option>${others.map(r=>`<option value="${r.id}">${esc(r.name)}</option>`).join('')}</select>`:''}</div>
+    <p class="note" style="margin:8px 0 0">Paths are separate routes in one set: edit each freely. Where they begin with the same steps, that shared start is their fork point. Other paths show on the map as dashed lines from where they split off.</p>`;
+  if(!$('#dlgPaths').open) $('#dlgPaths').showModal(); }
+async function pathAct(a,id){ const set=pathSet(); const r=store.routes.find(x=>x.id===id);
+  const ensureGroup=()=>{ if(!route.group){ route.group=uid(); } if(!route.char.rcol) route.char.rcol=PATH_COLS[0]; };
+  const nextCol=()=>{ const used=new Set(pathSet().map(x=>x.char.rcol)); return PATH_COLS.find(c=>!used.has(c))||PATH_COLS[pathSet().length%PATH_COLS.length]; };
+  if(a==='fork'||a==='new'){ ensureGroup(); const name=await askText('Name for the new path:',route.name+(a==='fork'&&id==='after'?' – fork '+(cursor+1):' – path '+(pathSet().length+1)),'Create','text'); if(name==null) return openPaths();
+    const nr=a==='new'?(()=>{ const x=newRoute({char:{...route.char}}); store.routes.push(x); return x; })():await cloneRoute(route,name.trim()||'Path',id==='after'?cursor:null); nr.name=name.trim()||nr.name; nr.group=route.group; nr.char.rcol=nextCol(); delete nr.cmpHide;
+    route=nr; cursor=nr.steps.length-1; history=[]; FQ.key=null; refresh(); saveNow&&saveNow(); toast(`Now editing “${nr.name}”. Switch paths with Paths or the route list.`,4000); return openPaths(); }
+  if(a==='go'&&r){ route=r; cursor=r.steps.length-1; history=[]; FQ.key=null; selQuest=null; refresh(); return openPaths(); }
+  if(a==='add'&&r){ ensureGroup(); r.group=route.group; if(!r.char.rcol||pathSet().filter(x=>x.char.rcol===r.char.rcol).length>1) r.char.rcol=nextCol(); save(); requestDraw(); return openPaths(); }
+  if(a==='drop'&&r){ delete r.group; if(pathSet().length<=1) delete route.group; save(); requestDraw(); return openPaths(); }
+  if(a==='keep'&&r){ for(const x of set) if(x!==r) delete x.group; delete r.group; route=r; cursor=r.steps.length-1; history=[]; FQ.key=null; refresh(); toast(`Kept “${r.name}”. The other paths are still in your route list.`,4000); return openPaths(); }
+  if(a==='del'&&r){ if(!confirm(`Delete the route “${r.name}”?`)) return; store.routes=store.routes.filter(x=>x!==r); if(r===route){ route=set.find(x=>x!==r)||store.routes[0]; cursor=route.steps.length-1; history=[]; FQ.key=null; } if(pathSet().length<=1) delete route.group; refresh(); saveNow&&saveNow(); return openPaths(); } }
+document.addEventListener('click',e=>{ const b=e.target.closest('[data-pact]'); if(!b) return; const [a,id]=b.dataset.pact.split(':'); pathAct(a,id); });
+document.addEventListener('change',e=>{ const t=e.target; if(t.id==='pathAdd'&&t.value) return pathAct('add',t.value); if(t.dataset?.pshow){ const r=store.routes.find(x=>x.id===t.dataset.pshow); if(r){ r.cmpHide=!t.checked; save(); requestDraw(); } } if(t.dataset?.pcol){ const r=store.routes.find(x=>x.id===t.dataset.pcol); if(r){ r.char.rcol=t.value; save(); refresh(); openPaths(); } } });
+function forkMark(i){ if(!route.group) return ''; const ks=pathSet().filter(r=>r!==route).map(r=>[r,sharedPrefix(route,r)]).filter(([r,k])=>k===i+1&&k<route.steps.length); return ks.length?`<li class="forkmark">⑂ Paths split here: ${ks.map(([r])=>`<span style="color:${r.char.rcol||'inherit'}">${esc(r.name)}</span>`).join(', ')} go their own way after step ${i+1}</li>`:''; }
 function blockAction(a){ const idx=[...selSteps].sort((x,y)=>x-y); if(!idx.length) return;
   if(a==='ypk'){ askText(`Kills on the way for these ${idx.length} steps: 1 kill every … yards (0 = none, empty = route setting${route.char.ypk?' of '+route.char.ypk:''})`,'0','Set','text').then(v=>{ if(v==null) return; pushHistory(); const t=v.trim(); for(const i of idx){ const st=route.steps[i]; if(t===''||!(+t>=0)) delete st.ypk; else st.ypk=+t; } refresh(); toast(t===''?'Using the route setting again':`Set on ${idx.length} steps`); }); return; }
   if(a==='clear'){ selSteps.clear(); renderSteps(); return; }
@@ -1179,7 +1218,7 @@ function renderXP(){
   $('#xpsum').innerHTML=`Route end: <b>level ${endL.toFixed(2)}</b> · ${quests} turn-ins · ${SIM.st.log.size+[...(SIM.st.fq||new Map()).values()].filter(v=>v!=='done').length}/${LOGMAX} in log · /played ≈ ${fmtT(SIM.end.t)}`;
 }
 function renderRouteHead(){
-  $('#routeSel').innerHTML=store.routes.map(r=>`<option value="${r.id}" ${r.id===route.id?'selected':''}>${esc(r.name)}</option>`).join('');
+  $('#routeSel').innerHTML=store.routes.map(r=>`<option value="${r.id}" ${r.id===route.id?'selected':''}>${r.group?'⑂ ':''}${esc(r.name)}</option>`).join(''); { const pb=$('#pathsBtn'); if(pb) pb.textContent=route.group?`Paths (${pathSet().length})`:'Paths'; }
   const c=route.char; $('#whoBtn').innerHTML=`<b>${esc(c.race)} ${esc(c.cls)}</b> · ${c.faction==='H'?'Horde':'Alliance'}`;
   const no=route.steps.filter(s=>s.opt).length; $('#routeInfo').innerHTML=`${route.steps.length} steps · starts at level ${c.level}`+(no?` · <label style="display:inline-flex;gap:4px;align-items:center"><input type="checkbox" id="optCount" ${route.optOff?'':'checked'}> count ${no} optional</label>`:'');
   const oc=document.getElementById('optCount'); if(oc) oc.onchange=()=>{ route.optOff=!oc.checked; refresh(); };
@@ -1463,12 +1502,13 @@ $('#charBtn').addEventListener('click',openChar); $('#whoBtn').addEventListener(
 $('#stepFind').addEventListener('input',()=>{ findPos=-1; runFind(); if(findHits.length) findGo(1); });
 $('#stepFind').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); findGo(e.shiftKey?-1:1); } else if(e.key==='Escape'){ $('#stepFind').value=''; findPos=-1; runFind(); } });
 $('#stepFindNext').addEventListener('click',()=>findGo(1)); $('#stepFindPrev').addEventListener('click',()=>findGo(-1));
-$('#healthBtn').addEventListener('click',healthReport); $('#hlClose').addEventListener('click',()=>$('#dlgHealth').close());
-$('#copyRoute').addEventListener('click',async()=>{ const name=await askText('Name for the copy:',route.name+' (copy)','Copy','text'); if(name==null) return;
-  const src=route; await rawLoad((src.guides||[]).map(g=>g.id)); const r=JSON.parse(JSON.stringify(src)); r.id=uid(); r.name=name.trim()||src.name+' (copy)'; delete r.savedAt;
+$('#healthBtn').addEventListener('click',healthReport); $('#pathsBtn').addEventListener('click',openPaths); $('#pathClose').addEventListener('click',()=>$('#dlgPaths').close()); $('#hlClose').addEventListener('click',()=>$('#dlgHealth').close());
+async function cloneRoute(src,name,upto){ await rawLoad((src.guides||[]).map(g=>g.id)); const r=JSON.parse(JSON.stringify(src)); r.id=uid(); r.name=name; delete r.savedAt;
   const map=new Map(); for(const g of r.guides||[]){ const nid=uid(); map.set(g.id,nid); if(rawCache.has(g.id)) rawPut(nid,rawCache.get(g.id)); g.id=nid; }
   for(const s2 of r.steps||[]) if(s2.src&&map.has(s2.src.g)) s2.src.g=map.get(s2.src.g);
-  store.routes.push(r); route=r; cursor=Math.min(cursor,r.steps.length-1); history=[]; FQ.key=null; refresh(); saveNow&&saveNow(); toast(`Copied to “${r.name}”. Edit this one freely: the original is unchanged.`,4000); });
+  if(upto!=null) r.steps=r.steps.slice(0,upto+1); store.routes.push(r); return r; }
+$('#copyRoute').addEventListener('click',async()=>{ const name=await askText('Name for the copy:',route.name+' (copy)','Copy','text'); if(name==null) return;
+  const src=route; const r=await cloneRoute(src,name.trim()||src.name+' (copy)'); delete r.group; route=r; cursor=Math.min(cursor,r.steps.length-1); history=[]; FQ.key=null; refresh(); saveNow&&saveNow(); toast(`Copied to “${r.name}”. Edit this one freely: the original is unchanged.`,4000); });
 $('#newRoute').addEventListener('click',()=>{ const r=newRoute({char:{...route.char,level:1,xp:0}}); store.routes.push(r); route=r; cursor=-1; history=[]; refresh(); openChar(); });
 $('#routeSel').addEventListener('change',e=>{ route=store.routes.find(r=>r.id===e.target.value); cursor=route.steps.length-1; history=[]; selQuest=null; refresh(); });
 
