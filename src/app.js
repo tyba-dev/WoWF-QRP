@@ -250,7 +250,8 @@ function reqFail(s,st){ if(!s.reqs) return '';
       case 'isquestnotcomplete': if(comp) return nm(ids)+' already complete'; break;
       case 'isquestavailable': if(ids.every(id=>st.turned.has(id)||st.log.has(id))) return nm(ids)+' no longer available'; break; } }
   return ''; }
-function migrateRoute(r){ if(r.char&&+r.char.dqmult===3.5&&!r.char.dq25){ r.char.dqmult=2.5; } if(r.char) r.char.dq25=1; /* Forever nerfed dungeon quest XP from ×3.5 to ~×2.5 */ r.guides=r.guides||[];
+function ensureIds(r){ for(const s of r.steps||[]) if(!s.id) s.id=uid(); r.sections=r.sections||{}; }
+function migrateRoute(r){ ensureIds(r); if(r.char&&+r.char.dqmult===3.5&&!r.char.dq25){ r.char.dqmult=2.5; } if(r.char) r.char.dq25=1; /* Forever nerfed dungeon quest XP from ×3.5 to ~×2.5 */ r.guides=r.guides||[];
   const TM=META.taxiMig||{}; if(r.char&&Array.isArray(r.char.fps)) r.char.fps=r.char.fps.map(x=>META.taxi.nodes[x]?x:(TM[x]||x));
   for(const st of r.steps||[]) if(st.node&&!META.taxi.nodes[st.node]&&TM[st.node]) st.node=TM[st.node];
   if((r.notesMig||0)<2){ r.notesMig=2; for(const g of r.guides){ g.includeNotes=true; g.stopAtBlocked=false; } }
@@ -267,7 +268,7 @@ function cloneState(s){ return {level:s.level,xp:s.xp,party:s.party,log:new Map(
 // Forever: quest log holds 40, but escort quests can't be started with 25+ quests in the log
 const LOGMAX=40, ESC_LIMIT=25, ESCORT=new Set([155,219,309,435,648,660,665,667,731,836,863,898,938,945,976,994,995,1144,1222,1249,1270,1393,1440,1560,1651,2742,2767,2845,2904,2969,3382,3525,3982,4121,4245,4261,4265,4322,4491,4770,4901,4904,4966,5203,5321,5713,5821,5943,5944,6132,6403,6482,6523,6544,6641,8736]);
 const ESC_NOTE=`Escort quest: have fewer than ${ESC_LIMIT} quests in your log before accepting (Forever bug)`;
-function simulate(){
+function simulate(){ ensureIds(route);
   const st=initState(route); const res=[]; let atCursor=cloneState(st); const optQ=new Set(route.optOff?route.steps.filter(x=>x.opt&&x.t==='accept'&&x.q).map(x=>x.q):[]);
   let lastPt=null; const rqC=new Map();
   // a sticky "complete" followed later by a normal one for the same quest/objective is a passive attempt: the later step is where it's counted
@@ -800,7 +801,8 @@ function drawRoute(){
   const pts=[]; SIM.res.forEach((r,i)=>{ if(r.pt) pts.push({i,p:r.pt,r}); });
   if(pts.length<1) return;
   ctx.lineCap='round'; ctx.lineJoin='round';
-  const walkStyle=f=>{ ctx.strokeStyle=f?'rgba(255,230,160,.45)':'rgba(255,205,70,.95)'; ctx.lineWidth=f?2:3; ctx.setLineDash(f?[5,6]:[]); };
+  let LC=null; const hexA=(h,a)=>{ const n=parseInt(h.slice(1),16); return `rgba(${n>>16},${n>>8&255},${n&255},${a})`; };
+  const walkStyle=f=>{ ctx.strokeStyle=LC?hexA(LC,f?.5:.95):f?'rgba(255,230,160,.45)':'rgba(255,205,70,.95)'; ctx.lineWidth=f?2:LC?3.5:3; ctx.setLineDash(f?[5,6]:[]); };
   const poly=arr=>{ ctx.beginPath(); arr.forEach((q,k)=>{ const [x,y]=toS(q); k?ctx.lineTo(x,y):ctx.moveTo(x,y); }); ctx.stroke(); };
   const walkLeg=(a,b,f)=>{ if(!a||!b) return; const P=legPath(a,b);
     if(!P){ walkStyle(f); if(P===undefined){ ctx.globalAlpha=.45; ctx.setLineDash([2,6]); } poly([a,b]); ctx.globalAlpha=1; return; }
@@ -811,16 +813,16 @@ function drawRoute(){
     P.forEach(([x,y],k)=>{ ctx.fillStyle=ed?'#fff':ctx.strokeStyle; ctx.beginPath(); ctx.arc(x,y,ed?6:2.5,0,7); ctx.fill(); if(ed){ ctx.strokeStyle='#1b6b3a'; ctx.lineWidth=2; ctx.stroke(); ctx.fillStyle='#1b6b3a'; ctx.font='700 9px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(String(k+1),x,y+.5); ctx.strokeStyle='rgba(120,255,160,.95)'; } });
     if(ed) pathHits=P.map(([x,y],k)=>({x,y,k})); });
   for(const {i,p,r} of pts) if(r.stk){ const [x,y]=toS(p); ctx.strokeStyle=i>cursor?'rgba(255,230,160,.45)':'rgba(255,205,70,.9)'; ctx.lineWidth=1.5; ctx.setLineDash([2,3]); ctx.beginPath(); ctx.arc(x,y,9,0,7); ctx.stroke(); ctx.setLineDash([]); }
-  for(let k=1;k<lp.length;k++){ const {i,p,r}=lp[k]; const prev=lp[k-1].p; const f=i>cursor; const lt=r.leg?.type;
+  for(let k=1;k<lp.length;k++){ const {i,p,r}=lp[k]; const prev=lp[k-1].p; const f=i>cursor; const lt=r.leg?.type; const sc=secOf(i); LC=sc?.color||null; ctx.globalAlpha=SEC_ONLY&&sc?.id!==SEC_ONLY?.12:1;
     if(lt==='hs') continue;
     if(lt==='death'&&r.dep){ walkLeg(prev,r.dep,f); const [ax,ay]=toS(r.dep),[bx,by]=toS(p); ctx.strokeStyle=f?'rgba(200,170,255,.45)':'rgba(200,170,255,.95)'; ctx.lineWidth=2; ctx.setLineDash([2,5]); ctx.beginPath(); ctx.moveTo(ax,ay); ctx.lineTo(bx,by); ctx.stroke(); ctx.setLineDash([]); ctx.font='13px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillStyle='#e9dcff'; ctx.fillText('☠',ax,ay); continue; }
     if(lt==='fly'){ if(r.dep) walkLeg(prev,r.dep,f); drawFlight(r,f); continue; }
     if(lt==='ride'&&r.dep){ walkLeg(prev,r.dep,f); const [ax,ay]=toS(r.dep),[bx,by]=toS(p); const dx=bx-ax,dy=by-ay; ctx.strokeStyle=f?'rgba(120,200,255,.45)':'rgba(120,200,255,.95)'; ctx.lineWidth=2.5; ctx.setLineDash([3,5]); ctx.beginPath(); ctx.moveTo(ax,ay); ctx.quadraticCurveTo((ax+bx)/2-dy*0.1,(ay+by)/2+dx*0.1,bx,by); ctx.stroke(); ctx.setLineDash([]); continue; }
     walkLeg(prev,p,f); }
-  ctx.setLineDash([]);
+  ctx.setLineDash([]); ctx.globalAlpha=1; LC=null;
   if(view.s>0.05){ let last=null;
-    for(const {i,p} of pts){ const [x,y]=toS(p); if(last&&Math.hypot(x-last[0],y-last[1])<18) continue; last=[x,y];
-      const cur=i===cursor; ctx.fillStyle=cur?'#ffd100':'#2a1c08'; ctx.strokeStyle=cur?'#2a1c08':'#ffd100'; ctx.lineWidth=1.5; ctx.beginPath(); ctx.arc(x+13,y+11,8,0,7); ctx.fill(); ctx.stroke();
+    for(const {i,p} of pts){ const sc=secOf(i); if(SEC_ONLY&&sc?.id!==SEC_ONLY) continue; const [x,y]=toS(p); if(last&&Math.hypot(x-last[0],y-last[1])<18) continue; last=[x,y];
+      const cur=i===cursor; ctx.fillStyle=cur?'#ffd100':'#2a1c08'; ctx.strokeStyle=cur?'#2a1c08':(sc?.color||'#ffd100'); ctx.lineWidth=1.5; ctx.beginPath(); ctx.arc(x+13,y+11,8,0,7); ctx.fill(); ctx.stroke();
       ctx.fillStyle=cur?'#2a1c08':'#ffe9a8'; ctx.font='700 10px "Alegreya Sans", sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(String(i+1),x+13,y+11.5);
       hits.push({x:x+13,y:y+11,r:8,kind:'route',step:i});
     }
@@ -969,7 +971,7 @@ function addStep(step){
   let d=null; if(!step.src&&step.q&&['accept','complete'].includes(step.t)&&step.stk===undefined){ d=guideStickyDefault(step.t,step.q); if(d) step.stk=d.stk; }
   if(d) msgs.push(`Made sticky (${d.stk==='next'?'done with the next step':'stays on screen until done'}) as in ${d.g}: click 📌 to change.`);
   if(msgs.length) setTimeout(()=>toast(msgs.join(' '),5000),0);
-  pushHistory(); route.steps.splice(cursor+1,0,step); cursor++; refresh(); scrollCursor(); }
+  pushHistory(); { const pv=route.steps[cursor]; if(pv?.sec&&step.sec===undefined) step.sec=pv.sec; /* a new step joins the section of the step it is added after */ } route.steps.splice(cursor+1,0,step); cursor++; refresh(); scrollCursor(); }
 function markRemoved(st){ if(!st?.src||st.src.auto) return; const g=G(st.src.g); if(!g) return; g.removed=g.removed||[]; if(!g.removed.includes(st.src.i)) g.removed.push(st.src.i); }
 function removeStep(i){ pushHistory(); markRemoved(route.steps[i]); route.steps.splice(i,1); if(cursor>=i) cursor--; refresh(); }
 function moveStep(from,to){ if(from===to) return; pushHistory(); const [s]=route.steps.splice(from,1); if(to>from) to--; route.steps.splice(to,0,s); cursor=to; refresh(); }
@@ -1000,19 +1002,21 @@ function renderSteps(){
   parts.push(`<li class="start ${cursor<0?'cur':''}" data-i="-1">Start · level ${route.char.level}${+route.char.xp?' + '+fmt(route.char.xp)+' XP':''}</li>`);
   if(cursor<0) parts.push(`<li class="insert">New steps are added here</li>`);
   if(!route.steps.length) parts.push(`<li class="empty">Pick a yellow <b>!</b> on the map or an entry in <b>Available</b> to accept your first quest. Steps are added after the highlighted step, so you can click any step to insert before later ones.</li>`);
+  pruneSections(); const runs=secRuns(); const runAt=new Map(runs.filter(x=>x.id).map(x=>[x.from,x]));
   route.steps.forEach((s,i)=>{
+    const hr=runAt.get(i); if(hr) parts.push(secHeader(hr)); const sc=secOf(i); if(sc&&sc.col&&i!==cursor) return;
     const r=SIM.res[i]; const tx=stepText(s);
     const gs=s.src&&typeof G==='function'?G(s.src.g)?.steps[s.src.i]:null; const dgTags=gs&&!r.inactive?(gs.dg||[]).filter(dgOn):[]; const qTag=s.q?questDgTag(s.q):null; const allTags=stepDgTags(i);
     const dq=s.q&&Q(s.q)&&isDungeonQuest(s.q);
     const lvl=r.after.level+(r.after.level<MAXLVL?r.after.xp/XP_TABLE[r.after.level]:0);
-    parts.push(`<li tabindex="-1" class="step ${i===cursor?'cur':''} ${i>cursor?'future':''} ${r.inactive?'inactive':''} ${dgTags.length?'dgstep':''} ${s.opt?'optstep':''} ${selSteps.has(i)?'msel':''}" data-i="${i}" draggable="true">
+    parts.push(`<li tabindex="-1" class="step ${i===cursor?'cur':''} ${i>cursor?'future':''} ${r.inactive?'inactive':''} ${dgTags.length?'dgstep':''} ${s.opt?'optstep':''} ${selSteps.has(i)?'msel':''}" data-i="${i}" draggable="true"${sc?` style="box-shadow:inset 4px 0 0 ${sc.color}"`:''}>
       <span class="n" title="Drag to reorder">${i+1}</span><span class="ic ${tx.cls} ${dq?'dq':''}" aria-hidden="true">${tx.ic}</span>
       <span class="t">${''}${s.src&&s.t==='travel'&&(s.kind==='note'||s.kind==='goto')?rxpHTML(tx.t):esc(rxpPlain(tx.t))}${(()=>{const gs=s.src&&!s.src.auto?G(s.src.g)?.steps[s.src.i]:null; return gs?notesHTML(gs,s.t==='travel'&&(s.kind==='note'||s.kind==='goto')?(s.text||''):''):'';})()}${s.t==='grind'&&r.party>1?`<span class="sub">in a group of ${r.party}</span>`:''}${r.expl?`<span class="sub kx" title="${esc(r.expl.map(e=>e.n+': '+e.xp+' XP').join(', '))}">${r.expl.some(e=>e.xp)?'+'+fmt(r.expl.reduce((t,e)=>t+e.xp,0))+' XP exploring: ':'Discovers: '}${esc(r.expl.map(e=>e.n).slice(0,4).join(', '))}${r.expl.length>4?'…':''}</span>`:''}${r.walkOff?`<span class="sub kx">No kills on the way here (set on this step)</span>`:''}${r.walk?`<span class="sub kx" title="Mobs killed while walking here: 1 kill per ${s.ypk!=null&&s.ypk!==''?s.ypk+' yards (set on this step)':route.char.ypk+' yards'}, average mob level ${r.walk.lv.toFixed(1)}">+${fmt(r.walk.xp)} XP on the way (≈${r.walk.kills<10?r.walk.kills.toFixed(1):Math.round(r.walk.kills)} kills)</span>`:''}${r.kill?`<span class="sub kx">≈${fmt(r.kill.kills)} kills${r.kill.guessed?' (some counts guessed)':''}${r.party>1?` · group of ${r.party}`:''}${r.kill.dg?' · dungeon mobs':''}</span>`:''}${s.unote?`<span class="unote">${s.unote.split('\n').map(esc).join('<br>')}</span>`:''}${stickyChip(s,i)}${nowSel(s,i)}${s.t==='train'&&s.npc&&r&&!r.inactive?`<details class="tspd"><summary>Spells</summary>${trainList(s.npc,r.before?.level??SIM.st.level,prevTrainLevel(i))}</details>`:''}${r.path?`<span class="stk" data-pathed="${i}" style="cursor:pointer" title="The RestedXP arrow loops through these points (#loop). Click to see or edit it on the map.">🔁 path · ${r.path.length} pts</span>`:''}${s.t==='accept'&&ESCORT.has(s.q)?`<span class="sub" style="color:var(--warn)">⚠ ${esc(ESC_NOTE)}</span>`:''}${allTags.map(t=>`<span class="dgtag" data-dgsel="${esc(t)}" title="${dgTags.includes(t)?`Only because you're running ${esc(dgName(t))}`:`${esc(dgName(t))} quest`}. Click to select every ${esc(t)} step">${esc(t)}</span>`).join('')}${tx.sub?`<span class="sub">${esc(tx.sub)}</span>`:''}${r.inactive?`<span class="wrn">${esc(r.inactive)}</span>`:''}${r.err.map(e=>{ const m=e.match(/^Requires level (\d+)/); return `<span class="err">${esc(e)}${m?` <button class="linkish" data-fixgrind="${i}:${m[1]}">Add a grind to level ${m[1]} before this</button>`:''}</span>`; }).join('')}${r.warn.map(e=>`<span class="wrn">${esc(e)}</span>`).join('')}${r.custom&&s.t==='turnin'?`<button class="linkish" data-uxp="${i}">${route.qxp?.[s.q]?'Change XP reward':'Set XP reward'}</button>`:''}</span>
       <span class="x">${r.gained||s.xpo!=null?`<b${s.xpo!=null?' title="XP set by you"':''}>+${fmt(r.gained)}${s.xpo!=null?'*':''}</b><br>`:''}${lvl.toFixed(1)}</span>
       <span class="sbtns">${s.q?`<a class="wh" href="${whURL(s.q,s.qn)}" target="_blank" rel="noopener" title="Open this quest on Wowhead">wh↗</a>`:''}<button class="opt ${s.opt?'on':''}" data-opt="${i}" title="${s.opt?'Optional (click to make required)':'Mark as optional'}" aria-pressed="${!!s.opt}">opt</button>${!stepGuide(s)&&s.t==='accept'&&Q(s.q)?.sh?`<button class="ed ${s.shared?'on':''}" data-shr="${i}" title="${s.shared?'Shared by a party member (click to pick it up from the NPC instead)':'Shareable quest: click if a party member will share it with you'}" aria-label="Shared quest for step ${i+1}">🤝</button>`:''}${!stepGuide(s)&&['accept','complete','turnin','custom','grind','travel'].includes(s.t)?`<button class="ed ${s.stk?'on':''}" data-stk="${i}" title="Sticky: ${s.stk==='next'?'with next step':s.stk==='sticky'?'until done':'off'} (click to change)" aria-label="Sticky for step ${i+1}">📌</button>`:''}<button class="ed ${s.unote||s.xpo!=null||s.ypk!=null?'on':''}" data-edit="${i}" title="Edit step: note, XP${s.src?'':', text'}" aria-label="Edit step ${i+1}">✎</button><button class="del" data-del="${i}" aria-label="Delete step ${i+1}">×</button></span></li>`);
     if(i===cursor && i<route.steps.length-1) parts.push(`<li class="insert">New steps are added here</li>`);
   });
-  if(selSteps.size>1) parts.unshift(`<li class="selbar"><b>${selSteps.size} steps selected</b> <button class="btn sm" data-blk="up" title="Move the block up one step">▲ Up</button><button class="btn sm" data-blk="down" title="Move the block down one step">▼ Down</button><button class="btn sm" data-blk="cursor" title="Move the block to just after the highlighted step">Move after step…</button><button class="btn sm" data-blk="ypk" title="Kills on the way for these steps: yards per kill, 0 = none, empty = route setting">Travel kills…</button><button class="btn sm" data-blk="del">Delete</button><button class="btn sm" data-blk="clear">Clear</button><span class="note">Drag any selected step to move them all</span></li>`);
+  if(selSteps.size>1) parts.unshift(`<li class="selbar"><b>${selSteps.size} steps selected</b> <button class="btn sm" data-blk="up" title="Move the block up one step">▲ Up</button><button class="btn sm" data-blk="down" title="Move the block down one step">▼ Down</button><button class="btn sm" data-blk="cursor" title="Move the block to just after the highlighted step">Move after step…</button><button class="btn sm" data-blk="ypk" title="Kills on the way for these steps: yards per kill, 0 = none, empty = route setting">Travel kills…</button><button class="btn sm" data-blk="sec" title="Group steps ${'${'}Math.min(...selSteps)+1}–${'${'}Math.max(...selSteps)+1} into a named, coloured section">Make section</button><button class="btn sm" data-blk="del">Delete</button><button class="btn sm" data-blk="clear">Clear</button><span class="note">Drag any selected step to move them all</span></li>`);
   ul.innerHTML=parts.join(''); if(findQ) markFind();
 }
 let selSteps=new Set(), selAnchor=null;
@@ -1030,7 +1034,7 @@ function trainList(npc,lv,since){ const L=trainerSpells(npc); if(!L) return '<di
   const now=L.filter(x=>x[0]<=lv&&(since==null||x[0]>since)), soon=L.filter(x=>x[0]>lv&&x[0]<=nxt), cost=now.reduce((a,x)=>a+x[3],0), maxL=L.reduce((a,x)=>Math.max(a,x[0]),0);
   const row=(x,red)=>`<div class="tsp${red?' later':''}"><span class="tl">${x[0]}</span> ${esc(x[1])}${x[2]?` <span class="note">${esc(x[2])}</span>`:''} <span class="note">${gsc(x[3])}</span></div>`;
   return `<div class="note">${now.length?`${now.length} to train at level ${lv}${since!=null?` (new since you trained at ${since})`:''} · ${gsc(cost)}`:`Nothing new at level ${lv}${since!=null?' since level '+since:''}`}</div>${now.map(x=>row(x,0)).join('')}${soon.length?`<div class="note" style="margin-top:3px">Level ${nxt}:</div>${soon.map(x=>row(x,1)).join('')}`:''}${maxL&&maxL<lv+2?`<div class="note">This trainer only teaches up to level ${maxL}.</div>`:''}<div class="note" style="opacity:.7">Classic 1.12 trainer data (CMaNGOS); Forever changes may differ.</div>`; }
-function healthReport(){ simulate(); const rows={err:[],pen:[],hard:[],warn:[],open:[]}; const N=i=>rxpPlain(stepText(route.steps[i]).t);
+function healthReport(){ simulate(); const rows={err:[],pen:[],hard:[],warn:[],open:[]}; const N=i=>{ const sc=secOf(i); return (sc?'['+sc.name+'] ':'')+rxpPlain(stepText(route.steps[i]).t); };
   SIM.res.forEach((r,i)=>{ const s=route.steps[i]; if(r.inactive||r.skip) return;
     for(const e of r.err) rows.err.push({i,t:N(i),why:e});
     if(r.pen) rows.pen.push({i,t:N(i),why:`level ${r.pen.lvl}, quest level ${r.pen.ql}: ${fmt(r.pen.xp)} of ${fmt(r.pen.full)} XP (−${fmt(r.pen.full-r.pen.xp)})`,lost:r.pen.full-r.pen.xp});
@@ -1073,9 +1077,30 @@ function moveBlock(idxs,to){ // move steps idxs (any order) so they sit before i
   const ins=to-idxs.filter(i=>i<to).length; pushHistory();
   for(let k=idxs.length-1;k>=0;k--) route.steps.splice(idxs[k],1);
   route.steps.splice(ins,0,...items); selSteps=new Set(items.map((_,k)=>ins+k)); selAnchor=ins; cursor=ins+items.length-1; refresh(); scrollCursor(); }
+/* ---------- sections (named, coloured runs of steps; a 'cut' section exports as its own guide) ---------- */
+const SEC_COLS=['#4fc3f7','#ff8a65','#ba68c8','#81c784','#f06292','#e6ee9c','#4db6ac','#9575cd','#ffb74d','#90a4ae'];
+let SEC_ONLY=null;
+const secOf=i=>{ const id=route.steps[i]?.sec; return id&&route.sections?.[id]?{id,...route.sections[id]}:null; };
+function secRuns(){ const out=[]; route.steps.forEach((s,i)=>{ const id=s.sec&&route.sections?.[s.sec]?s.sec:null; const last=out[out.length-1]; if(last&&last.id===id) last.to=i; else out.push({id,from:i,to:i}); }); return out; }
+function pruneSections(){ const used=new Set(route.steps.map(s=>s.sec).filter(Boolean)); for(const k of Object.keys(route.sections||{})) if(!used.has(k)) delete route.sections[k]; for(const s of route.steps) if(s.sec&&!route.sections[s.sec]) delete s.sec; }
+async function makeSection(idx){ const a=idx[0], b=idx[idx.length-1]; const name=await askText(`Name for the section (steps ${a+1}–${b+1}):`,'Section '+(Object.keys(route.sections||{}).length+1),'Create','text'); if(name==null) return; pushHistory();
+  route.sections=route.sections||{}; const used=new Set(Object.values(route.sections).map(x=>x.color)); const id=uid(); route.sections[id]={name:name.trim()||'Section',color:SEC_COLS.find(c=>!used.has(c))||SEC_COLS[Object.keys(route.sections).length%SEC_COLS.length],cut:false,col:false};
+  for(let i=a;i<=b;i++) route.steps[i].sec=id; pruneSections(); selSteps.clear(); refresh(); toast(`Section “${route.sections[id].name}” created: use ✂ on its header to export it as its own guide.`,4500); }
+function secStats(r){ const R0=SIM.res[r.from], R1=SIM.res[r.to]; const lv=a=>a?a.level+(a.level<MAXLVL?a.xp/XP_TABLE[a.level]:0):0; let xp=0,t=0,ti=0; for(let i=r.from;i<=r.to;i++){ const x=SIM.res[i]; if(!x||x.inactive) continue; xp+=x.gained||0; t+=x.dt||0; if(route.steps[i].t==='turnin') ti++; }
+  return {l0:lv(R0?.before),l1:lv(R1?.after),xp,t,ti,n:r.to-r.from+1}; }
+function secHeader(r){ const S=route.sections[r.id]; const st=secStats(r);
+  return `<li class="sechdr" style="--sc:${S.color}" data-secid="${r.id}"><button class="secbtn" data-sec="col:${r.id}" title="${S.col?'Expand':'Collapse'}">${S.col?'▸':'▾'}</button><b class="secname">${esc(S.name)}</b>${S.cut?'<span class="seccut" title="Exported as its own RestedXP guide">✂ own guide</span>':''}<span class="secst">${st.l0.toFixed(1)} → ${st.l1.toFixed(1)} · +${fmt(st.xp)} XP · ${st.ti} turn-ins · ${fmtT(st.t)} · steps ${r.from+1}–${r.to+1}</span><span class="secact"><button class="secbtn" data-sec="only:${r.id}" title="Show only this section's route on the map"${SEC_ONLY===r.id?' style="color:var(--gold)"':''}>👁</button><button class="secbtn" data-sec="cut:${r.id}" title="${S.cut?'Stop exporting as its own guide':'Cut: export this section as its own RestedXP guide'}"${S.cut?' style="color:var(--gold)"':''}>✂</button><button class="secbtn" data-sec="ren:${r.id}" title="Rename / recolour">✎</button><button class="secbtn" data-sec="del:${r.id}" title="Remove the section (keeps the steps)">✕</button></span></li>`; }
+async function secAction(a,id){ const S=route.sections?.[id]; if(!S) return;
+  if(a==='col'){ S.col=!S.col; save(); renderSteps(); return; }
+  if(a==='only'){ SEC_ONLY=SEC_ONLY===id?null:id; renderSteps(); requestDraw(); if(SEC_ONLY){ const r=secRuns().find(x=>x.id===id); const pts=[]; for(let i=r.from;i<=r.to;i++) if(SIM.res[i]?.pt) pts.push(SIM.res[i].pt); if(pts.length){ const xs=pts.map(p=>p.X), ys=pts.map(p=>p.Y); const bw=Math.max(80,Math.max(...xs)-Math.min(...xs)), bh=Math.max(80,Math.max(...ys)-Math.min(...ys)); flyTo((Math.min(...xs)+Math.max(...xs))/2,(Math.min(...ys)+Math.max(...ys))/2,Math.min(4,Math.min(W/(bw*1.3),H/(bh*1.3)))); } } return; }
+  if(a==='cut'){ pushHistory(); S.cut=!S.cut; refresh(); toast(S.cut?`“${S.name}” will export as its own guide, linked to the next one with #next.`:`“${S.name}” exports inside the main guide again.`); return; }
+  if(a==='ren'){ const v=await askText('Section name:',S.name,'Rename','text'); if(v==null) return; pushHistory(); S.name=v.trim()||S.name; const k=SEC_COLS.indexOf(S.color); refresh(); return; }
+  if(a==='color'){ pushHistory(); S.color=SEC_COLS[(SEC_COLS.indexOf(S.color)+1)%SEC_COLS.length]; refresh(); return; }
+  if(a==='del'){ pushHistory(); for(const st of route.steps) if(st.sec===id) delete st.sec; delete route.sections[id]; if(SEC_ONLY===id) SEC_ONLY=null; refresh(); return; } }
 function blockAction(a){ const idx=[...selSteps].sort((x,y)=>x-y); if(!idx.length) return;
   if(a==='ypk'){ askText(`Kills on the way for these ${idx.length} steps: 1 kill every … yards (0 = none, empty = route setting${route.char.ypk?' of '+route.char.ypk:''})`,'0','Set','text').then(v=>{ if(v==null) return; pushHistory(); const t=v.trim(); for(const i of idx){ const st=route.steps[i]; if(t===''||!(+t>=0)) delete st.ypk; else st.ypk=+t; } refresh(); toast(t===''?'Using the route setting again':`Set on ${idx.length} steps`); }); return; }
   if(a==='clear'){ selSteps.clear(); renderSteps(); return; }
+  if(a==='sec'){ makeSection(idx); return; }
   if(a==='del'){ pushHistory(); const del=new Set(idx); idx.forEach(i=>markRemoved(route.steps[i])); const before=idx.filter(i=>i<=cursor).length; route.steps=route.steps.filter((_,i)=>!del.has(i)); cursor=Math.max(-1,cursor-before); selSteps.clear(); refresh(); toast(`Deleted ${idx.length} steps`); return; }
   if(a==='up'){ if(idx[0]===0) return; moveBlock(idx,idx[0]-1); return; }
   if(a==='down'){ const last=idx[idx.length-1]; if(last>=route.steps.length-1) return; moveBlock(idx,last+2); return; }
@@ -1086,6 +1111,8 @@ $('#steps').addEventListener('click',e=>{
   if(e.target.closest('a.wh')){ e.stopPropagation(); return; }
   const pe=e.target.closest('[data-pathed]'); if(pe){ e.stopPropagation(); startPathEdit(+pe.dataset.pathed); return; }
   const sh=e.target.closest('[data-shr]'); if(sh){ e.stopPropagation(); const s=route.steps[+sh.dataset.shr]; pushHistory(); s.shared=!s.shared; if(!s.shared) delete s.shared; refresh(); toast(s.shared?'Shared by a party member: no need to visit the quest giver':'Picked up from the quest giver'); return; }
+  const sb=e.target.closest('[data-sec]'); if(sb){ e.stopPropagation(); const [a,id]=sb.dataset.sec.split(':'); secAction(a,id); return; }
+  if(e.target.closest('.sechdr')){ const id=e.target.closest('.sechdr').dataset.secid; if(e.target.closest('.secname')) secAction('color',id); return; }
   const nw=e.target.closest('[data-now]'); if(nw) return;
   const sk=e.target.closest('[data-stk]'); if(sk){ e.stopPropagation(); const s=route.steps[+sk.dataset.stk]; pushHistory(); s.stk=s.stk==null||s.stk===false?'next':s.stk==='next'?'sticky':false; refresh(); toast(s.stk==='next'?'Sticky: done together with the next step':s.stk==='sticky'?'Sticky: stays on screen until done':'Not sticky'); return; }
   const ed=e.target.closest('[data-edit]'); if(ed){ e.stopPropagation(); editStep(+ed.dataset.edit); return; }
@@ -1478,11 +1505,13 @@ function buildRXP(){
   g.group=group; g.next=next; g.extra=extra; save();
   EXPORT_ADDED=[]; const warns=[]; const segs=[]; let seg=null; const done=new Set();
   const pendFin=[]; const flushFin=q=>{ if(!seg) return; for(let k=0;k<pendFin.length;k++){ const f=pendFin[k]; if(q!=null&&f.q!==q) continue; seg.items.push({rx:null,step:null,text:f.text,fin:true}); seg.prevKey=null; pendFin.splice(k--,1); } };
-  const newSeg=gid=>{ flushFin(null); seg={gid,items:[],lastBlk:null,prevKey:null,text(){ return this.items.map(x=>x.text).filter(Boolean); }}; segs.push(seg); };
+  let CK=null; const newSeg=gid=>{ flushFin(null); seg={gid,cut:CK,items:[],lastBlk:null,prevKey:null,text(){ return this.items.map(x=>x.text).filter(Boolean); }}; segs.push(seg); };
+  const cutOf=s=>s.sec&&route.sections?.[s.sec]?.cut?s.sec:null;
   const blockSteps=(g,rx)=>g.steps.filter(x=>x.rx===rx);
   const actKey=(t,q)=>t+':'+q;
   route.steps.forEach((s,i)=>{
     const gg=s.src&&!s.src.auto?G(s.src.g):null; const gsx=gg?.steps[s.src.i]; const raw=gg&&rawCache.get(gg.id);
+    CK=cutOf(s); if(seg&&seg.cut!==CK) newSeg(gg?gg.id:null); /* a cut section (or the steps after one) starts a new guide */
     if(gg){ if(!seg) newSeg(gg.id); else if(seg.gid!==gg.id){ if(seg.gid==null) seg.gid=gg.id; else newSeg(gg.id); } } else if(!seg) newSeg(null);
     const L=[];
     if(raw&&gsx&&gsx.rx&&raw[gsx.rx-1]!=null){
@@ -1575,7 +1604,8 @@ function buildRXP(){
   for(const gid of new Set(route.steps.filter(x=>x.src&&!x.src.auto).map(x=>x.src.g))){ const gg=G(gid); if(!gg) continue; const miss=fillGuide(gg,true); if(miss.length){ const fq=miss.filter(i=>gg.steps[i].q&&!Q(gg.steps[i].q)).length; warns.unshift(`${miss.length} step${miss.length>1?'s':''} of ${gg.name}${fq?` (including ${fq} for Forever quests)`:''} ${miss.length>1?'are':'is'} missing from your route, so ${miss.length>1?'they are':'it is'} not in this export. Open the guide in the Guides tab and click “Fill in missing steps in place”.`); } }
   const ag=route.steps.map((x,k)=>x.src&&x.src.auto?k+1:0).filter(Boolean); if(ag.length) warns.push(`${ag.length} catch-up grind step${ag.length>1?'s were':' was'} added by the planner and ${ag.length>1?'are':'is'} not in the original guides (step${ag.length>1?'s':''} ${ag.slice(0,12).join(', ')}${ag.length>12?'…':''}). Delete ${ag.length>1?'them':'it'} if you want the guide exactly as written.`);
   EXPORT_WARN=warns;
-  const nm=k=>segs.length===1?name:`${name} ${k+1}${segs[k].gid?' - '+G(segs[k].gid).name:''}`;
+  const cutPart=k=>{ const c=segs[k].cut; const all=segs.map((x,j)=>j).filter(j=>segs[j].cut===c); const sib=all.filter(j=>Math.abs(j-k)<=all.length); return all.length>1?` (${all.indexOf(k)+1}/${all.length})`:''; };
+  const nm=k=>segs.length===1&&!segs[0].cut?name:`${name} ${k+1}${segs[k].cut?' - '+route.sections[segs[k].cut].name+cutPart(k):segs[k].gid?' - '+G(segs[k].gid).name:''}`;
   const outL=[]; if(segs.some(sg=>sg.items.some(x=>x.rx!=null))) outL.push('-- Contains text from RestedXP guides (https://github.com/RestedXP/RXPGuides), licensed CC BY-NC-SA 4.0.','-- If you share this file: credit RestedXP, keep it non-commercial and share it under the same licence.','-- Made with the Forever Route Planner (GPL-3.0). Not affiliated with RestedXP, Blizzard or WoW: Forever.','');
   segs.forEach((sg,k)=>{ const H=[`RXPGuides.RegisterGuide(${JSON.stringify(group)},[[`]; const ex=extra?extra.split(/\s*;\s*|\n/).filter(Boolean):[]; if(!ex.some(l=>/^#forever\b/i.test(l))) H.push('#forever'); H.push(...ex); H.push(`<< ${fac}`); H.push(`#name ${nm(k)}`); const nx=k<segs.length-1?nm(k+1):next; if(nx) H.push(`#next ${nx}`);
     outL.push(...H, ...sg.text(), ']])'); if(k<segs.length-1) outL.push(''); });
