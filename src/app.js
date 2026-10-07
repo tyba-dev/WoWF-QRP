@@ -802,7 +802,7 @@ function drawRoute(){
   if(pts.length<1) return;
   ctx.lineCap='round'; ctx.lineJoin='round';
   let LC=null; const hexA=(h,a)=>{ const n=parseInt(h.slice(1),16); return `rgba(${n>>16},${n>>8&255},${n&255},${a})`; };
-  const walkStyle=f=>{ ctx.strokeStyle=LC?hexA(LC,f?.5:.95):f?'rgba(255,230,160,.45)':'rgba(255,205,70,.95)'; ctx.lineWidth=f?2:LC?3.5:3; ctx.setLineDash(f?[5,6]:[]); };
+  const RC=route.char.rcol||null; const walkStyle=f=>{ const c=LC||RC; ctx.strokeStyle=c?hexA(c,f?.5:.95):f?'rgba(255,230,160,.45)':'rgba(255,205,70,.95)'; ctx.lineWidth=f?2:LC?3.5:3; ctx.setLineDash(f?[5,6]:[]); };
   const poly=arr=>{ ctx.beginPath(); arr.forEach((q,k)=>{ const [x,y]=toS(q); k?ctx.lineTo(x,y):ctx.moveTo(x,y); }); ctx.stroke(); };
   const walkLeg=(a,b,f)=>{ if(!a||!b) return; const P=legPath(a,b);
     if(!P){ walkStyle(f); if(P===undefined){ ctx.globalAlpha=.45; ctx.setLineDash([2,6]); } poly([a,b]); ctx.globalAlpha=1; return; }
@@ -822,7 +822,7 @@ function drawRoute(){
   ctx.setLineDash([]); ctx.globalAlpha=1; LC=null;
   if(view.s>0.05){ let last=null;
     for(const {i,p} of pts){ const sc=secOf(i); if(SEC_ONLY&&sc?.id!==SEC_ONLY) continue; const [x,y]=toS(p); if(last&&Math.hypot(x-last[0],y-last[1])<18) continue; last=[x,y];
-      const cur=i===cursor; ctx.fillStyle=cur?'#ffd100':'#2a1c08'; ctx.strokeStyle=cur?'#2a1c08':(sc?.color||'#ffd100'); ctx.lineWidth=1.5; ctx.beginPath(); ctx.arc(x+13,y+11,8,0,7); ctx.fill(); ctx.stroke();
+      const cur=i===cursor; ctx.fillStyle=cur?'#ffd100':'#2a1c08'; ctx.strokeStyle=cur?'#2a1c08':(sc?.color||route.char.rcol||'#ffd100'); ctx.lineWidth=1.5; ctx.beginPath(); ctx.arc(x+13,y+11,8,0,7); ctx.fill(); ctx.stroke();
       ctx.fillStyle=cur?'#2a1c08':'#ffe9a8'; ctx.font='700 10px "Alegreya Sans", sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(String(i+1),x+13,y+11.5);
       hits.push({x:x+13,y:y+11,r:8,kind:'route',step:i});
     }
@@ -995,7 +995,7 @@ function runFind(){ findQ=$('#stepFind').value.trim().toLowerCase(); findHits=[]
   if(findPos>=findHits.length) findPos=findHits.length-1; $('#stepFindN').textContent=findQ?(findHits.length?`${findPos>=0?findPos+1:0}/${findHits.length}`:'none'):''; markFind(); }
 function markFind(){ const set=new Set(findHits); $$('#steps li[data-i]').forEach(li=>{ const i=+li.dataset.i; li.classList.toggle('fhit',set.has(i)); li.classList.toggle('fcur',findPos>=0&&findHits[findPos]===i); }); }
 function findGo(d){ if(!findHits.length) return; findPos=findPos<0?(d>0?findHits.findIndex(i=>i>cursor):-1):findPos+d; if(findPos<0) findPos=d>0?0:findHits.length-1; findPos=(findPos+findHits.length)%findHits.length; $('#stepFindN').textContent=`${findPos+1}/${findHits.length}`; markFind(); const li=$(`#steps li[data-i="${findHits[findPos]}"]`); if(li) li.scrollIntoView({block:'center'}); const p=SIM.res[findHits[findPos]]?.pt; if(p) flyTo(p.X,p.Y,Math.max(view.s,0.06)); }
-function refresh(){ if(route.guides?.some(g=>(g.pv||0)<3)) setTimeout(upgradeGuides,0); simulate(); if(findQ) setTimeout(runFind,0); computeGhosts(); renderSteps(); renderRight(); renderXP(); renderRouteHead(); renderHS(); requestDraw(); save(); }
+function refresh(){ { const rc=$('#routeCol'); if(rc&&document.activeElement!==rc) rc.value=route.char.rcol||'#ffcd46'; } if(route.guides?.some(g=>(g.pv||0)<3)) setTimeout(upgradeGuides,0); simulate(); if(findQ) setTimeout(runFind,0); computeGhosts(); renderSteps(); renderRight(); renderXP(); renderRouteHead(); renderHS(); requestDraw(); save(); }
 
 function renderSteps(){
   const ul=$('#steps'); const parts=[];
@@ -1050,7 +1050,7 @@ function healthReport(){ simulate(); const rows={err:[],pen:[],hard:[],warn:[],o
 document.addEventListener('click',e=>{ const h=e.target.closest('[data-hgo]'); if(h){ $('#dlgHealth').close(); setCursor(+h.dataset.hgo); } });
 function stickyAccIdx(q){ for(let k=Math.min(cursor,route.steps.length-1);k>=0;k--){ const x=route.steps[k]; if(x.t==='accept'&&x.q===q&&!SIM.res[k]?.inactive) return isSticky(x)&&SIM.res[k]?.passive==null?k:-1; } return -1; }
 const accNowBtn=(q,sm)=>stickyAccIdx(q)>=0?`<button class="btn${sm?' sm':''}" data-accnow="${q}" title="You have it from a sticky accept (step ${stickyAccIdx(q)+1}); add the step where you must have it">Accept now</button>`:'';
-document.addEventListener('change',e=>{ const t=e.target.closest('select.stknow'); if(!t||!t.value) return; const i=+t.dataset.now; stepNow(i,t.value==='here'?i+1:cursor+1); });
+document.addEventListener('change',e=>{ const sc=e.target.closest('input[data-seccol]'); if(sc){ const S=route.sections?.[sc.dataset.seccol]; if(S){ pushHistory(); S.color=sc.value; refresh(); } return; } const rc=e.target.closest('#routeCol'); if(rc){ pushHistory(); route.char.rcol=rc.value; save(); requestDraw(); return; } const t=e.target.closest('select.stknow'); if(!t||!t.value) return; const i=+t.dataset.now; stepNow(i,t.value==='here'?i+1:cursor+1); });
 function stickyChip(s,i){ const gs=stepGuide(s); if(!gs&&s.stk) return `<span class="stk" title="${esc(s.stk==='next'?'Exported with #completewith next: RestedXP shows it together with the next step and the arrow skips it. Do it on the way.':'Exported with #sticky: RestedXP keeps it on screen until done while you carry on; the arrow skips it.')}">📌 ${s.stk==='next'?'with next step':'sticky'}</span>`; const cw=gs?.cw||s.cw; if(!(gs?.sticky||cw)) return '';
   let tip, lbl;
   if(cw==='next'){ tip='RestedXP shows this step together with the next one and ticks it off when you move past it. Do it passively on the way.'; lbl='with next step'; }
@@ -1089,7 +1089,7 @@ async function makeSection(idx){ const a=idx[0], b=idx[idx.length-1]; const name
 function secStats(r){ const R0=SIM.res[r.from], R1=SIM.res[r.to]; const lv=a=>a?a.level+(a.level<MAXLVL?a.xp/XP_TABLE[a.level]:0):0; let xp=0,t=0,ti=0; for(let i=r.from;i<=r.to;i++){ const x=SIM.res[i]; if(!x||x.inactive) continue; xp+=x.gained||0; t+=x.dt||0; if(route.steps[i].t==='turnin') ti++; }
   return {l0:lv(R0?.before),l1:lv(R1?.after),xp,t,ti,n:r.to-r.from+1}; }
 function secHeader(r){ const S=route.sections[r.id]; const st=secStats(r);
-  return `<li class="sechdr" style="--sc:${S.color}" data-secid="${r.id}"><button class="secbtn" data-sec="col:${r.id}" title="${S.col?'Expand':'Collapse'}">${S.col?'▸':'▾'}</button><b class="secname">${esc(S.name)}</b>${S.cut?'<span class="seccut" title="Exported as its own RestedXP guide">✂ own guide</span>':''}<span class="secst">${st.l0.toFixed(1)} → ${st.l1.toFixed(1)} · +${fmt(st.xp)} XP · ${st.ti} turn-ins · ${fmtT(st.t)} · steps ${r.from+1}–${r.to+1}</span><span class="secact"><button class="secbtn" data-sec="only:${r.id}" title="Show only this section's route on the map"${SEC_ONLY===r.id?' style="color:var(--gold)"':''}>👁</button><button class="secbtn" data-sec="cut:${r.id}" title="${S.cut?'Stop exporting as its own guide':'Cut: export this section as its own RestedXP guide'}"${S.cut?' style="color:var(--gold)"':''}>✂</button><button class="secbtn" data-sec="ren:${r.id}" title="Rename / recolour">✎</button><button class="secbtn" data-sec="del:${r.id}" title="Remove the section (keeps the steps)">✕</button></span></li>`; }
+  return `<li class="sechdr" style="--sc:${S.color}" data-secid="${r.id}"><button class="secbtn" data-sec="col:${r.id}" title="${S.col?'Expand':'Collapse'}">${S.col?'▸':'▾'}</button><input type="color" class="seccol" data-seccol="${r.id}" value="${S.color}" title="Section colour"><b class="secname">${esc(S.name)}</b>${S.cut?'<span class="seccut" title="Exported as its own RestedXP guide">✂ own guide</span>':''}<span class="secst">${st.l0.toFixed(1)} → ${st.l1.toFixed(1)} · +${fmt(st.xp)} XP · ${st.ti} turn-ins · ${fmtT(st.t)} · steps ${r.from+1}–${r.to+1}</span><span class="secact"><button class="secbtn" data-sec="only:${r.id}" title="Show only this section's route on the map"${SEC_ONLY===r.id?' style="color:var(--gold)"':''}>👁</button><button class="secbtn" data-sec="cut:${r.id}" title="${S.cut?'Stop exporting as its own guide':'Cut: export this section as its own RestedXP guide'}"${S.cut?' style="color:var(--gold)"':''}>✂</button><button class="secbtn" data-sec="ren:${r.id}" title="Rename / recolour">✎</button><button class="secbtn" data-sec="del:${r.id}" title="Remove the section (keeps the steps)">✕</button></span></li>`; }
 async function secAction(a,id){ const S=route.sections?.[id]; if(!S) return;
   if(a==='col'){ S.col=!S.col; save(); renderSteps(); return; }
   if(a==='only'){ SEC_ONLY=SEC_ONLY===id?null:id; renderSteps(); requestDraw(); if(SEC_ONLY){ const r=secRuns().find(x=>x.id===id); const pts=[]; for(let i=r.from;i<=r.to;i++) if(SIM.res[i]?.pt) pts.push(SIM.res[i].pt); if(pts.length){ const xs=pts.map(p=>p.X), ys=pts.map(p=>p.Y); const bw=Math.max(80,Math.max(...xs)-Math.min(...xs)), bh=Math.max(80,Math.max(...ys)-Math.min(...ys)); flyTo((Math.min(...xs)+Math.max(...xs))/2,(Math.min(...ys)+Math.max(...ys))/2,Math.min(4,Math.min(W/(bw*1.3),H/(bh*1.3)))); } } return; }
@@ -1112,7 +1112,7 @@ $('#steps').addEventListener('click',e=>{
   const pe=e.target.closest('[data-pathed]'); if(pe){ e.stopPropagation(); startPathEdit(+pe.dataset.pathed); return; }
   const sh=e.target.closest('[data-shr]'); if(sh){ e.stopPropagation(); const s=route.steps[+sh.dataset.shr]; pushHistory(); s.shared=!s.shared; if(!s.shared) delete s.shared; refresh(); toast(s.shared?'Shared by a party member: no need to visit the quest giver':'Picked up from the quest giver'); return; }
   const sb=e.target.closest('[data-sec]'); if(sb){ e.stopPropagation(); const [a,id]=sb.dataset.sec.split(':'); secAction(a,id); return; }
-  if(e.target.closest('.sechdr')){ const id=e.target.closest('.sechdr').dataset.secid; if(e.target.closest('.secname')) secAction('color',id); return; }
+  if(e.target.closest('.sechdr')) return;
   const nw=e.target.closest('[data-now]'); if(nw) return;
   const sk=e.target.closest('[data-stk]'); if(sk){ e.stopPropagation(); const s=route.steps[+sk.dataset.stk]; pushHistory(); s.stk=s.stk==null||s.stk===false?'next':s.stk==='next'?'sticky':false; refresh(); toast(s.stk==='next'?'Sticky: done together with the next step':s.stk==='sticky'?'Sticky: stays on screen until done':'Not sticky'); return; }
   const ed=e.target.closest('[data-edit]'); if(ed){ e.stopPropagation(); editStep(+ed.dataset.edit); return; }
