@@ -364,7 +364,9 @@ function simulate0(){ computeGroups(); ensureIds(route);
     if(!r.inactive&&r.passive==null){ let m=0; const L=r.before?.level||st.level;
       if(r.kill?.money) m+=r.kill.money; if(r.walk?.kills) m+=r.walk.kills*lvlMoney(r.walk.lv||L)/(st.party||1);
       if(s.t==='grind'&&r.gained>0&&(!s.src||s.src==='mobs'||s.src==='both')){ const g=Math.max(1,L-2); const per=mobXP(L,g,false,st.party||1)||1; m+=r.gained/per*lvlMoney(g)/(st.party||1); }
-      if(s.t==='turnin'&&s.q&&Q(s.q)&&!(isSticky(s)&&!stepGuide(s))) m+=questMoney(s.q);
+      if(s.t==='turnin'&&s.q&&Q(s.q)&&!(isSticky(s)&&!stepGuide(s))) m+=questMoney(s.q)+questItemMoney(s.q);
+      if(s.t==='buy') for(const it of s.items||[]) m-=(META.money?.buy?.[it.id]||0)*(+it.c||1);
+      if(s.t==='prof'&&s.act==='learn') m-=1000; /* apprentice profession: 10s */
       if(s.t==='train'&&s.npc){ const T=trainerSpells(s.npc)||[]; const since=st.lastTrain??0; m-=T.filter(x=>x[0]<=L&&x[0]>since).reduce((a,x)=>a+x[3],0); st.lastTrain=L; }
       r.money=m; st.money=(st.money||0)+m; }
     r.from=lastPt; r.stk=(isSticky(s)||gm!=null)&&!['hs','fly','ride','death'].includes(r.leg?.type); /* a hearth / flight still moves you even when the guide shows it as #completewith */ if(r.pt&&!r.stk) lastPt=r.pt;
@@ -558,6 +560,7 @@ function npcInfo(id){ const n=DB.n[id]; if(!n||!n.l) return null; const pts=entP
 const killMoney=(id,lv)=>{ const M=META.money; if(!M) return 0; const v=M.kill?.[id]; if(v!=null) return v; return M.killL?.[Math.max(1,Math.round(lv||1))]||0; };
 const lvlMoney=lv=>META.money?.killL?.[Math.max(1,Math.round(lv||1))]||0;
 function questMoney(qid){ const M=META.money; const q=Q(qid); if(!M||!q) return 0; const v=M.quest?.[qid]; if(v!=null) return v; return q.fv?(M.questL?.[q.l]||0):0; }
+function questItemMoney(qid){ const M=META.money; const q=Q(qid); if(!M||!q) return 0; const v=M.qitem?.[qid]; if(v!=null) return v; return q.fv?(M.qitemL?.[q.l]||0):0; } /* reward items at vendor value (best choice item) */
 const fmtG=c=>{ c=Math.round(c||0); const neg=c<0; c=Math.abs(c); const g=Math.floor(c/1e4), sv=Math.floor(c%1e4/100), cp=c%100; return (neg?'−':'')+(g?g+'g ':'')+(g||sv?sv+'s ':'')+cp+'c'; };
 function perKillXP(ids,st,cfg){
   const fac=route.char.faction; let best=null;
@@ -1287,7 +1290,7 @@ function renderXP(){
   $('#lvl').innerHTML=`${st.level}<small>${cursor<0?'at start':'after step '+(cursor+1)}</small>`;
   $('#xpfill').style.width=pct+'%';
   $('#xplbl').textContent=st.level<MAXLVL?`${fmt(st.xp)} / ${fmt(need)} XP (${pct.toFixed(0)}%)`:'Level 60';
-  { const tc=cursor>=0?SIM.res[cursor]?.tAt||0:0; $('#played').innerHTML=`/played ≈ <b>${fmtT(tc)}</b> · 💰 ≈ <b>${fmtG(SIM.st.money)}</b>`; $('#played').title=`Estimated time played by the end of step ${cursor+1}: walking/flying between steps, kills × time to kill (your DPS vs mob HP and armor, plus downtime) and talking. Set DPS and downtime in Settings. Route total ≈ ${fmtT(SIM.end.t)}.\nMoney: coins + vendor value of everything your kills drop (objective, travel and grind kills; CMaNGOS classic-db loot tables), quest money rewards (Forever quests estimated from their level), minus class training. Flights, repairs and purchases are not counted. Route end ≈ ${fmtG(SIM.end.money)}.`; }
+  { const tc=cursor>=0?SIM.res[cursor]?.tAt||0:0; $('#played').innerHTML=`/played ≈ <b>${fmtT(tc)}</b> · 💰 ≈ <b>${fmtG(SIM.st.money)}</b>`; $('#played').title=`Estimated time played by the end of step ${cursor+1}: walking/flying between steps, kills × time to kill (your DPS vs mob HP and armor, plus downtime) and talking. Set DPS and downtime in Settings. Route total ≈ ${fmtT(SIM.end.t)}.\nMoney: coins + vendor value of everything your kills drop (objective, travel and grind kills; CMaNGOS classic-db loot tables), quest money and reward items at vendor value (best choice item; Forever quests estimated from their level), minus class training, learning professions (10s) and vendor purchases. Flights, repairs and recipe training are not counted. Route end ≈ ${fmtG(SIM.end.money)}.`; }
   const e=SIM.end; const quests=route.steps.filter(s=>s.t==='turnin').length; const endL=e.level+(e.level<MAXLVL?e.xp/XP_TABLE[e.level]:0);
   $('#groupSel').value=String(SIM.st.party||1);
   $('#xpsum').innerHTML=`Route end: <b>level ${endL.toFixed(2)}</b> · ${quests} turn-ins · ${SIM.st.log.size+[...(SIM.st.fq||new Map()).values()].filter(v=>v!=='done').length}/${LOGMAX} in log · /played ≈ ${fmtT(SIM.end.t)} · 💰 ≈ ${fmtG(SIM.end.money)}`;

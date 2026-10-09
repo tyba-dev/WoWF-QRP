@@ -9,7 +9,8 @@ def table(name):
     for im in re.finditer(r'INSERT INTO `'+name+r'` VALUES (.*?);\n',sql,re.S):
         for r in rows(im.group(1)): yield {c:r[i] for c,i in ix.items() if i<len(r)}
 num=lambda v:float(v) if v not in (None,'NULL','') else 0.0
-sell={int(r['entry']):int(num(r['SellPrice'])) for r in table('item_template')}
+sell={}; buyp={}
+for r in table('item_template'): e=int(r['entry']); sell[e]=int(num(r['SellPrice'])); buyp[e]=int(num(r['BuyPrice']))
 def load(name):
     T={}
     for r in table(name): T.setdefault(int(r['entry']),[]).append((int(r['item']),num(r['ChanceOrQuestChance']),int(num(r['groupid'])),int(num(r['mincountOrRef'])),int(num(r['maxcount']))))
@@ -38,13 +39,20 @@ for r in table('creature_template'):
     if v<=0: continue
     kill[e]=round(v); L=int((num(r['MinLevel'])+num(r['MaxLevel']))/2)
     if int(num(r.get('Rank') or 0))==0: byL.setdefault(L,[]).append(v)
-quest={}; qL={}
+quest={}; qL={}; qitem={}; qiL={}
 for r in table('quest_template'):
-    m=int(num(r['RewOrReqMoney']))
-    if m>0: quest[int(r['entry'])]=m; qL.setdefault(int(num(r['QuestLevel'])),[]).append(m)
+    e=int(r['entry']); m=int(num(r['RewOrReqMoney']))
+    if m>0: quest[e]=m; qL.setdefault(int(num(r['QuestLevel'])),[]).append(m)
+    fixed=sum(sell.get(int(num(r[f'RewItemId{k}'])),0)*max(1,int(num(r[f'RewItemCount{k}']))) for k in range(1,5) if int(num(r[f'RewItemId{k}'])))
+    ch=[sell.get(int(num(r[f'RewChoiceItemId{k}'])),0)*max(1,int(num(r[f'RewChoiceItemCount{k}']))) for k in range(1,7) if int(num(r[f'RewChoiceItemId{k}']))]
+    v=fixed+(max(ch) if ch else 0)   # you pick one choice reward: counted at the best sell value
+    if v>0: qitem[e]=v; qiL.setdefault(int(num(r['QuestLevel'])),[]).append(v)
+vend=set(int(r['item']) for r in table('npc_vendor'))
 D=json.load(open('db.json')); keepN=set(int(k) for k in D['n'])
 G=json.load(open('mobl.json'))['g']; keepN|={x[5] for v in G.values() for x in v}
 out={'kill':{k:v for k,v in kill.items() if k in keepN},'killL':{L:round(statistics.median(v)) for L,v in byL.items() if L>0},
-     'quest':{k:v for k,v in quest.items() if str(k) in D['q']},'questL':{L:round(statistics.median(v)) for L,v in qL.items() if L>0}}
+     'quest':{k:v for k,v in quest.items() if str(k) in D['q']},'questL':{L:round(statistics.median(v)) for L,v in qL.items() if L>0},
+     'qitem':{k:v for k,v in qitem.items() if str(k) in D['q']},'qitemL':{L:round(statistics.median(v)) for L,v in qiL.items() if L>0},
+     'buy':{k:buyp[k] for k in vend if buyp.get(k)}}
 json.dump(out,open('money.json','w'),separators=(',',':'))
-print('kill',len(out['kill']),'quest',len(out['quest']),'L20 kill',out['killL'].get(20),'q20',out['questL'].get(20))
+print('qitem',len(out['qitem']),'buy',len(out['buy']),'kill',len(out['kill']),'quest',len(out['quest']),'L20 kill',out['killL'].get(20),'q20',out['questL'].get(20))
