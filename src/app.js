@@ -1086,7 +1086,7 @@ function stepNow(i,at){ const s=route.steps[i]; const n={t:s.t,q:s.q,stk:false};
   cursor=at-1; addStep(n); toast(`Added "${s.t==='accept'?'Accept':s.t==='turnin'?'Turn in':'Complete'} now" as step ${cursor+1}: step ${i+1} is now done on the way if you can.`,4500); }
 /* ---------- class trainer spells (CMaNGOS classic-db, Classic 1.12 baseline) ---------- */
 const gsc=c=>{ c=+c||0; const g=Math.floor(c/1e4), sv=Math.floor(c%1e4/100), cp=c%100; return (g?g+'g ':'')+(sv?sv+'s ':'')+(cp||(!g&&!sv)?cp+'c':'').trim(); };
-function trainerSpells(npc){ const T=META.tsp; const k=T?.n?.[npc]; return k!=null?T.t[k]:null; }
+function trainerSpells(npc){ const T=META.tsp; const k=T?.n?.[npc]; if(k!=null) return T.t[k]; const cls=META.trn?.[npc]?.[1]; if(!cls||!T) return null; /* Forever-only trainer: use the fullest list of another trainer of that class */ let best=null; for(const id in T.n){ if(META.trn?.[id]?.[1]!==cls) continue; const L=T.t[T.n[id]]; if(!best||L.length>best.length) best=L; } return best; }
 function prevTrainLevel(i){ for(let j=i-1;j>=0;j--){ const x=route.steps[j]; if(x.t==='train'&&!SIM.res[j]?.inactive) return SIM.res[j]?.before?.level??null; } return null; }
 function trainList(npc,lv,since){ const L=trainerSpells(npc); if(!L) return '<div class="note">No spell list for this trainer.</div>'; const nxt=lv%2?lv+1:lv+2;
   const now=L.filter(x=>x[0]<=lv&&(since==null||x[0]>since)), soon=L.filter(x=>x[0]>lv&&x[0]<=nxt), cost=now.reduce((a,x)=>a+x[3],0), maxL=L.reduce((a,x)=>Math.max(a,x[0]),0);
