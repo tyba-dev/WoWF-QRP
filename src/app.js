@@ -186,8 +186,8 @@ function whyUnavailable(qid,st,route){
   if(q.cl && !(q.cl&ci.cb)) return {hard:true,why:'Class quest for another class'};
   if(q.z<0 && CLASS_SORT_NAME[q.z] && CLASS_SORT_NAME[q.z]!==route.char.cls) return {hard:true,why:'Class quest for another class'};
   for(const nid of q.s.n){ const fr=DB.n[nid]?.fr; if(fr && !fr.includes(ci.fac)) return {hard:true,why:'Quest giver is hostile to your faction'}; }
-  if(q.sk && !ci.opts.prof) return {hard:true,filter:true,why:'Profession quest (enable in Settings)'};
-  if(q.z<0 && PROF_SORTS.has(q.z) && !ci.opts.prof) return {hard:true,filter:true,why:'Profession quest (enable in Settings)'};
+  if(q.sk && !ci.opts.prof && !q.fv) return {hard:true,filter:true,why:'Profession quest (enable in Settings)'};
+  if(q.z<0 && PROF_SORTS.has(q.z) && !ci.opts.prof && !q.fv) return {hard:true,filter:true,why:'Profession quest (enable in Settings)'};
   if((q.ev || (q.z<0&&EVENT_SORTS.has(q.z))) && !ci.opts.event) return {hard:true,filter:true,why:'Seasonal or event quest (enable in Settings)'};
   if((q.sf||0)&1 && !ci.opts.rep) return {hard:true,filter:true,why:'Repeatable quest (enable in Settings)'};
   if(st.turned.has(qid)) return {why:'Already turned in'};
@@ -318,9 +318,9 @@ function simulate0(){ ensureIds(route);
         else { const ke=killEstimate(s.q,s.counts,st,i=>e.objs.has(i)); e.done=true; objNums(s.q).forEach(n=>e.objs.add(n)); if(ke.xp){ r.kill=ke; r.gained=ke.xp; addXP(st,ke.xp); } }
         e.stk=new Set(e.stk||[]); if(isSticky(s)){ for(const n of e.objs) if(!stkBefore.has(n)) e.stk.add(n); } else { if(s.obj&&!(s.upto>0)) e.stk.delete(s.obj); else if(!s.obj) e.stk.clear(); } }
     } else if(s.t==='turnin'){
-      if(!st.log.has(s.q)) r.err.push('Not in your quest log');
+      if(!st.log.has(s.q)){ if(q.fv&&s.src) r.warn.push('Forever quest the guide hands in without an accept step in your route (it may be picked up automatically, e.g. an escort): counted anyway'); else r.err.push('Not in your quest log'); }
       else if(!st.log.get(s.q).done){ const e=st.log.get(s.q); const miss=objectives(s.q).filter(o=>o.rx&&!(e.objs&&e.objs.has(o.rx))).map(o=>o.text); r.err.push('Objectives not done'+(miss.length?': '+miss.join('; '):'')); }
-      const xp=questXP(s.q,st.level); r.gained=xp; if(st.stkT?.has(s.q)){ st.stkT=new Map(st.stkT); st.stkT.delete(s.q); }
+      const xp=questXP(s.q,st.level); r.gained=xp; if(q.xe&&s.xpo==null) r.warn.push(`Forever quest: Questie has no XP for it yet, ≈${fmt(xp)} estimated from its level. Set the real value with ✎ if you know it.`); if(st.stkT?.has(s.q)){ st.stkT=new Map(st.stkT); st.stkT.delete(s.q); }
       if(q.xp&&st.level<MAXLVL&&st.level>q.xp[0]+5){ const full=questXP(s.q,q.xp[0]); r.pen={lvl:st.level,ql:q.xp[0],xp,full}; r.warn.push(`XP penalty: you are level ${st.level}, the quest is level ${q.xp[0]}, so it gives ${Math.round(Math.max(1,Math.min(10,2*(q.xp[0]-st.level)+20))*10)}% (${fmt(xp)} of ${fmt(full)} XP, losing ${fmt(full-xp)}). Turn it in by level ${q.xp[0]+5} for full XP.`); }
       addXP(st,xp); st.log.delete(s.q); st.turned.add(s.q);
     } else if(s.t==='abandon'){ st.log.delete(s.q); }
@@ -1319,7 +1319,7 @@ function renderDetail(){
   return `<div class="detail"><h2>${esc(q.n)}</h2><div class="note">Quest ${qid} · ${whLink(qid)}</div>
   ${w?`<div class="reason">${esc(w.why)}</div>`:''}
   <dl class="facts"><dt>Level</dt><dd><span class="c-${diffClass(q.l,st.level)}">${q.l}</span> (requires ${q.r})</dd>
-  <dt>XP now</dt><dd>${q.xp?fmt(questXP(qid,st.level))+' of '+fmt(isDungeonQuest(qid)?q.xp[1]*dqMult():q.xp[1])+(isDungeonQuest(qid)?` <span class="dgtxt">(dungeon: Era ${fmt(q.xp[1])} × ${dqMult()})</span>`:''):'No XP data'}</dd>
+  <dt>XP now</dt><dd>${q.xe?'<span class="note" title="Questie has no XP for Forever quests yet: estimated from the quest level">≈ </span>':''}${q.xp?fmt(questXP(qid,st.level))+' of '+fmt(isDungeonQuest(qid)?q.xp[1]*dqMult():q.xp[1])+(isDungeonQuest(qid)?` <span class="dgtxt">(dungeon: Era ${fmt(q.xp[1])} × ${dqMult()})</span>`:''):'No XP data'}</dd>
   <dt>Zone</dt><dd>${esc(areaLabel(q))}</dd>
   <dt>Starts</dt><dd>${itemStart.length?'From item: '+esc(itemStart.join(', ')):loc(sp)}</dd>
   <dt>Ends</dt><dd>${loc(fp)}</dd></dl>
@@ -1754,7 +1754,7 @@ document.addEventListener('keydown',e=>{ if((e.key==='Delete'||e.key==='Backspac
 
 $('#groupSel').addEventListener('change',e=>{ const v=+e.target.value; if(v===(SIM.st.party||1)) return; addStep({t:'party',size:v}); toast(v>1?`Group of ${v} from step ${cursor+1}`:`Solo from step ${cursor+1}`); });
 
-function whURL(qid,alt){ const q=Q(qid); return (qid>=90000||!q||foreverQuests().has(+qid))?'https://www.wowhead.com/forever/quest='+qid:'https://www.wowhead.com/classic/quest='+qid; } /* Forever-only quests live on Wowhead's Forever branch */
+function whURL(qid,alt){ const q=Q(qid); return (qid>=90000||!q||q.fv||foreverQuests().has(+qid))?'https://www.wowhead.com/forever/quest='+qid:'https://www.wowhead.com/classic/quest='+qid; } /* Forever-only quests live on Wowhead's Forever branch */
 function whLink(qid,btn){ const url=whURL(qid);
   return btn?`<a class="btn sm" href="${url}" target="_blank" rel="noopener" style="text-decoration:none">Wowhead ↗</a>`:`<a href="${url}" target="_blank" rel="noopener">Wowhead ↗</a>`; }
 
