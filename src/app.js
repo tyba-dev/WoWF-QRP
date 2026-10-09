@@ -2221,8 +2221,8 @@ $('#impGo').addEventListener('click',()=>{
 });
 
 /* ---------- dungeon conditionals (.dungeon TAG / .dungeon !TAG) ---------- */
-const DUNGEONS=[['RFC','Ragefire Chasm'],['DM','The Deadmines'],['WC','Wailing Caverns'],['SFK','Shadowfang Keep'],['BFD','Blackfathom Deeps'],['STOCKS','The Stockade'],['GNOMER','Gnomeregan'],['RFK','Razorfen Kraul'],['SM','Scarlet Monastery'],['RFD','Razorfen Downs'],['ULDA','Uldaman'],['ZF',"Zul'Farrak"],['MARA','Maraudon'],['ST','Sunken Temple'],['BRD','Blackrock Depths'],['DME','Dire Maul'],['SCHOLO','Scholomance'],['STRAT','Stratholme'],['LBRS','Lower Blackrock Spire']];
-const DG_ALT={DEADMINES:'DM',VC:'DM',STOCKADES:'STOCKS',STOCKADE:'STOCKS',"TEMPLE OF ATAL'HAKKAR":'ST',DMW:'DME',DMN:'DME',GNOMEREGAN:'GNOMER',ULDAMAN:'ULDA',MARAUDON:'MARA',STRATHOLME:'STRAT',SCHOLOMANCE:'SCHOLO',"ZUL'FARRAK":'ZF'};
+const DUNGEONS=[['RFC','Ragefire Chasm'],['DM','The Deadmines'],['WC','Wailing Caverns'],['HOT','The Hall of Thanes'],['ROL','Ruins of Lordaeron'],['SFK','Shadowfang Keep'],['BFD','Blackfathom Deeps'],['EXC','Excavation Site: Wetlands'],['STOCKS','The Stockade'],['GNOMER','Gnomeregan'],['RFK','Razorfen Kraul'],['SM','Scarlet Monastery'],['RFD','Razorfen Downs'],['ULDA','Uldaman'],['ZF',"Zul'Farrak"],['MARA','Maraudon'],['ST','Sunken Temple'],['BRD','Blackrock Depths'],['DME','Dire Maul'],['SCHOLO','Scholomance'],['STRAT','Stratholme'],['LBRS','Lower Blackrock Spire']];
+const DG_ALT={HOTHANES:'HOT','HALL OF THANES':'HOT',THANES:'HOT',LORDAERON:'ROL',RUINS:'ROL',EXCAVATION:'EXC',DEADMINES:'DM',VC:'DM',STOCKADES:'STOCKS',STOCKADE:'STOCKS',"TEMPLE OF ATAL'HAKKAR":'ST',DMW:'DME',DMN:'DME',GNOMEREGAN:'GNOMER',ULDAMAN:'ULDA',MARAUDON:'MARA',STRATHOLME:'STRAT',SCHOLOMANCE:'SCHOLO',"ZUL'FARRAK":'ZF'};
 function dgTag(x){ const u=String(x).trim().toUpperCase(); return DG_ALT[u]||u; }
 function dgName(t){ return (DUNGEONS.find(d=>d[0]===t)||[t,t])[1]; }
 function dgOn(t){ return !!route.char.dungeons?.[t]; }

@@ -25,6 +25,9 @@ for m in ('0', '1'):
     M['labels'].update(G['labels'])
 M['zones']['16591'].update(b=[-2208, -6758, -6533, -9566], ap=0)
 M['relief'] = json.load(open('relief.json'))
+# Forever dungeons (entrances approximate)
+M['dungeons'].update({'16611':{'n':'Ruins of Lordaeron','l':[[85,61.6,69.5]]},'16919':{'n':'The Hall of Thanes','l':[[1537,40.0,56.0]]},'exc':{'n':'Excavation Site: Wetlands','l':[[11,53.2,65.8]]}})
+M['dgAreas']=sorted(set(M['dgAreas'])|{16611,16919})
 M['fqb'] = json.load(open('fqb.json')); M['fqbRev'] = 'QuestieDB '+json.load(open('fqb_rev.json'))['rev']
 try: M['fqw'] = json.load(open('fqw.json'))  # optional local Wowhead lookups, not shipped
 except FileNotFoundError: pass
