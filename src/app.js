@@ -164,6 +164,7 @@ function addXP(st,amt){
   if(st.level>=MAXLVL){ st.level=MAXLVL; st.xp=0; }
 }
 const totalXP=(level,xp)=>{ let t=xp; for(let l=1;l<level;l++) t+=XP_TABLE[l]; return t; };
+const fromTotal=t=>{ let l=1; while(l<MAXLVL&&t>=XP_TABLE[l]){ t-=XP_TABLE[l]; l++; } return {level:l,xp:l>=MAXLVL?0:Math.round(t)}; };
 function grayLevel(l){ return l<=5?0 : l<=39? l-5-Math.floor(l/10) : l-1-Math.floor(l/5); }
 function diffClass(ql,l){ const d=ql-l; if(d>=5) return 'red'; if(d>=3) return 'orange'; if(d>=-2) return 'yellow'; if(ql>grayLevel(l)) return 'green'; return 'grey'; }
 function zeroDiff(l){ return l<8?5:l<10?6:l<12?7:l<16?8:l<20?9:l<30?11:l<40?12:l<45?13:l<50?14:l<55?15:16; }
@@ -271,7 +272,7 @@ const LOGMAX=40, ESC_LIMIT=25, ESCORT=new Set([155,219,309,435,648,660,665,667,7
 const ESC_NOTE=`Escort quest: have fewer than ${ESC_LIMIT} quests in your log before accepting (Forever bug)`;
 function simulate(){ simulate0(); const by=route.steps.map((x,k)=>[x,k]).filter(([x])=>x.t==='grind'&&x.mode==='by'); if(!by.length) return;
   for(let it=0;it<8;it++){ let ch=false; for(const [g,k] of by){ const j=route.steps.findIndex(x=>x.id===g.at); if(j<=k||SIM.res[k]?.inactive) continue; const a=SIM.res[j]?.after; if(!a) continue;
-      const diff=totalXP(Math.min(MAXLVL,g.level),g.xp||0)-totalXP(a.level,a.xp); const cur=+g._amt||0; const nv=Math.max(0,Math.round(cur+diff)); if(nv!==cur){ g._amt=nv; ch=true; } }
+      const diff=totalXP(Math.min(MAXLVL,g.level),g.xp||0)-totalXP(a.level,a.xp); const r=SIM.res[k]; const base=Math.max(+g._tgt||0,r.byNow||0); const nv=Math.max(r.byNow||0,Math.round(base+diff)); if(nv!==(+g._tgt||0)&&Math.abs(diff)>0){ g._tgt=nv; ch=true; } }
     if(!ch) break; simulate0(); } }
 function simulate0(){ ensureIds(route);
   const st=initState(route); const res=[]; let atCursor=cloneState(st); const optQ=new Set(route.optOff?route.steps.filter(x=>x.opt&&x.t==='accept'&&x.q).map(x=>x.q):[]);
@@ -328,8 +329,9 @@ function simulate0(){ ensureIds(route);
         const target=totalXP(s.level,s.xp||0), now=totalXP(st.level,st.xp);
         if(target<=now){ r.warn.push('Already past this point'); }
         else { r.gained=target-now; st.level=Math.min(MAXLVL,s.level); st.xp=st.level>=MAXLVL?0:(s.xp||0); }
-      } else if(s.mode==='by'){ const j=route.steps.findIndex(x=>x.id===s.at); r.gained=Math.max(0,Math.round(+s._amt||0)); addXP(st,r.gained);
-        if(j<0) r.err.push('The step to ding at is no longer in the route: edit this grind step'); else if(j<=i) r.err.push(`Step ${j+1} comes before this grind: pick a later step`); else r.warn.push(`Grinds just enough to reach level ${s.level}${s.xp?' + '+fmt(s.xp)+' XP':''} after step ${j+1}`);
+      } else if(s.mode==='by'){ const j=route.steps.findIndex(x=>x.id===s.at); const now=totalXP(st.level,st.xp); const T=+s._tgt||0; r.byNow=now;
+        if(T>now){ r.gained=T-now; const t=fromTotal(T); st.level=t.level; st.xp=t.xp; } else if(T) r.warn.push('Already past the target here: no grinding needed');
+        if(j<0) r.err.push('The step to ding at is no longer in the route: edit this grind step'); else if(j<=i) r.err.push(`Step ${j+1} comes before this grind: pick a later step`); else if(T){ const t=fromTotal(T); r.warn.push(`Grind to level ${t.level} + ${fmt(t.xp)} XP, so you are level ${s.level}${s.xp?' + '+fmt(s.xp)+' XP':''} after step ${j+1}`); }
       } else { r.gained=+s.amount||0; addXP(st,r.gained); }
     } else if(s.t==='party'){ if(s.size===st.party) r.warn.push('Group size is already '+s.size); st.party=s.size;
     } else if(s.t==='custom'){
@@ -917,7 +919,7 @@ function stepText(s){
     case 'collect': { const src=[...new Set(itemSourcePts(s.item,'loot').map(p=>p.label))].slice(0,2).join(', '); return {ic:'✚',cls:'complete',t:`Loot ${DB.i[s.item]?.n||'item'}${s.c>1?' ×'+s.c:''}`,sub:(src?'from '+src+' · ':'')+'needed for '+(Q(s.q)?.n||'quest')}; }
     case 'train': { const t=trainerOf(s.npc); return {ic:'✦',cls:'travel',t:'Train class spells',sub:(t?.name||s.npcName||'class trainer')+(t?' · '+zoneName(t.sp[0][0]):'')}; }
     case 'buy': { const v=vendorOf(s.npc); return {ic:'¤',cls:'travel',t:'Buy from '+(v?.name||s.npcName||'vendor'),sub:(s.items||[]).map(it=>`${it.c}× ${it.n||itemName(it.id)}`).join(', ')+(v?.sub?' · '+v.sub:'')}; }
-    case 'grind': if(s.mode==='by'){ const j=route.steps.findIndex(x=>x.id===s.at); return {ic:'⚔',cls:'grind',t:`Grind ${fmt(+s._amt||0)} XP: level ${s.level}${s.xp?' + '+fmt(s.xp)+' XP':''} after step ${j+1}`,sub:[s.note,j>=0?'ding at: '+rxpPlain(stepText(route.steps[j]).t):''].filter(Boolean).join(' · ')}; }
+    case 'grind': if(s.mode==='by'){ const j=route.steps.findIndex(x=>x.id===s.at); const t=s._tgt?fromTotal(s._tgt):null; return {ic:'⚔',cls:'grind',t:`Grind to level ${t?t.level+' + '+fmt(t.xp)+' XP':'?'} (level ${s.level}${s.xp?' + '+fmt(s.xp)+' XP':''} after step ${j+1})`,sub:[s.note,j>=0?'ding at: '+rxpPlain(stepText(route.steps[j]).t):''].filter(Boolean).join(' · ')}; }
       return {ic:'⚔',cls:'grind',t:s.mode==='to'?`Grind to level ${s.level}${s.xp?' + '+fmt(s.xp)+' XP':''}`:`Grind ${fmt(s.amount||0)} XP`,sub:[s.note,{mobs:'Mob kills',explore:'Exploration',both:'Mobs and exploration',other:''}[s.src]||''].filter(Boolean).join(' · ')};
     case 'party': return {ic:s.size>1?String(s.size):'1',cls:'party',t:s.size>1?`Group up: ${s.size} players`:'Go solo',sub:'Affects mob-kill XP estimates from here on'};
     case 'custom': return {ic:'★',cls:'custom',t:({turnin:'Turn in ',accept:'Accept ',complete:'Complete '})[s.act||'turnin']+s.name,sub:(s.qid?'ID '+s.qid+' · ':'')+'custom quest'};
