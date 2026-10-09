@@ -386,8 +386,9 @@ dialog textarea{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-
 
 <dialog id="dlgGrind"><form method="dialog" id="grindForm">
   <h2>Grind step</h2>
-  <div class="seg" id="grindMode"><button type="button" data-m="add" aria-pressed="true">Add an amount of XP</button><button type="button" data-m="to" aria-pressed="false">Grind to a level</button></div>
+  <div class="seg" id="grindMode"><button type="button" data-m="add" aria-pressed="true">Add an amount of XP</button><button type="button" data-m="to" aria-pressed="false">Grind to a level</button><button type="button" data-m="by" aria-pressed="false">Ding by a later step</button></div>
   <div class="grid2" data-gm="add"><label>XP gained<input type="number" name="amount" min="0" step="10"></label><label>Source<select name="src"><option value="mobs">Mob kills</option><option value="explore">Exploration</option><option value="both">Mobs and exploration</option><option value="other">Other</option></select></label></div>
+  <div data-gm="by" hidden><div class="grid3"><label>Be level<input type="number" name="blevel" min="1" max="60"></label><label>plus XP<input type="number" name="bxp" min="0" step="10"></label><label>after step<input type="number" name="bstep" min="1"></label></div><p class="note" style="margin:4px 0 0">Grinds only as much as needed so that, with the XP from the steps in between (e.g. a hand-in), you hit that level right after the chosen step: ready to train or pick up a higher quest. The amount updates when you change the route.</p></div>
   <div class="grid2" data-gm="to" hidden><label>Target level<input type="number" name="tlevel" min="1" max="60"></label><label>Plus XP into that level<input type="number" name="txp" min="0" step="10"></label></div>
   <div class="est" data-gm="add">
     <b>Estimate mob XP</b>
