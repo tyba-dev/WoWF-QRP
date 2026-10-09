@@ -266,7 +266,7 @@ function startExpl(r){ const s=new Set(); const h=START[r.char.race]; if(h&&META
 // a new character's hearthstone is bound to where they first spawn
 const START_NAME={Human:'Northshire Abbey',Dwarf:'Coldridge Valley',Gnome:'Coldridge Valley','Night Elf':'Shadowglen',Orc:'Valley of Trials',Troll:'Valley of Trials',Undead:'Deathknell',Tauren:'Camp Narache'};
 function startHome(r){ const s=START[r.char.race]; if(!s) return null; const p=zp2plane(...s); return p?{...p,label:START_NAME[r.char.race]||zoneName(s[0]),step:null,def:true}:null; }
-function cloneState(s){ return {level:s.level,xp:s.xp,party:s.party,log:new Map([...s.log].map(([k,v])=>[k,{...v,objs:v.objs?new Set(v.objs):undefined,stk:v.stk?new Set(v.stk):undefined}])),turned:new Set(s.turned),fps:new Set(s.fps),home:s.home,fq:new Map(s.fq||[]),fqs:s.fqs?new Map(s.fqs):undefined,stkT:s.stkT,fqo:new Map([...(s.fqo||new Map())].map(([k,v])=>[k,new Set(v)])),expl:new Set(s.expl||[])}; }
+function cloneState(s){ return {level:s.level,xp:s.xp,party:s.party,log:new Map([...s.log].map(([k,v])=>[k,{...v,objs:v.objs?new Set(v.objs):undefined,stk:v.stk?new Set(v.stk):undefined}])),turned:new Set(s.turned),fps:new Set(s.fps),home:s.home,fq:new Map(s.fq||[]),fqs:s.fqs?new Map(s.fqs):undefined,money:s.money||0,lastTrain:s.lastTrain,stkT:s.stkT,fqo:new Map([...(s.fqo||new Map())].map(([k,v])=>[k,new Set(v)])),expl:new Set(s.expl||[])}; }
 // Forever: quest log holds 40, but escort quests can't be started with 25+ quests in the log
 const LOGMAX=40, ESC_LIMIT=25, ESCORT=new Set([155,219,309,435,648,660,665,667,731,836,863,898,938,945,976,994,995,1144,1222,1249,1270,1393,1440,1560,1651,2742,2767,2845,2904,2969,3382,3525,3982,4121,4245,4261,4265,4322,4491,4770,4901,4904,4966,5203,5321,5713,5821,5943,5944,6132,6403,6482,6523,6544,6641,8736]);
 const ESC_NOTE=`Escort quest: have fewer than ${ESC_LIMIT} quests in your log before accepting (Forever bug)`;
@@ -361,13 +361,19 @@ function simulate0(){ computeGroups(); ensureIds(route);
       if((own||!afterGrind&&toObj)&&!r.inactive&&tgt&&lastPt&&!isSticky(s)&&gm==null&&yp>0&&st.level<until&&st.level<MAXLVL){ const w=travelKills(lastPt,tgt,st,yp); if(w){ r.walk=w; r.gained+=w.xp; addXP(st,w.xp); r.after={level:st.level,xp:st.xp}; } } }
     if(!r.inactive){ const lt=r.leg?.type; const pts=[]; if(lastPt&&!isSticky(s)&&gm==null){ if(lt==='fly'||lt==='ride'||lt==='death'){ if(r.dep) pts.push(lastPt,r.dep,null); } else if(lt!=='hs'&&r.pt) pts.push(lastPt,r.pt); }
       if(r.path&&r.path.length>1&&!isSticky(s)) pts.push(null,...r.path,r.path[0]); /* sticky / done-along-the-way steps don't walk their loop */ if(r.pt&&(lt==='fly'||lt==='ride'||lt==='hs'||lt==='death')) pts.push(null,r.pt); exploreAlong(pts,st,r); }
+    if(!r.inactive&&r.passive==null){ let m=0; const L=r.before?.level||st.level;
+      if(r.kill?.money) m+=r.kill.money; if(r.walk?.kills) m+=r.walk.kills*lvlMoney(r.walk.lv||L)/(st.party||1);
+      if(s.t==='grind'&&r.gained>0&&(!s.src||s.src==='mobs'||s.src==='both')){ const g=Math.max(1,L-2); const per=mobXP(L,g,false,st.party||1)||1; m+=r.gained/per*lvlMoney(g)/(st.party||1); }
+      if(s.t==='turnin'&&s.q&&Q(s.q)&&!(isSticky(s)&&!stepGuide(s))) m+=questMoney(s.q);
+      if(s.t==='train'&&s.npc){ const T=trainerSpells(s.npc)||[]; const since=st.lastTrain??0; m-=T.filter(x=>x[0]<=L&&x[0]>since).reduce((a,x)=>a+x[3],0); st.lastTrain=L; }
+      r.money=m; st.money=(st.money||0)+m; }
     r.from=lastPt; r.stk=(isSticky(s)||gm!=null)&&!['hs','fly','ride','death'].includes(r.leg?.type); /* a hearth / flight still moves you even when the guide shows it as #completewith */ if(r.pt&&!r.stk) lastPt=r.pt;
     res.push(r);
     if(i===cursor) atCursor=cloneState(st);
   });
   if(cursor<0) atCursor=initState(route);
   estimateTimes(res);
-  SIM={res,st:atCursor,end:{level:st.level,xp:st.xp,log:st.log.size,t:res.length?res[res.length-1].tAt:0}};
+  SIM={res,st:atCursor,end:{level:st.level,xp:st.xp,log:st.log.size,t:res.length?res[res.length-1].tAt:0,money:st.money||0}};
   SIM.avail=computeAvailable(SIM.st);
   SIM.near=nearZones();
 }
@@ -548,22 +554,27 @@ function isUniqueMob(id){ const pts=entPts('n',id); const l=DB.n[id]?.l; if(!pts
 function genericDrop(src){ if(src.length<25) return false; const ls=src.map(n=>DB.n[n]?.l).filter(Boolean); if(!ls.length) return true; return Math.max(...ls.map(l=>l[1]))-Math.min(...ls.map(l=>l[0]))>20; }
 function killCfg(){ const c=route.char; return {on:c.killxp!==false, rate:Math.max(5,Math.min(100,+c.droprate||60))/100, def:Math.max(1,+c.defcount||8), dg:2/(+c.dgdiv>0?+c.dgdiv:3.5)}; }
 function npcInfo(id){ const n=DB.n[id]; if(!n||!n.l) return null; const pts=entPts('n',id); return {l:Math.round((n.l[0]+n.l[1])/2),elite:n.rk===1||n.rk===2||n.rk===3,dg:pts.length>0&&pts.every(p=>p.dg)}; }
+/* ---------- money estimate (CMaNGOS classic-db: coins + vendor value of drops per kill, quest money rewards) ---------- */
+const killMoney=(id,lv)=>{ const M=META.money; if(!M) return 0; const v=M.kill?.[id]; if(v!=null) return v; return M.killL?.[Math.max(1,Math.round(lv||1))]||0; };
+const lvlMoney=lv=>META.money?.killL?.[Math.max(1,Math.round(lv||1))]||0;
+function questMoney(qid){ const M=META.money; const q=Q(qid); if(!M||!q) return 0; const v=M.quest?.[qid]; if(v!=null) return v; return q.fv?(M.questL?.[q.l]||0):0; }
+const fmtG=c=>{ c=Math.round(c||0); const neg=c<0; c=Math.abs(c); const g=Math.floor(c/1e4), sv=Math.floor(c%1e4/100), cp=c%100; return (neg?'−':'')+(g?g+'g ':'')+(g||sv?sv+'s ':'')+cp+'c'; };
 function perKillXP(ids,st,cfg){
   const fac=route.char.faction; let best=null;
   for(const id of ids){ const n=DB.n[id]; if(!n||n.fr===fac||(isQuestGiver(id)&&ids.length===1&&!n.rk)) continue; const ni=npcInfo(id); if(!ni) continue;
-    const d=Math.abs(ni.l-st.level); if(!best||d<best.d) best={ni,d}; }
-  if(!best) return {xp:0,none:true}; const ni=best.ni; return {xp:mobXP(st.level,ni.l,ni.elite,st.party||1,ni.dg?cfg.dg:0),dg:ni.dg};
+    const d=Math.abs(ni.l-st.level); if(!best||d<best.d) best={ni,d,id}; }
+  if(!best) return {xp:0,none:true,money:0}; const ni=best.ni; return {xp:mobXP(st.level,ni.l,ni.elite,st.party||1,ni.dg?cfg.dg:0),dg:ni.dg,money:killMoney(best.id,ni.l)/(st.party||1)};
 }
 function killEstimate(qid,counts,st,skip){
   const cfg=killCfg(); const q=Q(qid); if(!cfg.on||!q) return {xp:0,kills:0,guessed:false};
-  const o=q.o||{}; let idx=1, xp=0, kills=0, guessed=false, dg=false;
+  const o=q.o||{}; let idx=1, xp=0, kills=0, guessed=false, dg=false, money=0;
   const cnt=(uniq)=>{ const c=counts&&counts[idx]; if(c) return +c; if(uniq) return 1; guessed=true; return cfg.def; };
   const use=()=>!(skip&&skip(idx));
-  for(const [id] of o.c||[]){ if(!use()){ idx++; continue; } const n=cnt(isUniqueMob(id)); const k=perKillXP([id],st,cfg); xp+=k.xp*n; kills+=n; dg=dg||k.dg; idx++; }
+  for(const [id] of o.c||[]){ if(!use()){ idx++; continue; } const n=cnt(isUniqueMob(id)); const k=perKillXP([id],st,cfg); xp+=k.xp*n; money+=(k.money||0)*n; kills+=n; dg=dg||k.dg; idx++; }
   for(const _ of o.o||[]) idx++;
-  for(const [id] of o.i||[]){ const src=DB.i[id]?.d||[]; if(src.length&&!genericDrop(src)&&use()){ const boss=src.length<=2&&src.every(n=>isUniqueMob(n)); const n=boss?1:Math.ceil(cnt()/cfg.rate); const k=perKillXP(src,st,cfg); xp+=k.xp*n; kills+=n; dg=dg||k.dg; } idx++; }
-  for(const [ids,base] of o.k||[]){ if(!use()){ idx++; continue; } const n=cnt(); const k=perKillXP(base?[base,...ids]:ids,st,cfg); xp+=k.xp*n; kills+=n; dg=dg||k.dg; idx++; }
-  return {xp:Math.round(xp),kills,guessed,dg};
+  for(const [id] of o.i||[]){ const src=DB.i[id]?.d||[]; if(src.length&&!genericDrop(src)&&use()){ const boss=src.length<=2&&src.every(n=>isUniqueMob(n)); const n=boss?1:Math.ceil(cnt()/cfg.rate); const k=perKillXP(src,st,cfg); xp+=k.xp*n; money+=(k.money||0)*n; kills+=n; dg=dg||k.dg; } idx++; }
+  for(const [ids,base] of o.k||[]){ if(!use()){ idx++; continue; } const n=cnt(); const k=perKillXP(base?[base,...ids]:ids,st,cfg); xp+=k.xp*n; money+=(k.money||0)*n; kills+=n; dg=dg||k.dg; idx++; }
+  return {xp:Math.round(xp),kills,guessed,dg,money};
 }
 
 /* ---------- map ---------- */
@@ -1055,7 +1066,7 @@ function renderSteps(){
     parts.push(`<li tabindex="-1" class="step ${i===cursor?'cur':''} ${i>cursor?'future':''} ${r.inactive?'inactive':''} ${dgTags.length?'dgstep':''} ${s.opt?'optstep':''} ${selSteps.has(i)?'msel':''}" data-i="${i}" draggable="true"${sc?` style="box-shadow:inset 4px 0 0 ${sc.color}"`:''}>
       <span class="n" title="Drag to reorder">${i+1}</span><span class="ic ${tx.cls} ${dq?'dq':''}" aria-hidden="true">${tx.ic}</span>
       <span class="t">${''}${s.src&&s.t==='travel'&&(s.kind==='note'||s.kind==='goto')?rxpHTML(tx.t):esc(rxpPlain(tx.t))}${(()=>{const gs=s.src&&!s.src.auto?G(s.src.g)?.steps[s.src.i]:null; return gs?notesHTML(gs,s.t==='travel'&&(s.kind==='note'||s.kind==='goto')?(s.text||''):''):'';})()}${s.t==='grind'&&r.party>1?`<span class="sub">in a group of ${r.party}</span>`:''}${r.expl?`<span class="sub kx" title="${esc(r.expl.map(e=>e.n+': '+e.xp+' XP').join(', '))}">${r.expl.some(e=>e.xp)?'+'+fmt(r.expl.reduce((t,e)=>t+e.xp,0))+' XP exploring: ':'Discovers: '}${esc(r.expl.map(e=>e.n).slice(0,4).join(', '))}${r.expl.length>4?'…':''}</span>`:''}${r.walkOff?`<span class="sub kx">No kills on the way here (set on this step)</span>`:''}${r.walk?`<span class="sub kx" title="Mobs killed while walking here: 1 kill per ${s.ypk!=null&&s.ypk!==''?s.ypk+' yards (set on this step)':route.char.ypk+' yards'}, average mob level ${r.walk.lv.toFixed(1)}">+${fmt(r.walk.xp)} XP on the way (≈${r.walk.kills<10?r.walk.kills.toFixed(1):Math.round(r.walk.kills)} kills)</span>`:''}${r.kill?`<span class="sub kx">≈${fmt(r.kill.kills)} kills${r.kill.guessed?' (some counts guessed)':''}${r.party>1?` · group of ${r.party}`:''}${r.kill.dg?' · dungeon mobs':''}</span>`:''}${s.unote?`<span class="unote">${s.unote.split('\n').map(esc).join('<br>')}</span>`:''}${stickyChip(s,i)}${nowSel(s,i)}${r&&r.grpOf!=null?`<span class="stk" title="Close to step ${r.grpOf+1}: done together on one loop and exported as one RestedXP step. Click to keep it separate." data-nogrp="${i}">🔗 with step ${r.grpOf+1}</span>`:r&&r.grpN?`<span class="stk" title="The next ${r.grpN-1} objective step(s) are in the same area: done together on this loop">🔗 ${r.grpN} objectives together</span>`:''}${s.nogrp?`<span class="stk" data-nogrp="${i}" title="Kept separate from nearby objectives: click to allow grouping again">⛓ separate</span>`:''}${s.t==='train'&&s.npc&&r&&!r.inactive?`<details class="tspd"><summary>Spells</summary>${trainList(s.npc,r.before?.level??SIM.st.level,prevTrainLevel(i))}</details>`:''}${r.path?`<span class="stk" data-pathed="${i}" style="cursor:pointer" title="The RestedXP arrow loops through these points (#loop). Click to see or edit it on the map.">🔁 path · ${r.path.length} pts</span>`:''}${s.t==='accept'&&ESCORT.has(s.q)?`<span class="sub" style="color:var(--warn)">⚠ ${esc(ESC_NOTE)}</span>`:''}${allTags.map(t=>`<span class="dgtag" data-dgsel="${esc(t)}" title="${dgTags.includes(t)?`Only because you're running ${esc(dgName(t))}`:`${esc(dgName(t))} quest`}. Click to select every ${esc(t)} step">${esc(t)}</span>`).join('')}${tx.sub?`<span class="sub">${esc(tx.sub)}</span>`:''}${r.inactive?`<span class="wrn">${esc(r.inactive)}</span>`:''}${r.err.map(e=>{ const m=e.match(/^Requires level (\d+)/); return `<span class="err">${esc(e)}${m?` <button class="linkish" data-fixgrind="${i}:${m[1]}">Add a grind to level ${m[1]} before this</button>`:''}</span>`; }).join('')}${r.warn.map(e=>`<span class="wrn">${esc(e)}</span>`).join('')}${r.custom&&s.t==='turnin'?`<button class="linkish" data-uxp="${i}">${route.qxp?.[s.q]?'Change XP reward':'Set XP reward'}</button>`:''}</span>
-      <span class="x">${r.gained||s.xpo!=null?`<b${s.xpo!=null?' title="XP set by you"':''}>+${fmt(r.gained)}${s.xpo!=null?'*':''}</b><br>`:''}${lvl.toFixed(1)}</span>
+      <span class="x">${r.gained||s.xpo!=null?`<b${s.xpo!=null?' title="XP set by you"':''}>+${fmt(r.gained)}${s.xpo!=null?'*':''}</b><br>`:''}${lvl.toFixed(1)}${Math.abs(r.money||0)>=100?`<br><span class="note" style="font-size:10px" title="Estimated money from this step">${r.money>0?'+':''}${fmtG(r.money)}</span>`:''}</span>
       <span class="sbtns">${s.q?`<a class="wh" href="${whURL(s.q,s.qn)}" target="_blank" rel="noopener" title="Open this quest on Wowhead">wh↗</a>`:''}<button class="opt ${s.opt?'on':''}" data-opt="${i}" title="${s.opt?'Optional (click to make required)':'Mark as optional'}" aria-pressed="${!!s.opt}">opt</button>${!stepGuide(s)&&s.t==='accept'&&Q(s.q)?.sh?`<button class="ed ${s.shared?'on':''}" data-shr="${i}" title="${s.shared?'Shared by a party member (click to pick it up from the NPC instead)':'Shareable quest: click if a party member will share it with you'}" aria-label="Shared quest for step ${i+1}">🤝</button>`:''}${!stepGuide(s)&&['accept','complete','turnin','custom','grind','travel'].includes(s.t)?`<button class="ed ${s.stk?'on':''}" data-stk="${i}" title="Sticky: ${s.stk==='next'?'with next step':s.stk==='sticky'?'until done':'off'} (click to change)" aria-label="Sticky for step ${i+1}">📌</button>`:''}<button class="ed ${s.unote||s.xpo!=null||s.ypk!=null?'on':''}" data-edit="${i}" title="Edit step: note, XP${s.src?'':', text'}" aria-label="Edit step ${i+1}">✎</button><button class="del" data-del="${i}" aria-label="Delete step ${i+1}">×</button></span></li>`);
     if(i===cursor && i<route.steps.length-1) parts.push(`<li class="insert">New steps are added here</li>`);
     { const fm=forkMark(i); if(fm) parts.push(fm); }
@@ -1276,10 +1287,10 @@ function renderXP(){
   $('#lvl').innerHTML=`${st.level}<small>${cursor<0?'at start':'after step '+(cursor+1)}</small>`;
   $('#xpfill').style.width=pct+'%';
   $('#xplbl').textContent=st.level<MAXLVL?`${fmt(st.xp)} / ${fmt(need)} XP (${pct.toFixed(0)}%)`:'Level 60';
-  { const tc=cursor>=0?SIM.res[cursor]?.tAt||0:0; $('#played').innerHTML=`/played ≈ <b>${fmtT(tc)}</b>`; $('#played').title=`Estimated time played by the end of step ${cursor+1}: walking/flying between steps, kills × time to kill (your DPS vs mob HP and armor, plus downtime) and talking. Set DPS and downtime in Settings. Route total ≈ ${fmtT(SIM.end.t)}.`; }
+  { const tc=cursor>=0?SIM.res[cursor]?.tAt||0:0; $('#played').innerHTML=`/played ≈ <b>${fmtT(tc)}</b> · 💰 ≈ <b>${fmtG(SIM.st.money)}</b>`; $('#played').title=`Estimated time played by the end of step ${cursor+1}: walking/flying between steps, kills × time to kill (your DPS vs mob HP and armor, plus downtime) and talking. Set DPS and downtime in Settings. Route total ≈ ${fmtT(SIM.end.t)}.\nMoney: coins + vendor value of everything your kills drop (objective, travel and grind kills; CMaNGOS classic-db loot tables), quest money rewards (Forever quests estimated from their level), minus class training. Flights, repairs and purchases are not counted. Route end ≈ ${fmtG(SIM.end.money)}.`; }
   const e=SIM.end; const quests=route.steps.filter(s=>s.t==='turnin').length; const endL=e.level+(e.level<MAXLVL?e.xp/XP_TABLE[e.level]:0);
   $('#groupSel').value=String(SIM.st.party||1);
-  $('#xpsum').innerHTML=`Route end: <b>level ${endL.toFixed(2)}</b> · ${quests} turn-ins · ${SIM.st.log.size+[...(SIM.st.fq||new Map()).values()].filter(v=>v!=='done').length}/${LOGMAX} in log · /played ≈ ${fmtT(SIM.end.t)}`;
+  $('#xpsum').innerHTML=`Route end: <b>level ${endL.toFixed(2)}</b> · ${quests} turn-ins · ${SIM.st.log.size+[...(SIM.st.fq||new Map()).values()].filter(v=>v!=='done').length}/${LOGMAX} in log · /played ≈ ${fmtT(SIM.end.t)} · 💰 ≈ ${fmtG(SIM.end.money)}`;
 }
 function renderRouteHead(){
   $('#routeSel').innerHTML=store.routes.map(r=>`<option value="${r.id}" ${r.id===route.id?'selected':''}>${r.group?'⑂ ':''}${esc(r.name)}</option>`).join(''); { const pb=$('#pathsBtn'); if(pb) pb.textContent=route.group?`Paths (${pathSet().length})`:'Paths'; }

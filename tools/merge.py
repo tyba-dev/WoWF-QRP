@@ -29,7 +29,7 @@ M['fqb'] = json.load(open('fqb.json')); M['fqbRev'] = 'QuestieDB '+json.load(ope
 try: M['fqw'] = json.load(open('fqw.json'))  # optional local Wowhead lookups, not shipped
 except FileNotFoundError: pass
 V = json.load(open('vend.json')); M['vend'] = V['vend']; M['trn'] = V['trn']; M['vi'] = V['vi']
-M['mobl'] = json.load(open('mobl.json')); M['expl'] = json.load(open('explore.json')); M['gy'] = json.load(open('gy.json')); M['ptrn'] = json.load(open('ptrn.json')); M['tsp'] = json.load(open('tspells.json'))
+M['mobl'] = json.load(open('mobl.json')); M['expl'] = json.load(open('explore.json')); M['gy'] = json.load(open('gy.json')); M['ptrn'] = json.load(open('ptrn.json')); M['tsp'] = json.load(open('tspells.json')); M['money'] = json.load(open('money.json'))
 M['taxi'] = json.load(open('taxi_q.json')); M['taxiMig'] = json.load(open('taxi_mig.json'))
 flat = code.ravel().astype(int); ch = np.flatnonzero(np.diff(flat)) + 1
 st = np.r_[0, ch]; ln = np.diff(np.r_[st, len(flat)])
