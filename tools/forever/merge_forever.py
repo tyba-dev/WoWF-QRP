@@ -108,5 +108,14 @@ for oid in need['o']:
     sp=spawns(g(r,3))
     if k not in D['o'] and sp: D['o'][k]={'n':g(r,0) or f'Object {oid}','p':sp}; added['o']+=1
     elif k in D['o'] and sp and not D['o'][k].get('p'): D['o'][k]['p']=sp
+# NPCs/objects that lost every spawn when db.json was first built (e.g. the Coldridge Valley quest givers): take them from the raw dump
+RN=json.load(open('raw_Npc.json')); RO=json.load(open('raw_Object.json')); fixed=[0,0]
+def rawp(r): return [[int(z),round(p[0],1),round(p[1],1)] for z,l in (r.get('s') or {}).items() for p in l if isinstance(p,list) and len(p)==2 and isinstance(p[0],(int,float)) and p[0]>=0]
+for t,R,k in (('n',RN,0),('o',RO,1)):
+    for i,e in D[t].items():
+        if not e.get('p') and R.get(i):
+            p=rawp(R[i])
+            if p: e['p']=p; fixed[k]+=1
+print('spawns restored',fixed)
 json.dump(D,open('db.json','w'),separators=(',',':'))
 print('new forever quests',new,'(skyborne-only',sky,') updated',upd,'added',added)
