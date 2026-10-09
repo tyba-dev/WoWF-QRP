@@ -368,6 +368,7 @@ dialog textarea{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-
     <p class="note" id="calMsg" style="margin:0"></p>
   </fieldset>
   <fieldset style="border:1px solid var(--line);border-radius:8px;padding:6px 10px;display:flex;flex-direction:column;gap:8px"><legend class="note">Objectives close together</legend>
+    <label class="inline"><input type="checkbox" name="autoStk"> When accepting a quest, add its kill / loot / use objectives as sticky (done on the way) and a final complete step before the hand-in. Named mobs, talking to NPCs and exploring stay normal steps.</label>
     <label class="inline"><input type="checkbox" name="autoGrp"> Do consecutive objective steps in the same area together (one loop, one RestedXP step)</label>
     <label>Same area = within … yards (default 250)<input type="number" name="grpYd" min="50" max="1500" step="10" placeholder="250" style="width:120px"></label>
     <p class="note" style="margin:0">Only your own Complete steps (not sticky, partial or pinned). Click 🔗 on a step to keep it separate.</p>

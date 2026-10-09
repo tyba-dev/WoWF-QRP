@@ -107,9 +107,9 @@ const objCache=new Map();
 function objectives(qid){
   if(objCache.has(qid)) return objCache.get(qid);
   const q=Q(qid); const o=q.o||{}; const list=[];
-  for(const [id,txt] of o.c||[]) list.push({kind:'kill',text:txt||('Slay '+entName('n',id)),pts:entPts('n',id).map(p=>({...p,kind:'kill',label:entName('n',id)}))});
+  for(const [id,txt] of o.c||[]) list.push({kind:'kill',id,text:txt||('Slay '+entName('n',id)),pts:entPts('n',id).map(p=>({...p,kind:'kill',label:entName('n',id)}))});
   for(const [id,txt] of o.o||[]) list.push({kind:'obj',text:txt||entName('o',id),pts:entPts('o',id).map(p=>({...p,kind:'obj',label:entName('o',id)}))});
-  for(const [id,txt] of o.i||[]) list.push({kind:'loot',text:txt||(DB.i[id]?.n||('Item '+id)),pts:itemSourcePts(id,'loot')});
+  for(const [id,txt] of o.i||[]) list.push({kind:'loot',id,text:txt||(DB.i[id]?.n||('Item '+id)),pts:itemSourcePts(id,'loot')});
   for(const [ids,base,txt] of o.k||[]){ const pts=[]; for(const id of [...ids,...(base?[base]:[])]) pts.push(...entPts('n',id).map(p=>({...p,kind:'kill',label:entName('n',id)}))); list.push({kind:'kill',text:txt||entName('n',base||ids[0]),pts}); }
   for(const s of o.s||[]) list.push({kind:'event',text:s,pts:[]});
   if(o.r) list.push({kind:'rep',text:'Reach reputation '+o.r[1]+' with faction '+o.r[0],pts:[]});
@@ -983,6 +983,24 @@ function defaultPath(step,at){ if(!step.src&&step.t==='accept'&&!step.shared&&!s
 function preLootSteps(step){ const q=step.q&&Q(step.q); if(!q||step.t!=='complete'||!q.rs||step.src) return [];
   const have=new Set(route.steps.slice(0,cursor+1).filter(x=>x.t==='collect'&&x.q===step.q).map(x=>x.item)); const o=q.o||{};
   return q.rs.filter(i=>!have.has(i)&&!(o.i||[]).some(([j])=>j===i)&&itemSourcePts(i,'loot').length).map(i=>({t:'collect',item:i,c:1,q:step.q})); }
+/* ---------- auto sticky: generic objectives (kill N mobs, loot, use objects) are done on the way from accept to hand-in ---------- */
+function objGeneric(o){ if(o.pre||o.extra||!o.rx) return false; if(o.kind==='event'||o.kind==='rep') return false;
+  if(o.kind==='kill'){ if(o.id!=null){ if(isUniqueMob(o.id)) return false; /* one named mob */ } if(/^(speak|talk|report)\b/i.test(o.text||'')) return false; return o.pts.length>1; }
+  if(o.kind==='obj') return o.pts.length>1; /* a single object = a specific spot */
+  if(o.kind==='loot'){ const it=DB.i[o.id]; const src=it?.d||[]; if(src.length&&src.every(n=>isUniqueMob(n))) return false; return o.pts.length>1; }
+  return false; }
+const autoStk=()=>route.char.autoStk!==false;
+function autoStickyAfterAccept(qid){ if(!autoStk()||!Q(qid)) return; const obs=objectives(qid).filter(o=>o.rx&&!o.pre&&!o.extra); const gen=obs.filter(objGeneric); if(!gen.length) return;
+  if(route.steps.some((x,k)=>k>cursor&&x.t==='complete'&&x.q===qid)) return;
+  const add=gen.length===obs.length?[{t:'complete',q:qid,stk:'sticky',auto:1}]:gen.map(o=>({t:'complete',q:qid,obj:o.rx,stk:'sticky',auto:1}));
+  for(const st of add){ defaultPath(st,cursor+1); st.id=uid(); { const pv=route.steps[cursor]; if(pv?.sec) st.sec=pv.sec; } route.steps.splice(cursor+1,0,st); cursor++; }
+  return add.length; }
+function finalBeforeTurnin(qid){ if(!autoStk()||!Q(qid)||!hasObjectives(qid)) return 0; let a=-1; for(let k=cursor;k>=0;k--){ const x=route.steps[k]; if(x.q===qid&&x.t==='accept'){ a=k; break; } } if(a<0) return 0;
+  const nums=objectives(qid).filter(o=>o.rx&&!o.pre&&!o.extra).map(o=>o.rx); if(!nums.length) return 0; const cov=new Set();
+  for(let k=a+1;k<=cursor;k++){ const x=route.steps[k]; if(x.t!=='complete'||x.q!==qid||isSticky(x)||SIM.res[k]?.inactive) continue; if(x.obj&&!(x.upto>0)) cov.add(x.obj); else if(!x.obj) nums.forEach(n=>cov.add(n)); }
+  const miss=nums.filter(n=>!cov.has(n)); if(!miss.length) return 0;
+  const add=miss.length===nums.length?[{t:'complete',q:qid,stk:false,auto:1}]:miss.map(n=>({t:'complete',q:qid,obj:n,stk:false,auto:1}));
+  for(const st of add){ defaultPath(st,cursor+1); st.id=uid(); { const pv=route.steps[cursor]; if(pv?.sec) st.sec=pv.sec; } route.steps.splice(cursor+1,0,st); cursor++; } return add.length; }
 function addStep(step){
   // quests whose extra kills are spread out (e.g. The Ashenvale Hunt): one step per mob, nearest first
   if(step.t==='complete'&&!step.src&&!step.obj&&Q(step.q)?.xk){ const obs=objectives(step.q).filter(o=>o.extra); let ref=routeRefBefore(cursor+1); const left=[...obs], order=[];
@@ -993,7 +1011,10 @@ function addStep(step){
   let d=null; if(!step.src&&step.q&&['accept','complete'].includes(step.t)&&step.stk===undefined){ d=guideStickyDefault(step.t,step.q); if(d) step.stk=d.stk; }
   if(d) msgs.push(`Made sticky (${d.stk==='next'?'done with the next step':'stays on screen until done'}) as in ${d.g}: click 📌 to change.`);
   if(msgs.length) setTimeout(()=>toast(msgs.join(' '),5000),0);
-  pushHistory(); { const pv=route.steps[cursor]; if(pv?.sec&&step.sec===undefined) step.sec=pv.sec; /* a new step joins the section of the step it is added after */ } route.steps.splice(cursor+1,0,step); cursor++; refresh(); scrollCursor(); }
+  pushHistory(); let autoN=0; if(!step.src&&step.t==='turnin'&&step.q) autoN=finalBeforeTurnin(step.q);
+  { const pv=route.steps[cursor]; if(pv?.sec&&step.sec===undefined) step.sec=pv.sec; /* a new step joins the section of the step it is added after */ } route.steps.splice(cursor+1,0,step); cursor++;
+  if(!step.src&&step.t==='accept'&&step.q&&!step.shared) { const n=autoStickyAfterAccept(step.q); if(n) setTimeout(()=>toast(`Objectives added as sticky (done on the way). A final "complete" step is added before the hand-in if you don't place one.`,4500),0); }
+  if(autoN) setTimeout(()=>toast(`Added a final "complete" step before the hand-in: the sticky objectives must be finished by here.`,4500),0); refresh(); scrollCursor(); }
 function markRemoved(st){ if(!st?.src||st.src.auto) return; const g=G(st.src.g); if(!g) return; g.removed=g.removed||[]; if(!g.removed.includes(st.src.i)) g.removed.push(st.src.i); }
 function removeStep(i){ pushHistory(); markRemoved(route.steps[i]); route.steps.splice(i,1); if(cursor>=i) cursor--; refresh(); }
 function moveStep(from,to){ if(from===to) return; pushHistory(); const [s]=route.steps.splice(from,1); if(to>from) to--; route.steps.splice(to,0,s); cursor=to; refresh(); }
@@ -1531,7 +1552,7 @@ $('#undoBtn').addEventListener('click',undo);
 document.addEventListener('keydown',e=>{ if((e.ctrlKey||e.metaKey)&&e.key==='z'&&!e.target.closest('input,textarea')){ e.preventDefault(); undo(); } if(e.key==='Escape') hidePop(); });
 
 function fillRaces(f){ const fac=f.faction.value; f.race.innerHTML=Object.entries(RACES).filter(([n,[b,fa]])=>!fa||fa===fac).map(([n])=>`<option>${n}</option>`).join(''); }
-function openChar(){ const f=$('#charForm'); const c=route.char; f.name.value=route.name; f.faction.value=c.faction; fillRaces(f); f.race.value=c.race; f.cls.innerHTML=Object.keys(CLASSES).map(n=>`<option>${n}</option>`).join(''); f.cls.value=c.cls; f.level.value=c.level; f.xp.value=c.xp; f.party.value=c.party; f.rep.checked=!!c.rep; f.prof.checked=!!c.prof; f.event.checked=!!c.event; $('#dgSettings').innerHTML=dungeonChecks('dgset'); f.xprate.value=c.xprate||1; f.dqmult.value=c.dqmult||2.5; fillFpSettings(c); f.killxp.checked=c.killxp!==false; f.droprate.value=c.droprate||60; f.defcount.value=c.defcount||8; f.dgdiv.value=c.dgdiv||3.5; f.ypk.value=c.ypk||''; f.explore.checked=c.explore!==false; f.ypkUntil.value=c.ypkUntil||40; f.dpsl.value=c.dpsl||''; f.autoGrp.checked=c.autoGrp!==false; f.grpYd.value=c.grpYd||''; f.kdown.value=c.kdown??''; f.kdown.placeholder=String(defDown()); f.calStep.value=cursor>=0?cursor+1:''; f.calLvl.value=''; f.calXp.value=''; $('#calMsg').textContent=''; $('#dlgChar').showModal(); }
+function openChar(){ const f=$('#charForm'); const c=route.char; f.name.value=route.name; f.faction.value=c.faction; fillRaces(f); f.race.value=c.race; f.cls.innerHTML=Object.keys(CLASSES).map(n=>`<option>${n}</option>`).join(''); f.cls.value=c.cls; f.level.value=c.level; f.xp.value=c.xp; f.party.value=c.party; f.rep.checked=!!c.rep; f.prof.checked=!!c.prof; f.event.checked=!!c.event; $('#dgSettings').innerHTML=dungeonChecks('dgset'); f.xprate.value=c.xprate||1; f.dqmult.value=c.dqmult||2.5; fillFpSettings(c); f.killxp.checked=c.killxp!==false; f.droprate.value=c.droprate||60; f.defcount.value=c.defcount||8; f.dgdiv.value=c.dgdiv||3.5; f.ypk.value=c.ypk||''; f.explore.checked=c.explore!==false; f.ypkUntil.value=c.ypkUntil||40; f.dpsl.value=c.dpsl||''; f.autoGrp.checked=c.autoGrp!==false; f.autoStk.checked=c.autoStk!==false; f.grpYd.value=c.grpYd||''; f.kdown.value=c.kdown??''; f.kdown.placeholder=String(defDown()); f.calStep.value=cursor>=0?cursor+1:''; f.calLvl.value=''; f.calXp.value=''; $('#calMsg').textContent=''; $('#dlgChar').showModal(); }
 $('#charForm').faction.addEventListener('change',e=>fillRaces(e.target.form));
 $('#calBtn').addEventListener('click',()=>{ const f=$('#charForm'); const i=(+f.calStep.value||0)-1, L=+f.calLvl.value, X=+f.calXp.value||0; if(!(i>=0&&i<route.steps.length)||!(L>=1)) { $('#calMsg').textContent='Enter a step number, and your real level and XP at that step.'; return; }
   const party=route.char.party; route.char.party=Math.max(1,+f.party.value||1); route.char.ypkUntil=Math.max(2,+f.ypkUntil.value||40); const r=calibrateYpk(i,L,X); route.char.party=party;
@@ -1539,7 +1560,7 @@ $('#calBtn').addEventListener('click',()=>{ const f=$('#charForm'); const i=(+f.
 $('#dlgChar').addEventListener('close',()=>{ if($('#dlgChar').returnValue!=='ok') return; const f=$('#charForm');
   route.name=f.name.value||'Route'; Object.assign(route.char,{faction:f.faction.value,race:f.race.value,cls:f.cls.value,level:Math.max(1,Math.min(60,+f.level.value||1)),xp:Math.max(0,+f.xp.value||0),party:Math.max(1,Math.min(5,+f.party.value||1)),rep:f.rep.checked,prof:f.prof.checked,event:f.event.checked});
   const prev={...(route.char.dungeons||{})}; const next={}; $$('#dgSettings [data-dgset]').forEach(cb=>{ if(cb.checked) next[cb.dataset.dgset]=true; });
-  route.char.xprate=Math.max(0.5,Math.min(5,+f.xprate.value||1)); pruneXpRate(); route.char.fps=$$('#fpSettings [data-fpk]').filter(x=>x.checked).map(x=>x.dataset.fpk); route.char.allfps=$('#fpAll').checked; route.char.dqmult=Math.max(0.1,Math.min(10,+f.dqmult.value||2.5)); route.char.killxp=f.killxp.checked; route.char.droprate=Math.max(5,Math.min(100,+f.droprate.value||60)); route.char.defcount=Math.max(1,+f.defcount.value||8); route.char.dgdiv=Math.max(0.1,+f.dgdiv.value||3.5); route.char.ypk=Math.max(0,+f.ypk.value||0); route.char.explore=f.explore.checked; route.char.ypkUntil=Math.max(2,Math.min(60,+f.ypkUntil.value||40)); route.char.dpsl=+f.dpsl.value>0?+f.dpsl.value:''; route.char.autoGrp=f.autoGrp.checked; route.char.grpYd=+f.grpYd.value>0?+f.grpYd.value:''; route.char.kdown=f.kdown.value===''?'':Math.max(0,+f.kdown.value);
+  route.char.xprate=Math.max(0.5,Math.min(5,+f.xprate.value||1)); pruneXpRate(); route.char.fps=$$('#fpSettings [data-fpk]').filter(x=>x.checked).map(x=>x.dataset.fpk); route.char.allfps=$('#fpAll').checked; route.char.dqmult=Math.max(0.1,Math.min(10,+f.dqmult.value||2.5)); route.char.killxp=f.killxp.checked; route.char.droprate=Math.max(5,Math.min(100,+f.droprate.value||60)); route.char.defcount=Math.max(1,+f.defcount.value||8); route.char.dgdiv=Math.max(0.1,+f.dgdiv.value||3.5); route.char.ypk=Math.max(0,+f.ypk.value||0); route.char.explore=f.explore.checked; route.char.ypkUntil=Math.max(2,Math.min(60,+f.ypkUntil.value||40)); route.char.dpsl=+f.dpsl.value>0?+f.dpsl.value:''; route.char.autoGrp=f.autoGrp.checked; route.char.autoStk=f.autoStk.checked; route.char.grpYd=+f.grpYd.value>0?+f.grpYd.value:''; route.char.kdown=f.kdown.value===''?'':Math.max(0,+f.kdown.value);
   route.char.dungeons=next; const turnedOn=Object.keys(next).some(t=>!prev[t]); if(turnedOn) insertNewlyEnabled(); refresh(); });
 $('#charBtn').addEventListener('click',openChar); $('#whoBtn').addEventListener('click',openChar);
 $('#stepFind').addEventListener('input',()=>{ findPos=-1; runFind(); if(findHits.length) findGo(1); });
