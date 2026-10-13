@@ -352,6 +352,10 @@ dialog textarea{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-
     <label>Race<select name="race"></select></label>
     <label>Class<select name="cls"></select></label>
   </div>
+  <fieldset id="grpSetup" hidden style="border:1px solid var(--line);border-radius:8px;padding:6px 10px;display:flex;flex-direction:column;gap:6px"><legend class="note">Group members (each gets their own path; work out where you meet later)</legend>
+    <div id="grpRows" style="display:flex;flex-direction:column;gap:4px"></div>
+    <div><button type="button" class="btn sm" id="grpAddRow">+ Add group member</button> <span class="note">Leave empty for a solo route.</span></div>
+  </fieldset>
   <div class="grid4">
     <label>Start level<input type="number" name="level" min="1" max="60"></label>
     <label>XP into level<input type="number" name="xp" min="0"></label>
