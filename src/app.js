@@ -1037,6 +1037,12 @@ function setCursor(i){ cursor=i; refresh(); scrollCursor(); const p=SIM.res[i]?.
 function scrollCursor(){ const el=$('#steps .cur'); el&&el.scrollIntoView({block:'nearest'}); }
 // guides imported by an older planner version are re-read from their saved original text, so new details (objectives, targets, loops) appear without re-importing
 let upgrading=false;
+/* re-read every imported guide for this route's character (race/class/faction), then add the guide steps that now apply: used for group members built from someone else's route */
+async function reapplyGuides(){ const gs=(route.guides||[]).slice(); if(!gs.length) return 0; const rid=route.id; await rawLoad(gs.map(g=>g.id)); if(route.id!==rid) return 0; let n=0;
+  for(const g of gs){ const bl=rawCache.get(g.id); if(!bl||!bl.length) continue; const txt=`RXPGuides.RegisterGuide(${JSON.stringify(g.group||'')},[[\n`+(g.cond?`<< ${g.cond}\n`:'')+`#name ${g.name}\n`+(g.xprate?`#xprate ${g.xprate}\n`:'')+bl.join('\n')+'\n]])';
+    const r=importGuides(txt,false); if(r.added?.length){ const ids=new Set(r.added.map(x=>x.id)); route.guides=route.guides.filter(x=>!ids.has(x.id)); } }
+  for(const g of route.guides||[]) if(route.steps.some(x=>x.src&&!x.src.auto&&x.src.g===g.id)) n+=fillGuide(g)||0;
+  FQ.key=null; refresh(); return n; }
 async function upgradeGuides(){ if(upgrading) return; const old=(route.guides||[]).filter(g=>(g.pv||0)<3); if(!old.length) return; upgrading=true; const rid=route.id;
   try{ await rawLoad(old.map(g=>g.id)); if(route.id!==rid) return; let n=0;
     for(const g of old){ const bl=rawCache.get(g.id); if(!bl||!bl.length){ g.pv=3; continue; }
@@ -1595,11 +1601,12 @@ $('#charForm').faction.addEventListener('change',e=>{ fillRaces(e.target.form); 
 $('#calBtn').addEventListener('click',()=>{ const f=$('#charForm'); const i=(+f.calStep.value||0)-1, L=+f.calLvl.value, X=+f.calXp.value||0; if(!(i>=0&&i<route.steps.length)||!(L>=1)) { $('#calMsg').textContent='Enter a step number, and your real level and XP at that step.'; return; }
   const party=route.char.party; route.char.party=Math.max(1,+f.party.value||1); route.char.ypkUntil=Math.max(2,+f.ypkUntil.value||40); const r=calibrateYpk(i,L,X); route.char.party=party;
   if(r.err){ $('#calMsg').textContent=r.err; return; } f.ypk.value=r.ypk; $('#calMsg').textContent=`1 kill every ${r.ypk} yards makes step ${i+1} land on level ${L} with ${fmt(X)} XP. Save to use it.`; });
-$('#dlgChar').addEventListener('close',()=>{ if($('#dlgChar').returnValue!=='ok') return; const f=$('#charForm');
+$('#dlgChar').addEventListener('close',()=>{ if($('#dlgChar').returnValue!=='ok') return; const f=$('#charForm'); const who0=[route.char.faction,route.char.race,route.char.cls].join('|');
   route.name=f.name.value||'Route'; Object.assign(route.char,{faction:f.faction.value,race:f.race.value,cls:f.cls.value,level:Math.max(1,Math.min(60,+f.level.value||1)),xp:Math.max(0,+f.xp.value||0),party:Math.max(1,Math.min(5,+f.party.value||1)),rep:f.rep.checked,prof:f.prof.checked,event:f.event.checked});
   const prev={...(route.char.dungeons||{})}; const next={}; $$('#dgSettings [data-dgset]').forEach(cb=>{ if(cb.checked) next[cb.dataset.dgset]=true; });
   route.char.xprate=Math.max(0.5,Math.min(5,+f.xprate.value||1)); pruneXpRate(); route.char.fps=$$('#fpSettings [data-fpk]').filter(x=>x.checked).map(x=>x.dataset.fpk); route.char.allfps=$('#fpAll').checked; route.char.dqmult=Math.max(0.1,Math.min(10,+f.dqmult.value||2.5)); route.char.killxp=f.killxp.checked; route.char.droprate=Math.max(5,Math.min(100,+f.droprate.value||60)); route.char.defcount=Math.max(1,+f.defcount.value||8); route.char.dgdiv=Math.max(0.1,+f.dgdiv.value||3.5); route.char.ypk=Math.max(0,+f.ypk.value||0); route.char.explore=f.explore.checked; route.char.ypkUntil=Math.max(2,Math.min(60,+f.ypkUntil.value||40)); route.char.dpsl=+f.dpsl.value>0?+f.dpsl.value:''; route.char.autoGrp=f.autoGrp.checked; route.char.autoStk=f.autoStk.checked; route.char.grpAcc=f.grpAcc.checked; route.char.grpYd=+f.grpYd.value>0?+f.grpYd.value:''; route.char.kdown=f.kdown.value===''?'':Math.max(0,+f.kdown.value);
-  route.char.dungeons=next; const turnedOn=Object.keys(next).some(t=>!prev[t]); if(turnedOn) insertNewlyEnabled(); refresh(); });
+  route.char.dungeons=next; const turnedOn=Object.keys(next).some(t=>!prev[t]); if(turnedOn) insertNewlyEnabled(); refresh();
+  if(who0!==[route.char.faction,route.char.race,route.char.cls].join('|')&&(route.guides||[]).length) reapplyGuides().then(n=>toast(`Guides re-read for a ${route.char.race} ${route.char.cls}: ${n} step${n===1?'':'s'} for this character added; steps for other races/classes are crossed out.`,5000)); });
 $('#charBtn').addEventListener('click',openChar); $('#whoBtn').addEventListener('click',openChar);
 $('#stepFind').addEventListener('input',()=>{ findPos=-1; runFind(); if(findHits.length) findGo(1); });
 $('#stepFind').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); findGo(e.shiftKey?-1:1); } else if(e.key==='Escape'){ $('#stepFind').value=''; findPos=-1; runFind(); } });
@@ -2266,7 +2273,7 @@ function guideOptions(gs){ const by=new Map(); for(const x of gs){ const k=x.gro
 const isAoE=g=>/\bAoE\b/i.test((g.group||'')+' '+(g.name||''));
 function guideOK(g){ return !!g&&xrOK(g.xprate)&&!g.ver&&condOK(g.cond||'')&&(!isAoE(g)||!!route.char.aoe); }
 function guideWhy(g){ if(!xrOK(g.xprate)) return 'Guide is for XP rate '+g.xprate; if(g.ver) return 'Guide is '+g.ver.replace(' only',' only'); if(!condOK(g.cond||'')) return 'Guide is for '+g.cond; if(isAoE(g)&&!route.char.aoe) return 'Guide is an AoE mage route (turn on in the XP rate box)'; return ''; }
-function stepActive(s,st){ if(!s.src) return null; const g=G(s.src.g); const gs=g?.steps[s.src.i]; if(!gs) return null; if(!guideOK(g)) return guideWhy(g); if(!xrOK(gs.xr)) return 'Only at XP rate '+gs.xr; const d=dungeonOK(gs); if(!d.ok) return d.why;
+function stepActive(s,st){ if(!s.src) return null; const g=G(s.src.g); const gs=g?.steps[s.src.i]; if(!gs) return null; if(!guideOK(g)) return guideWhy(g); if(!gs.cond&&!s.src.auto) return 'Not for your character ('+route.char.race+' '+route.char.cls+'): the guide shows this to other races/classes'; if(!xrOK(gs.xr)) return 'Only at XP rate '+gs.xr; const d=dungeonOK(gs); if(!d.ok) return d.why;
   if(st&&!s.src.auto){ if(gs.lmin&&st.level<gs.lmin) return 'Guide only does this from level '+gs.lmin; if(gs.lmax&&st.level>=gs.lmax) return 'Guide skips this once you\u2019re level '+gs.lmax; } return null; }
 function allDungeonTags(){ const tags=new Map(DUNGEONS.map(([t])=>[t,0])); for(const g of route.guides||[]) for(const s of g.steps) for(const t of [...(s.dg||[]),...(s.dgs||[])]) tags.set(t,(tags.get(t)||0)+1); return tags; }
 function dungeonChecks(prefix){ const tags=allDungeonTags(); return [...tags].map(([t,n])=>`<label title="${esc(dgName(t))}"><input type="checkbox" data-${prefix}="${esc(t)}" ${dgOn(t)?'checked':''}> ${esc(t==='ST'?'Sunken Temple':dgName(t))}${n?` <span class="note">(${n})</span>`:''}</label>`).join(''); }
