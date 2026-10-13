@@ -1186,7 +1186,7 @@ function openPaths(){ const set=pathSet(); const rows=set.map(r=>{ const d=simRo
   if(set.length>1&&hi>=lo){ race=`<h4 style="margin:10px 0 4px">Time to reach each level</h4><table class="ptab"><tr><th>Level</th>${set.map(r=>`<th style="color:${r.char.rcol||'inherit'}">${esc(r.name)}</th>`).join('')}</tr>${Array.from({length:hi-lo+1},(_,j)=>lo+j).map(L=>{ const ts=D.map(d=>d.lvT[L]); const best=Math.min(...ts.filter(t=>t!=null)); return `<tr><td>${L}</td>${ts.map(t=>`<td${t!=null&&t===best?' style="color:var(--gold);font-weight:700"':''}>${t==null?'–':fmtT(t)}</td>`).join('')}</tr>`; }).join('')}</table>`; }
   const others=store.routes.filter(r=>!set.includes(r));
   $('#pathBody').innerHTML=`<table class="ptab"><tr><th></th><th>Path</th><th>End level</th><th>/played</th><th>Turn-ins</th><th>Steps</th><th></th></tr>${rows}</table>${race}
-    <div class="row" style="margin-top:10px;gap:6px;flex-wrap:wrap;align-items:center"><b>Group:</b><button class="btn sm gold" data-pact="member:empty" title="A new character with its own race, class and starter zone">Add group member</button><button class="btn sm" data-pact="member:copy" title="A new character that starts with a copy of this path">Add member (copy this path)</button><label class="note"><input type="checkbox" id="pathSync" ${store.pathSync?.[route.group]?'checked':''}> New steps go to every path</label><button class="btn sm" data-pact="expall:" title="One RestedXP file with a guide for each path">Export all paths</button></div>
+    <div class="row" style="margin-top:10px;gap:6px;flex-wrap:wrap;align-items:center"><b>Group:</b><button class="btn sm gold" data-pact="member:empty" title="A new character with its own race, class and starter zone">Add group member</button><button class="btn sm" data-pact="member:copy" title="A new character that starts with a copy of this path">Add member (copy this path)</button><label class="note"><input type="checkbox" id="pathSync" ${store.pathSync?.[route.group]?'checked':''}> New steps go to every path</label><button class="btn sm gold" data-pact="expgrp:" title="One RestedXP guide for the whole group: steps only some members do are tagged with their race/class, so each player sees only their own">Export group guide</button><button class="btn sm" data-pact="expall:" title="One RestedXP file with a separate guide for each path">Export separate guides</button></div>
     <div class="row" style="margin-top:6px;gap:6px;flex-wrap:wrap"><button class="btn sm" data-pact="fork:after">Fork at highlighted step (${cursor+1})</button><button class="btn sm" data-pact="fork:copy">Fork: copy the whole route</button><button class="btn sm" data-pact="new:">New empty path</button>${others.length?`<select id="pathAdd"><option value="">Add an existing route…</option>${others.map(r=>`<option value="${r.id}">${esc(r.name)}</option>`).join('')}</select>`:''}</div>
     <p class="note" style="margin:8px 0 0">Paths are separate routes in one set: edit each freely. Where they begin with the same steps, that shared start is their fork point. Other paths show on the map as dashed lines from where they split off.</p>`;
   if(!$('#dlgPaths').open) $('#dlgPaths').showModal(); }
@@ -1198,6 +1198,7 @@ async function pathAct(a,id){ const set=pathSet(); const r=store.routes.find(x=>
     const n=pathSet().filter(x=>x.member).length; for(const x of pathSet()) if(x.member) x.char.party=Math.max(+x.char.party||1,n);
     route=nr; cursor=nr.steps.length-1; history=[]; FQ.key=null; refresh(); saveNow&&saveNow(); $('#dlgPaths').close(); toast(`Set ${nr.name}'s race and class (group size is now ${n}).`,4000); openChar(); return; }
   if(a==='expall'){ exportAllPaths(); return; }
+  if(a==='expgrp'){ exportGroupGuide(); return; }
   if(a==='fork'||a==='new'){ ensureGroup(); const name=await askText('Name for the new path:',route.name+(a==='fork'&&id==='after'?' – fork '+(cursor+1):' – path '+(pathSet().length+1)),'Create','text'); if(name==null) return openPaths();
     const nr=a==='new'?(()=>{ const x=newRoute({char:{...route.char}}); store.routes.push(x); return x; })():await cloneRoute(route,name.trim()||'Path',id==='after'?cursor:null); nr.name=name.trim()||nr.name; nr.group=route.group; nr.char.rcol=CLS_COL[nr.char.cls]||nextCol(); delete nr.cmpHide;
     route=nr; cursor=nr.steps.length-1; history=[]; FQ.key=null; refresh(); saveNow&&saveNow(); toast(`Now editing “${nr.name}”. Switch paths with Paths or the route list.`,4000); return openPaths(); }
@@ -1216,6 +1217,44 @@ async function exportAllPaths(){ const set=pathSet(); const R0=route,C0=cursor,S
   try{ for(const r of set){ await rawLoad((r.guides||[]).map(g=>g.id)); route=r; cursor=r.steps.length-1; simulate(); $('#expName').value=r.name; const t=buildRXP(); parts.push(parts.length?t.replace(/^--[^\n]*\n/gm,''):t); } }
   finally{ route=R0; cursor=C0; SIM=S0; $('#expName').value=nm0; }
   $('#dlgPaths').close(); $('#expGroup').value=route.guide?.group||'Forever Routes'; setSeg('#expMode','rxp'); $('#expText').value=parts.join('\n\n'); $('#expMsg').innerHTML=`<div>One file with a guide for each of the ${set.length} paths: ${set.map(r=>esc(r.name)).join(', ')}. Each player loads the file and picks their own guide.</div>`; $('#dlgExport').showModal(); }
+/* one guide for the whole group: each member's export merged; steps not shared by everyone get RestedXP << race/class tags */
+const grpRace=r=>r.replace(/\s+/g,'');
+function lcsPairs(a,b){ const n=a.length,m=b.length; const W=m+1; const dp=new Uint16Array((n+1)*W); for(let i=n-1;i>=0;i--) for(let j=m-1;j>=0;j--) dp[i*W+j]=a[i]===b[j]?dp[(i+1)*W+j+1]+1:Math.max(dp[(i+1)*W+j],dp[i*W+j+1]);
+  const P=[]; let i=0,j=0; while(i<n&&j<m){ if(a[i]===b[j]){ P.push([i,j]); i++; j++; } else if(dp[(i+1)*W+j]>=dp[i*W+j+1]) i++; else j++; } return P; }
+function mergeSeqs(seqs,keyOf){ /* seqs: [[item,...] per member] → [{v:item(first seen), m:Set(member idx), per:Map}] */
+  let out=[]; seqs.forEach((sq,mi)=>{ if(!out.length){ out=sq.map(v=>({k:keyOf(v),v,m:new Set([mi]),per:new Map([[mi,v]])})); return; }
+    const P=lcsPairs(out.map(x=>x.k),sq.map(keyOf)); const res=[]; let i=0,j=0;
+    for(const [pi,pj] of [...P,[out.length,sq.length]]){ while(i<pi) res.push(out[i++]); while(j<pj){ const v=sq[j++]; res.push({k:keyOf(v),v,m:new Set([mi]),per:new Map([[mi,v]])}); } if(pi<out.length){ out[pi].m.add(mi); out[pi].per.set(mi,sq[pj]); res.push(out[pi]); i++; j++; } }
+    out=res; }); return out; }
+function grpTag(S,U,mem,conf){ if(S.size===U.size) return null; const O=[...U].filter(i=>!S.has(i)); const ins=[...S];
+  const cS=new Set(ins.map(i=>mem[i].cls)), cO=new Set(O.map(i=>mem[i].cls)); if([...cS].every(c=>!cO.has(c))) return [...cS].join('/');
+  const rS=new Set(ins.map(i=>grpRace(mem[i].race))), rO=new Set(O.map(i=>grpRace(mem[i].race))); if([...rS].every(c=>!rO.has(c))) return [...rS].join('/');
+  const k=i=>grpRace(mem[i].race)+' '+mem[i].cls; const kO=new Set(O.map(k)); for(const i of ins) if(kO.has(k(i))) conf.add(mem[i].name);
+  return [...new Set(ins.map(k))].join('/'); }
+function condFor(str,r){ const R0=route; route=r; try{ return condOK(str); } finally{ route=R0; } }
+const stepCond=b=>(b.match(/^step\b[ \t]*<<[ \t]*([^\n]*)/)||[])[1]||'';
+const tagStep=(b,t)=>!t?b:b.replace(/^step\b[ \t]*(?:<<[ \t]*([^\n]*?))?[ \t]*(?=\n|$)/,(m0,x)=>x?`step << (${x}) (${t})`:`step << ${t}`);
+async function exportGroupGuide(){ const set=pathSet(); const R0=route,C0=cursor,S0=SIM; const nm0=$('#expName').value; const per=[]; const warns=[];
+  const name=(set[0].name.replace(/\s*\(.*\)$/,''))||'Group';
+  try{ for(const r of set){ await rawLoad((r.guides||[]).map(g=>g.id)); route=r; cursor=r.steps.length-1; simulate(); $('#expName').value=name; buildRXP(); per.push(LAST_SEGS); EXPORT_WARN.forEach(w=>warns.push(r.name+': '+w)); } }
+  finally{ route=R0; cursor=C0; SIM=S0; $('#expName').value=nm0; }
+  const mem=set.map(r=>({name:r.name,race:r.char.race,cls:r.char.cls,fac:charInfo(r).fac})); const U=new Set(mem.map((x,i)=>i)); const conf=new Set();
+  const fac=new Set(mem.map(m=>m.fac)).size>1?null:(mem[0].fac==='H'?'Horde':'Alliance');
+  const segs=mergeSeqs(per,s=>s.key); const nmS=k=>segs.length===1&&!segs[0].k?name:`${name} ${k+1}${segs[k].k?' - '+segs[k].k:''}`;
+  const group=route.guide?.group||'Forever Routes', extra=route.guide?.extra||'', next=route.guide?.next||''; let tagged=0;
+  const outL=['-- Contains text from RestedXP guides (https://github.com/RestedXP/RXPGuides), licensed CC BY-NC-SA 4.0.','-- If you share this file: credit RestedXP, keep it non-commercial and share it under the same licence.','-- Made with the Forever Route Planner (GPL-3.0). Not affiliated with RestedXP, Blizzard or WoW: Forever.',`-- Group guide for ${mem.map(m=>`${m.name} (${m.race} ${m.cls})`).join(', ')}: steps only some of you do are tagged with << race/class.`,''];
+  segs.forEach((sg,k)=>{ const H=[`RXPGuides.RegisterGuide(${JSON.stringify(group)},[[`]; const ex=extra?extra.split(/\s*;\s*|\n/).filter(Boolean):[]; if(!ex.some(l=>/^#forever\b/i.test(l))) H.push('#forever'); H.push(...ex);
+    const gt=grpTag(sg.m,U,mem,conf); const facT=fac||[...new Set([...sg.m].map(i=>mem[i].fac==='H'?'Horde':'Alliance'))].join('/'); H.push(gt?`<< ${facT} (${gt})`:`<< ${facT}`); H.push(`#name ${nmS(k)}`);
+    const nx=new Map(); for(const i of sg.m){ let t=next; for(let j=k+1;j<segs.length;j++) if(segs[j].m.has(i)){ t=nmS(j); break; } if(t){ if(!nx.has(t)) nx.set(t,new Set()); nx.get(t).add(i); } }
+    if(nx.size===1&&[...nx.values()][0].size===sg.m.size) H.push(`#next ${[...nx.keys()][0]}`); else for(const [t,S] of nx) H.push(`#next ${t} << ${grpTag(S,sg.m,mem,conf)||(fac||'Horde/Alliance')}`);
+    const blocks=mergeSeqs([...sg.m].sort((a,b)=>a-b).map(i=>sg.per.get(i).blocks),b=>b.replace(/[ \t]+$/gm,''));
+    /* mergeSeqs numbers members by position in this list: map back to member idx */ const ord=[...sg.m].sort((a,b)=>a-b);
+    const body=blocks.map(b=>{ const S=new Set([...b.m].map(x=>ord[x])); const X=stepCond(b.v).trim(); const sees=new Set([...sg.m].filter(i=>S.has(i)||!X||condFor(X,set[i]))); /* members the step's own tag already hides need no extra tag */ const t=grpTag(S,sees,mem,conf); if(t) tagged++; return tagStep(b.v,t); });
+    outL.push(...H,...body,']])',''); });
+  const msgs=[`One guide for ${set.length} members: ${mem.map(m=>esc(m.name)+' ('+esc(m.race+' '+m.cls)+')').join(', ')}. ${tagged} step${tagged===1?' is':'s are'} tagged so only the members who do ${tagged===1?'it':'them'} see ${tagged===1?'it':'them'}; everything else is shared.`];
+  if(conf.size) msgs.push(`⚠ ${[...conf].map(esc).join(', ')} share${conf.size===1?'s':''} a race and class with another member, so RestedXP can't tell them apart: they will also see each other's own steps. Export separate guides instead if that matters.`);
+  if(!fac) msgs.push('⚠ The group mixes Horde and Alliance.');
+  $('#dlgPaths').close(); $('#expGroup').value=group; setSeg('#expMode','rxp'); $('#expText').value=outL.join('\n').trim(); $('#expMsg').innerHTML=msgs.map(m=>`<div>${m}</div>`).join('')+warns.slice(0,30).map(w=>`<div>⚠ ${esc(w)}</div>`).join(''); $('#dlgExport').showModal(); }
 /* ---------- group pick-ups: consecutive quest pick-ups in one hub become one step with every quest giver targeted ---------- */
 const grpMode=()=>route.char.grpAcc!==false&&((+route.char.party||1)>1||!!route.member);
 function accRuns(){ const lead=new Map(), mem=new Map(); if(!grpMode()) return {lead,mem};
@@ -1658,6 +1697,7 @@ function blkAutoSkip(t){ if(!condOK(blkHdrCond(t))) return 'class'; const ls=blk
   const xr=ls.find(l=>/^#xprate\b/i.test(l)); if(xr&&!xrOK(xr.replace(/^#xprate\s*/i,'').split('<<')[0])) return 'xprate';
   const dg=ls.filter(l=>/^\.dungeon\b/i.test(l)); if(dg.length&&!dungeonOK({dg:dg.filter(l=>!/!/.test(l)).map(l=>dgTag(l.split(/\s+/)[1])),dgs:dg.filter(l=>/!/.test(l)).map(l=>dgTag(l.replace(/.*!/,'').trim()))}).ok) return 'dungeon';
   return ''; }
+let LAST_SEGS=null;
 function buildRXP(){
   const g=route.guide; const fac=charInfo(route).fac==='H'?'Horde':'Alliance';
   const name=$('#expName').value||route.name, group=$('#expGroup').value||'Forever Routes', next=$('#expNext').value, extra=$('#expExtra').value, merge=$('#expMerge').checked;
@@ -1772,6 +1812,7 @@ function buildRXP(){
   EXPORT_WARN=warns;
   const cutPart=k=>{ const c=segs[k].cut; const all=segs.map((x,j)=>j).filter(j=>segs[j].cut===c); const sib=all.filter(j=>Math.abs(j-k)<=all.length); return all.length>1?` (${all.indexOf(k)+1}/${all.length})`:''; };
   const nm=k=>segs.length===1&&!segs[0].cut?name:`${name} ${k+1}${segs[k].cut?' - '+route.sections[segs[k].cut].name+cutPart(k):segs[k].gid?' - '+G(segs[k].gid).name:''}`;
+  LAST_SEGS=segs.map((sg,k)=>({key:nm(k).slice(name.length).replace(/^ \d+( - )?/,''),blocks:sg.text().flatMap(t=>t.split(/\n(?=step\b)/))}));
   const outL=[]; if(segs.some(sg=>sg.items.some(x=>x.rx!=null))) outL.push('-- Contains text from RestedXP guides (https://github.com/RestedXP/RXPGuides), licensed CC BY-NC-SA 4.0.','-- If you share this file: credit RestedXP, keep it non-commercial and share it under the same licence.','-- Made with the Forever Route Planner (GPL-3.0). Not affiliated with RestedXP, Blizzard or WoW: Forever.','');
   segs.forEach((sg,k)=>{ const H=[`RXPGuides.RegisterGuide(${JSON.stringify(group)},[[`]; const ex=extra?extra.split(/\s*;\s*|\n/).filter(Boolean):[]; if(!ex.some(l=>/^#forever\b/i.test(l))) H.push('#forever'); H.push(...ex); H.push(`<< ${fac}`); H.push(`#name ${nm(k)}`); const nx=k<segs.length-1?nm(k+1):next; if(nx) H.push(`#next ${nx}`);
     outL.push(...H, ...sg.text(), ']])'); if(k<segs.length-1) outL.push(''); });
