@@ -209,8 +209,9 @@ const LS='frp.v1';
 let store={routes:[],cur:null};
 let route=null, cursor=-1, SIM=null, selQuest=null;
 function uid(){ return Math.random().toString(36).slice(2,9); }
+const CLS_COL={Druid:'#ff7c0a',Hunter:'#aad372',Mage:'#3fc7eb',Paladin:'#f48cba',Priest:'#ffffff',Rogue:'#fff468',Shaman:'#0070dd',Warlock:'#8788ee',Warrior:'#c69b6d'};
 function newRoute(base){
-  return {id:uid(),name:'New route',char:{faction:'H',race:'Tauren',cls:'Druid',level:1,xp:0,party:1,rep:false,prof:false,event:false,dungeons:{}},steps:[],guides:[],guide:{group:'Forever Routes',next:'',extra:''},...(base||{})};
+  const r={id:uid(),name:'New route',char:{faction:'H',race:'Tauren',cls:'Druid',level:1,xp:0,party:1,rep:false,prof:false,event:false,dungeons:{}},steps:[],guides:[],guide:{group:'Forever Routes',next:'',extra:''},...(base||{})}; r.char.rcol=CLS_COL[r.char.cls]||r.char.rcol; r.ccol=1; return r;
 }
 let saveT=null;
 function save(){ store.cur=route.id; clearTimeout(saveT); saveT=setTimeout(saveNow,250); }
@@ -253,7 +254,7 @@ function reqFail(s,st){ if(!s.reqs) return '';
       case 'isquestavailable': if(ids.every(id=>st.turned.has(id)||st.log.has(id))) return nm(ids)+' no longer available'; break; } }
   return ''; }
 function ensureIds(r){ for(const s of r.steps||[]) if(!s.id) s.id=uid(); r.sections=r.sections||{}; }
-function migrateRoute(r){ ensureIds(r); if(r.char&&+r.char.dqmult===3.5&&!r.char.dq25){ r.char.dqmult=2.5; } if(r.char) r.char.dq25=1; /* Forever nerfed dungeon quest XP from ×3.5 to ~×2.5 */ r.guides=r.guides||[];
+function migrateRoute(r){ ensureIds(r); if(r.char&&!r.ccol){ r.char.rcol=CLS_COL[r.char.cls]||r.char.rcol; r.ccol=1; } /* paths default to their class colour */ if(r.char&&+r.char.dqmult===3.5&&!r.char.dq25){ r.char.dqmult=2.5; } if(r.char) r.char.dq25=1; /* Forever nerfed dungeon quest XP from ×3.5 to ~×2.5 */ r.guides=r.guides||[];
   const TM=META.taxiMig||{}; if(r.char&&Array.isArray(r.char.fps)) r.char.fps=r.char.fps.map(x=>META.taxi.nodes[x]?x:(TM[x]||x));
   for(const st of r.steps||[]) if(st.node&&!META.taxi.nodes[st.node]&&TM[st.node]) st.node=TM[st.node];
   if((r.notesMig||0)<2){ r.notesMig=2; for(const g of r.guides){ g.includeNotes=true; g.stopAtBlocked=false; } }
@@ -1190,18 +1191,18 @@ function openPaths(){ const set=pathSet(); const rows=set.map(r=>{ const d=simRo
     <p class="note" style="margin:8px 0 0">Paths are separate routes in one set: edit each freely. Where they begin with the same steps, that shared start is their fork point. Other paths show on the map as dashed lines from where they split off.</p>`;
   if(!$('#dlgPaths').open) $('#dlgPaths').showModal(); }
 async function pathAct(a,id){ const set=pathSet(); const r=store.routes.find(x=>x.id===id);
-  const ensureGroup=()=>{ if(!route.group){ route.group=uid(); } if(!route.char.rcol) route.char.rcol=PATH_COLS[0]; };
+  const ensureGroup=()=>{ if(!route.group){ route.group=uid(); } if(!route.char.rcol) route.char.rcol=CLS_COL[route.char.cls]||PATH_COLS[0]; };
   const nextCol=()=>{ const used=new Set(pathSet().map(x=>x.char.rcol)); return PATH_COLS.find(c=>!used.has(c))||PATH_COLS[pathSet().length%PATH_COLS.length]; };
   if(a==='member'){ ensureGroup(); const name=await askText('Name for the group member:','Member '+(pathSet().length+1),'Create','text'); if(name==null) return openPaths();
-    const nr=id==='copy'?await cloneRoute(route,name.trim()||'Member'):(()=>{ const x=newRoute({char:{...route.char,level:1,xp:0}}); store.routes.push(x); return x; })(); nr.name=name.trim()||nr.name; nr.group=route.group; nr.member=true; route.member=true; nr.char.rcol=nextCol(); delete nr.cmpHide;
+    const nr=id==='copy'?await cloneRoute(route,name.trim()||'Member'):(()=>{ const x=newRoute({char:{...route.char,level:1,xp:0}}); store.routes.push(x); return x; })(); nr.name=name.trim()||nr.name; nr.group=route.group; nr.member=true; route.member=true; nr.char.rcol=CLS_COL[nr.char.cls]||nextCol(); delete nr.cmpHide;
     const n=pathSet().filter(x=>x.member).length; for(const x of pathSet()) if(x.member) x.char.party=Math.max(+x.char.party||1,n);
     route=nr; cursor=nr.steps.length-1; history=[]; FQ.key=null; refresh(); saveNow&&saveNow(); $('#dlgPaths').close(); toast(`Set ${nr.name}'s race and class (group size is now ${n}).`,4000); openChar(); return; }
   if(a==='expall'){ exportAllPaths(); return; }
   if(a==='fork'||a==='new'){ ensureGroup(); const name=await askText('Name for the new path:',route.name+(a==='fork'&&id==='after'?' – fork '+(cursor+1):' – path '+(pathSet().length+1)),'Create','text'); if(name==null) return openPaths();
-    const nr=a==='new'?(()=>{ const x=newRoute({char:{...route.char}}); store.routes.push(x); return x; })():await cloneRoute(route,name.trim()||'Path',id==='after'?cursor:null); nr.name=name.trim()||nr.name; nr.group=route.group; nr.char.rcol=nextCol(); delete nr.cmpHide;
+    const nr=a==='new'?(()=>{ const x=newRoute({char:{...route.char}}); store.routes.push(x); return x; })():await cloneRoute(route,name.trim()||'Path',id==='after'?cursor:null); nr.name=name.trim()||nr.name; nr.group=route.group; nr.char.rcol=CLS_COL[nr.char.cls]||nextCol(); delete nr.cmpHide;
     route=nr; cursor=nr.steps.length-1; history=[]; FQ.key=null; refresh(); saveNow&&saveNow(); toast(`Now editing “${nr.name}”. Switch paths with Paths or the route list.`,4000); return openPaths(); }
   if(a==='go'&&r){ route=r; cursor=r.steps.length-1; history=[]; FQ.key=null; selQuest=null; refresh(); return openPaths(); }
-  if(a==='add'&&r){ ensureGroup(); r.group=route.group; if(!r.char.rcol||pathSet().filter(x=>x.char.rcol===r.char.rcol).length>1) r.char.rcol=nextCol(); save(); requestDraw(); return openPaths(); }
+  if(a==='add'&&r){ ensureGroup(); r.group=route.group; if(!r.char.rcol) r.char.rcol=CLS_COL[r.char.cls]||nextCol(); save(); requestDraw(); return openPaths(); }
   if(a==='drop'&&r){ delete r.group; if(pathSet().length<=1) delete route.group; save(); requestDraw(); return openPaths(); }
   if(a==='keep'&&r){ for(const x of set) if(x!==r) delete x.group; delete r.group; route=r; cursor=r.steps.length-1; history=[]; FQ.key=null; refresh(); toast(`Kept “${r.name}”. The other paths are still in your route list.`,4000); return openPaths(); }
   if(a==='del'&&r){ if(!confirm(`Delete the route “${r.name}”?`)) return; store.routes=store.routes.filter(x=>x!==r); if(r===route){ route=set.find(x=>x!==r)||store.routes[0]; cursor=route.steps.length-1; history=[]; FQ.key=null; } if(pathSet().length<=1) delete route.group; refresh(); saveNow&&saveNow(); return openPaths(); } }
@@ -1601,11 +1602,11 @@ $('#charForm').faction.addEventListener('change',e=>{ fillRaces(e.target.form); 
 $('#calBtn').addEventListener('click',()=>{ const f=$('#charForm'); const i=(+f.calStep.value||0)-1, L=+f.calLvl.value, X=+f.calXp.value||0; if(!(i>=0&&i<route.steps.length)||!(L>=1)) { $('#calMsg').textContent='Enter a step number, and your real level and XP at that step.'; return; }
   const party=route.char.party; route.char.party=Math.max(1,+f.party.value||1); route.char.ypkUntil=Math.max(2,+f.ypkUntil.value||40); const r=calibrateYpk(i,L,X); route.char.party=party;
   if(r.err){ $('#calMsg').textContent=r.err; return; } f.ypk.value=r.ypk; $('#calMsg').textContent=`1 kill every ${r.ypk} yards makes step ${i+1} land on level ${L} with ${fmt(X)} XP. Save to use it.`; });
-$('#dlgChar').addEventListener('close',()=>{ if($('#dlgChar').returnValue!=='ok') return; const f=$('#charForm'); const who0=[route.char.faction,route.char.race,route.char.cls].join('|');
+$('#dlgChar').addEventListener('close',()=>{ if($('#dlgChar').returnValue!=='ok') return; const f=$('#charForm'); const who0=[route.char.faction,route.char.race,route.char.cls].join('|'); const cls0=route.char.cls;
   route.name=f.name.value||'Route'; Object.assign(route.char,{faction:f.faction.value,race:f.race.value,cls:f.cls.value,level:Math.max(1,Math.min(60,+f.level.value||1)),xp:Math.max(0,+f.xp.value||0),party:Math.max(1,Math.min(5,+f.party.value||1)),rep:f.rep.checked,prof:f.prof.checked,event:f.event.checked});
   const prev={...(route.char.dungeons||{})}; const next={}; $$('#dgSettings [data-dgset]').forEach(cb=>{ if(cb.checked) next[cb.dataset.dgset]=true; });
   route.char.xprate=Math.max(0.5,Math.min(5,+f.xprate.value||1)); pruneXpRate(); route.char.fps=$$('#fpSettings [data-fpk]').filter(x=>x.checked).map(x=>x.dataset.fpk); route.char.allfps=$('#fpAll').checked; route.char.dqmult=Math.max(0.1,Math.min(10,+f.dqmult.value||2.5)); route.char.killxp=f.killxp.checked; route.char.droprate=Math.max(5,Math.min(100,+f.droprate.value||60)); route.char.defcount=Math.max(1,+f.defcount.value||8); route.char.dgdiv=Math.max(0.1,+f.dgdiv.value||3.5); route.char.ypk=Math.max(0,+f.ypk.value||0); route.char.explore=f.explore.checked; route.char.ypkUntil=Math.max(2,Math.min(60,+f.ypkUntil.value||40)); route.char.dpsl=+f.dpsl.value>0?+f.dpsl.value:''; route.char.autoGrp=f.autoGrp.checked; route.char.autoStk=f.autoStk.checked; route.char.grpAcc=f.grpAcc.checked; route.char.grpYd=+f.grpYd.value>0?+f.grpYd.value:''; route.char.kdown=f.kdown.value===''?'':Math.max(0,+f.kdown.value);
-  route.char.dungeons=next; const turnedOn=Object.keys(next).some(t=>!prev[t]); if(turnedOn) insertNewlyEnabled(); refresh();
+  if(cls0!==route.char.cls&&(!route.char.rcol||route.char.rcol===CLS_COL[cls0])) route.char.rcol=CLS_COL[route.char.cls]; route.char.dungeons=next; const turnedOn=Object.keys(next).some(t=>!prev[t]); if(turnedOn) insertNewlyEnabled(); refresh();
   if(who0!==[route.char.faction,route.char.race,route.char.cls].join('|')&&(route.guides||[]).length) reapplyGuides().then(n=>toast(`Guides re-read for a ${route.char.race} ${route.char.cls}: ${n} step${n===1?'':'s'} for this character added; steps for other races/classes are crossed out.`,5000)); });
 $('#charBtn').addEventListener('click',openChar); $('#whoBtn').addEventListener('click',openChar);
 $('#stepFind').addEventListener('input',()=>{ findPos=-1; runFind(); if(findHits.length) findGo(1); });
