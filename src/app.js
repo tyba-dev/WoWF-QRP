@@ -238,6 +238,8 @@ async function loadStore(){
   for(const r of store.routes) for(const g of r.guides||[]) if(g.raw) rawCache.set(g.id,g.raw);
   if(!store.routes.length){ const r=newRoute({name:'Mulgore start'}); store.routes.push(r); store.cur=r.id; }
   route=store.routes.find(r=>r.id===store.cur)||store.routes[0];
+  /* an early Group Levelling Planner build on the same site shared this storage: drop its routes and settings */
+  { const g=store.routes.filter(r=>r.glp); if(g.length||store.glp){ for(const r of g) kvDel('route:'+r.id); store.routes=store.routes.filter(r=>!r.glp); store.deleted=[...(store.deleted||[]),...g.map(r=>r.id)]; delete store.glp; kvDel('glp:guides'); if(!store.routes.length){ const r=newRoute({name:'Mulgore start'}); store.routes.push(r); } if(!store.routes.some(r=>r.id===store.cur)) store.cur=store.routes[0].id; route=store.routes.find(r=>r.id===store.cur)||store.routes[0]; } }
   for(const r of store.routes) migrateRoute(r);
   cursor=route.steps.length-1;
 }
