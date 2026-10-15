@@ -506,7 +506,7 @@ let MOBLV=null; function mobStatsAt(lv){ if(!MOBLV){ MOBLV={}; for(const k in ME
   const o=MOBLV[Math.max(1,Math.min(63,Math.round(lv)))]; return o&&o.n?{hp:o.hp/o.n,a:o.a/o.n}:{hp:40+25*lv,a:45*lv}; }
 const gMobL=L=>Math.max(1,L<20?L-1:L-2); /* mobs you grind on: one level below you early, two later */
 const gEff=()=>{ const v=+route.char.geff; return v>0&&v<=1?v:0.8; };
-const DG_RUN_XP=0.5; /* dungeon mobs: ~half the XP per second of an open-world hyperspawn pull rate */
+const DG_RUN_XP=0.36; /* dungeon mobs: ~0.36x the XP per hour of an open-world hyperspawn camp */
 const gSearch=()=>{ const v=route.char.gsearch; return v!==''&&v!=null&&+v>=0?+v:1; }; /* grinding: finding / walking to the next mob */
 const defDown=()=>route.char.cls==='Hunter'?0:2; /* hunters kill on the move with the pet, no eat/drink */
 const soloDps=L=>(+route.char.dpsl>0?+route.char.dpsl:2)*L;
