@@ -125,8 +125,12 @@ const dqCache=new Map();
 /* Forever dungeon quests Questie can't place yet (picked up inside the dungeon from an object or a drop) */
 const FOREVER_DGQ={98423:'The Hall of Thanes'};
 function isDungeonQuest(qid){ if(dqCache.has(qid)) return dqCache.get(qid); const q=Q(qid); let v=false; if(FOREVER_DGQ[qid]){ dqCache.set(qid,true); return true; }
-  if(q){ if(q.z>0 && META.dgAreas.includes(q.z)) v=true; else { const pts=objectives(qid).flatMap(o=>o.pts); if(pts.length && pts.filter(p=>p.dg).length>=pts.length/2) v=true;
-      else if(q.fv&&!pts.length&&!(q.z>0)&&textDg(q)) v=true; /* Forever quests Questie has no zone or objectives for yet: "...in the Hall of Thanes" */
+  /* dungeon quest = collected, or its objectives done, entirely inside a dungeon (pre-quests and outside objectives are normal quests) */
+  if(q){ const inDg=p=>p.dg||META.dgAreas.includes(p.z); const pts=objectives(qid).flatMap(o=>o.pts); const sp=starterPts(qid);
+    if(pts.length) v=pts.every(inDg);
+    else if(sp.length&&sp.every(inDg)) v=true;
+    else if(q.z>0 && META.dgAreas.includes(q.z)) v=true; else {
+      if(q.fv&&!(q.z>0)&&textDg(q)) v=true; /* Forever quests Questie has no zone or objectives for yet: "...in the Hall of Thanes" */
       else if(q.fv&&!pts.length){ const ends=[...(q.s?.n||[]).flatMap(n=>entPts('n',n)),...(q.f?.n||[]).flatMap(n=>entPts('n',n))]; if(ends.length&&ends.every(p=>p.dg)) v=true; } } }
   dqCache.set(qid,v); return v; }
 function textDg(q){ const t=(Array.isArray(q.t)?q.t.join(' '):q.t||'')+' '+(q.n||''); if(!t.trim()) return null; for(const [tag,name] of DUNGEONS){ if(new RegExp('\\b'+name.replace(/^The /,'').replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\b','i').test(t)) return name; } return null; }
@@ -1147,7 +1151,7 @@ function stickyChip(s,i){ const gs=stepGuide(s); if(!gs&&s.stk) return `<span cl
 const qdgCache=new Map();
 let qNameIdx=null;
 function questDgTag(qid){ if(qdgCache.has(qid)) return qdgCache.get(qid); let tag=baseDgTag(qid);
-  if(!tag&&Q(qid)){ if(!qNameIdx){ qNameIdx=new Map(); for(const id in DB.q){ const n=DB.q[id].n.replace(/\s*\(\d+\/\d+\)$/,''); if(!qNameIdx.has(n)) qNameIdx.set(n,[]); qNameIdx.get(n).push(+id); } }
+  if(!tag&&Q(qid)&&isDungeonQuest(qid)){ if(!qNameIdx){ qNameIdx=new Map(); for(const id in DB.q){ const n=DB.q[id].n.replace(/\s*\(\d+\/\d+\)$/,''); if(!qNameIdx.has(n)) qNameIdx.set(n,[]); qNameIdx.get(n).push(+id); } }
     for(const o of qNameIdx.get(Q(qid).n.replace(/\s*\(\d+\/\d+\)$/,''))||[]) if(o!==qid){ const t=baseDgTag(o); if(t){ tag=t; break; } } } // same-name chain parts (e.g. Hidden Enemies 1-5)
   qdgCache.set(qid,tag); return tag; }
 const bdgCache=new Map();
