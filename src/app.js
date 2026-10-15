@@ -124,15 +124,20 @@ function objectives(qid){
 const dqCache=new Map();
 /* Forever dungeon quests Questie can't place yet (picked up inside the dungeon from an object or a drop) */
 const FOREVER_DGQ={98423:'The Hall of Thanes'};
+const DQPT=new Map(); /* a dungeon spot for each dungeon quest (names the dungeon) */
 function isDungeonQuest(qid){ if(dqCache.has(qid)) return dqCache.get(qid); const q=Q(qid); let v=false; if(FOREVER_DGQ[qid]){ dqCache.set(qid,true); return true; }
-  /* dungeon quest = collected, or its objectives done, entirely inside a dungeon (pre-quests and outside objectives are normal quests) */
-  if(q){ const inDg=p=>p.dg||META.dgAreas.includes(p.z); const pts=objectives(qid).flatMap(o=>o.pts); const sp=starterPts(qid);
-    if(pts.length) v=pts.every(inDg);
-    else if(sp.length&&sp.every(inDg)) v=true;
-    else if(q.z>0 && META.dgAreas.includes(q.z)) v=true; else {
-      if(q.fv&&!(q.z>0)&&textDg(q)) v=true; /* Forever quests Questie has no zone or objectives for yet: "...in the Hall of Thanes" */
-      else if(q.fv&&!pts.length){ const ends=[...(q.s?.n||[]).flatMap(n=>entPts('n',n)),...(q.f?.n||[]).flatMap(n=>entPts('n',n))]; if(ends.length&&ends.every(p=>p.dg)) v=true; } } }
+  /* dungeon quest = started inside a dungeon (incl. an item that drops there), or its objectives can be done inside (even if also outside).
+     "Doable inside": at least a third of the mobs/objects it comes from are in the dungeon (not generic drops like cloth). Pre-quests and outside-only objectives are normal. */
+  if(q){ const inDg=p=>p.dg||META.dgAreas.includes(p.z); const pts=objectives(qid).flatMap(o=>o.pts);
+    const sp=[...q.s.n.flatMap(n=>entPts('n',n)),...q.s.o.flatMap(o=>entPts('o',o)),...q.s.i.flatMap(i=>[...(DB.i[i]?.d||[]).flatMap(n=>entPts('n',n)),...(DB.i[i]?.od||[]).flatMap(o=>entPts('o',o))])];
+    if(sp.some(inDg)) v=true;
+    else if(pts.length){ const ents=new Map(); for(const p of pts){ const k=p.ent||'?'; ents.set(k,(ents.get(k)||false)||inDg(p)); } const inn=[...ents.values()].filter(Boolean).length; v=inn>0&&inn*3>=ents.size; }
+    else if(q.z>0 && META.dgAreas.includes(q.z)) v=true; /* no objective data: the dungeon it's filed under */
+    else if(q.fv&&!(q.z>0)&&textDg(q)) v=true; /* Forever quests Questie has no zone or objectives for yet: "...in the Hall of Thanes" */
+    else if(q.fv){ const ends=(q.f?.n||[]).flatMap(n=>entPts('n',n)); if(ends.length&&ends.every(inDg)) v=true; }
+    if(v&&(sp.length||pts.length)){ const dp=[...sp,...pts].find(inDg); const nm=dp?dungeonAt(dp):null; const d=nm&&DUNGEONS.find(d=>d[1]===nm); const r=d&&DG_LV[d[0]]; if(r&&q.l>r[1]+5) v=false; else if(dp) DQPT.set(qid,dp); } /* a level-60 cloth turn-in isn't a Blackfathom quest */ }
   dqCache.set(qid,v); return v; }
+const DG_LV={RFC:[13,18],DM:[17,26],WC:[17,24],HOT:[14,22],ROL:[18,26],SFK:[22,30],BFD:[22,32],EXC:[18,28],STOCKS:[22,30],GNOMER:[29,38],RFK:[29,38],SM:[28,45],RFD:[37,46],ULDA:[41,51],ZF:[42,54],MARA:[45,55],ST:[50,60],BRD:[52,60],DME:[55,60],SCHOLO:[58,60],STRAT:[58,60],LBRS:[55,60]};
 function textDg(q){ const t=(Array.isArray(q.t)?q.t.join(' '):q.t||'')+' '+(q.n||''); if(!t.trim()) return null; for(const [tag,name] of DUNGEONS){ if(new RegExp('\\b'+name.replace(/^The /,'').replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\b','i').test(t)) return name; } return null; }
 function objNums(qid){ return objectives(qid).filter(o=>o.rx).map(o=>o.rx); }
 const hasObjectives=qid=>{ const q=Q(qid); return !!(q.o||q.te||q.xk); };
@@ -1156,7 +1161,7 @@ function questDgTag(qid){ if(qdgCache.has(qid)) return qdgCache.get(qid); let ta
   qdgCache.set(qid,tag); return tag; }
 const bdgCache=new Map();
 function baseDgTag(qid){ if(bdgCache.has(qid)) return bdgCache.get(qid); let tag=null; const q=Q(qid);
-  if(q&&isDungeonQuest(qid)){ let name=FOREVER_DGQ[qid]||META.dungeons[q.z]?.n; if(!name){ const p=objectives(qid).flatMap(o=>o.pts).find(p=>p.dg); if(p) name=dungeonAt(p); } if(!name) name=textDg(q);
+  if(q&&isDungeonQuest(qid)){ let name=FOREVER_DGQ[qid]||META.dungeons[q.z]?.n; if(!name){ const p=DQPT.get(qid)||objectives(qid).flatMap(o=>o.pts).find(p=>p.dg); if(p) name=dungeonAt(p); } if(!name) name=textDg(q);
     if(name){ const d=DUNGEONS.find(d=>d[1]===name)||DUNGEONS.find(d=>name.startsWith(d[1])||d[1].startsWith(name)); tag=d?d[0]:name; } }
   bdgCache.set(qid,tag); return tag; }
 function stepDgTags(i){ const s=route.steps[i]; const out=[]; const gs=s.src?G(s.src.g)?.steps[s.src.i]:null;
