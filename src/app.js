@@ -123,8 +123,11 @@ function objectives(qid){
 }
 const dqCache=new Map();
 function isDungeonQuest(qid){ if(dqCache.has(qid)) return dqCache.get(qid); const q=Q(qid); let v=false;
-  if(q){ if(q.z>0 && META.dgAreas.includes(q.z)) v=true; else { const pts=objectives(qid).flatMap(o=>o.pts); if(pts.length && pts.filter(p=>p.dg).length>=pts.length/2) v=true; } }
+  if(q){ if(q.z>0 && META.dgAreas.includes(q.z)) v=true; else { const pts=objectives(qid).flatMap(o=>o.pts); if(pts.length && pts.filter(p=>p.dg).length>=pts.length/2) v=true;
+      else if(q.fv&&!pts.length&&!(q.z>0)&&textDg(q)) v=true; /* Forever quests Questie has no zone or objectives for yet: "...in the Hall of Thanes" */
+      else if(q.fv&&!pts.length){ const ends=[...(q.s?.n||[]).flatMap(n=>entPts('n',n)),...(q.f?.n||[]).flatMap(n=>entPts('n',n))]; if(ends.length&&ends.every(p=>p.dg)) v=true; } } }
   dqCache.set(qid,v); return v; }
+function textDg(q){ const t=(Array.isArray(q.t)?q.t.join(' '):q.t||'')+' '+(q.n||''); if(!t.trim()) return null; for(const [tag,name] of DUNGEONS){ if(new RegExp('\\b'+name.replace(/^The /,'').replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\b','i').test(t)) return name; } return null; }
 function objNums(qid){ return objectives(qid).filter(o=>o.rx).map(o=>o.rx); }
 const hasObjectives=qid=>{ const q=Q(qid); return !!(q.o||q.te||q.xk); };
 // objectives the game doesn't list but the quest needs (Forever): kill these to be able to hand in. Not exported as .complete (the quest has no such objective).
@@ -1133,7 +1136,7 @@ function questDgTag(qid){ if(qdgCache.has(qid)) return qdgCache.get(qid); let ta
   qdgCache.set(qid,tag); return tag; }
 const bdgCache=new Map();
 function baseDgTag(qid){ if(bdgCache.has(qid)) return bdgCache.get(qid); let tag=null; const q=Q(qid);
-  if(q&&isDungeonQuest(qid)){ let name=META.dungeons[q.z]?.n; if(!name){ const p=objectives(qid).flatMap(o=>o.pts).find(p=>p.dg); if(p) name=dungeonAt(p); }
+  if(q&&isDungeonQuest(qid)){ let name=META.dungeons[q.z]?.n; if(!name){ const p=objectives(qid).flatMap(o=>o.pts).find(p=>p.dg); if(p) name=dungeonAt(p); } if(!name) name=textDg(q);
     if(name){ const d=DUNGEONS.find(d=>d[1]===name)||DUNGEONS.find(d=>name.startsWith(d[1])||d[1].startsWith(name)); tag=d?d[0]:name; } }
   bdgCache.set(qid,tag); return tag; }
 function stepDgTags(i){ const s=route.steps[i]; const out=[]; const gs=s.src?G(s.src.g)?.steps[s.src.i]:null;
