@@ -25,6 +25,15 @@ for m in ('0', '1'):
     M['labels'].update(G['labels'])
 M['zones']['16591'].update(b=[-2208, -6758, -6533, -9566], ap=0)
 M['relief'] = json.load(open('relief.json'))
+# Zephras Isle (Skyborne start, Forever, uiMap 2521): not in the client map data. Its own landmass west of Kalimdor; size estimated (~5500 yd map)
+M['off']['2'] = [0, 0]
+ZL, ZR, ZT, ZB = 12500, 7000, 1833, -1834
+M['zones']['16593'] = {'n': 'Zephras Isle', 'm': 2, 'b': [ZL, ZR, ZT, ZB], 'lv': '1-12', 'ap': 1, 'city': 0, 'ui': 2521}
+zc = lambda px, py: [round(-(ZL - px / 100 * (ZL - ZR)), 1), round(-(ZT - py / 100 * (ZT - ZB)), 1)]
+zring = [v for pt in [(47,15),(52,22),(58,26),(68,30),(70,38),(72,48),(72,55),(70,62),(70,75),(68,85),(62,88),(52,88),(45,85),(40,75),(38,62),(32,55),(31,48),(34,38),(35,28),(40,20)] for v in zc(*pt)]
+M['geo']['cont']['2'] = {'zones': {'16593': [zring]}, 'coast': [zring]}
+M['labels']['16593'] = zc(51, 52)
+M['towns'] += [[16593, 42.8, 23.4, 'Thendal Village'], [16593, 41.7, 44.8, "Shen'dar Village"], [16593, 60.0, 81.0, 'Valanaar']]
 # Forever dungeons (entrances approximate)
 M['dungeons'].update({'16611':{'n':'Ruins of Lordaeron','l':[[85,61.6,69.5]]},'16919':{'n':'The Hall of Thanes','l':[[1537,40.0,56.0]]},'exc':{'n':'Excavation Site: Wetlands','l':[[11,53.2,65.8]]}})
 M['dgAreas']=sorted(set(M['dgAreas'])|{16611,16919})

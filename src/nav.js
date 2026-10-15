@@ -85,6 +85,9 @@ const RIDES=(()=>{ const out=[]; const add=(kind,f,A,Al,Ad,B,Bl,Bd)=>{ out.push(
   add('boat','A',[11,4.37,56.76],'Menethil Harbor docks','Menethil Harbor',[148,32.4,43.8],'Auberdine docks','Auberdine');
   add('boat','A',[148,33.2,39.9],'Auberdine docks',"Auberdine",[141,54.9,96.8],"Rut'theran Village docks","Rut'theran Village");
   add('Deeprun Tram','A',[1519,63.9,8.3,1],'Deeprun Tram (Stormwind)','Stormwind City',[1537,76.4,51.2],'Deeprun Tram (Ironforge)','Ironforge');
+  /* Zephras Isle (Skyborne): skyship to Dalaran, then the Violet Citadel portal to Stormwind / the Horde skyship to Thunder Bluff */
+  add('Skyship','A',[16593,64.9,80.9],'Valanaar skydock (Alliance)','Zephras Isle',[1519,39.5,81.5],'Stormwind Mage Quarter (via Dalaran)','Stormwind City');
+  add('Skyship','H',[16593,58.2,79.5],'Valanaar skydock (Horde)','Zephras Isle',[1638,45.5,52.0],'Thunder Bluff','Thunder Bluff');
   for(const r of out){ r.zone=r.to[0]; r.text=`Take the ${r.kind} to ${r.dest}`; } return out; })();
 function rideDocks(){ const docks=[]; for(const r of RIDES){ const p=tpPt(r.from); if(!p) continue; let d=docks.find(d=>d.label===r.dock); if(!d){ d={label:r.dock,p,rides:[]}; docks.push(d); } d.rides.push(r); } return docks; }
 function tpPt([z,x,y,era]){ const cv=era&&META.zones[z]?.cv; if(cv){ x=x*cv[0]+cv[1]; y=y*cv[2]+cv[3]; } return zp2plane(z,x,y); }

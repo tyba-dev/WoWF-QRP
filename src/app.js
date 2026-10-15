@@ -8,8 +8,8 @@ let DB, META;
 
 const XP_TABLE=[0,400,900,1400,2100,2800,3600,4500,5400,6500,7600,8800,10100,11400,12900,14400,16000,17700,19400,21300,23200,25200,27300,29400,31700,34000,36400,38900,41400,44300,47400,50800,54500,58600,62800,67100,71600,76100,80800,85700,90700,95800,101000,106300,111800,117500,123200,129100,135100,141200,147500,153900,160400,167100,173900,180800,187900,195000,202300,209800];
 const MAXLVL=60;
-const START={Human:[12,48.2,42.5],Dwarf:[1,29.9,71.2],Gnome:[1,29.9,71.2],'Night Elf':[141,58.6,44.2],Orc:[14,43.3,68.5],Troll:[14,43.3,68.5],Undead:[85,30.8,66.2],Tauren:[215,44.2,76.7]};
-const RACES={Human:[1,'A'],Dwarf:[4,'A'],'Night Elf':[8,'A'],Gnome:[64,'A'],Orc:[2,'H'],Undead:[16,'H'],Tauren:[32,'H'],Troll:[128,'H'],Skyborne:[0,null]};
+const START={Human:[12,48.2,42.5],Dwarf:[1,29.9,71.2],Gnome:[1,29.9,71.2],'Night Elf':[141,58.6,44.2],Orc:[14,43.3,68.5],Troll:[14,43.3,68.5],Undead:[85,30.8,66.2],Tauren:[215,44.2,76.7],Skyborne:[16593,42.8,23.4]};
+const RACES={Human:[1,'A'],Dwarf:[4,'A'],'Night Elf':[8,'A'],Gnome:[64,'A'],Orc:[2,'H'],Undead:[16,'H'],Tauren:[32,'H'],Troll:[128,'H'],Skyborne:[1<<20,null]}; /* Skyborne: pick Alliance (High Order) or Horde (Windshapers) */
 const CLASSES={Warrior:1,Paladin:2,Hunter:4,Rogue:8,Priest:16,Shaman:64,Mage:128,Warlock:256,Druid:1024};
 const FMASK={A:77,H:178};
 const PROF_SORTS=new Set([-324,-304,-264,-201,-182,-181,-121,-101,-24]);
@@ -187,13 +187,14 @@ function mobXP(player,mob,elite,party,dgFactor){
 }
 
 /* ---------- availability ---------- */
-function charInfo(r){ const c=r.char; const [rb,fac]=RACES[c.race]||[0,c.faction]; return {rb,fac:fac||c.faction,cb:CLASSES[c.cls]||0,opts:c}; }
+function charInfo(r){ const c=r.char; const [rb,fac]=RACES[c.race]||[0,c.faction]; return {rb,fac:fac||c.faction,cb:CLASSES[c.cls]||0,opts:c,sky:c.race==='Skyborne'}; }
 function whyUnavailable(qid,st,route){
   const q=Q(qid); const ci=charInfo(route);
-  if(q.ra){ if(ci.rb){ if(!(q.ra&ci.rb)) return {hard:true,why:'Not available to your race'}; } else if((q.ra&FMASK[ci.fac])!==FMASK[ci.fac]) return {hard:true,why:'Restricted to specific races'}; }
+  if(q.ra){ if(ci.rb){ if(!(q.ra&ci.rb)&&!(ci.sky&&(q.ra&FMASK[ci.fac])===FMASK[ci.fac])) return {hard:true,why:'Not available to your race'}; } /* Skyborne can take their faction's all-race quests */ else if((q.ra&FMASK[ci.fac])!==FMASK[ci.fac]) return {hard:true,why:'Restricted to specific races'}; }
   if(q.cl && !(q.cl&ci.cb)) return {hard:true,why:'Class quest for another class'};
   if(q.z<0 && CLASS_SORT_NAME[q.z] && CLASS_SORT_NAME[q.z]!==route.char.cls) return {hard:true,why:'Class quest for another class'};
   for(const nid of q.s.n){ const fr=DB.n[nid]?.fr; if(fr && !fr.includes(ci.fac)) return {hard:true,why:'Quest giver is hostile to your faction'}; }
+  if(q.l===1&&!(q.z>0)&&!q.s.i.length&&!starterPts(qid).length) return {hard:true,filter:true,why:'Questie has no level or start point for it yet'};
   if(/^<NYI>|<TXT>/.test(q.n||'')) return {hard:true,filter:true,why:'Not in the game (Questie marks it not yet implemented)'};
   if(q.sk && !ci.opts.prof && !q.fv) return {hard:true,filter:true,why:'Profession quest (enable in Settings)'};
   if(q.z<0 && PROF_SORTS.has(q.z) && !ci.opts.prof && !q.fv) return {hard:true,filter:true,why:'Profession quest (enable in Settings)'};
@@ -276,7 +277,7 @@ function migrateRoute(r){ ensureIds(r); if(r.char&&!r.char.as0){ r.char.autoStk=
 function initState(r){ return {level:+r.char.level||1,xp:+r.char.xp||0,party:Math.max(1,+r.char.party||1),log:new Map(),turned:new Set(),fps:new Set(r.char.fps||[]),home:startHome(r),fq:new Map(),expl:startExpl(r)}; }
 function startExpl(r){ const s=new Set(); const h=START[r.char.race]; if(h&&META?.expl){ const p=zp2plane(...h); if(p){ const a=areaAt(p.X,p.Y); if(a) s.add(a); } } return s; }
 // a new character's hearthstone is bound to where they first spawn
-const START_NAME={Human:'Northshire Abbey',Dwarf:'Coldridge Valley',Gnome:'Coldridge Valley','Night Elf':'Shadowglen',Orc:'Valley of Trials',Troll:'Valley of Trials',Undead:'Deathknell',Tauren:'Camp Narache'};
+const START_NAME={Human:'Northshire Abbey',Dwarf:'Coldridge Valley',Gnome:'Coldridge Valley','Night Elf':'Shadowglen',Orc:'Valley of Trials',Troll:'Valley of Trials',Undead:'Deathknell',Tauren:'Camp Narache',Skyborne:'Thendal Village'};
 function startHome(r){ const s=START[r.char.race]; if(!s) return null; const p=zp2plane(...s); return p?{...p,label:START_NAME[r.char.race]||zoneName(s[0]),step:null,def:true}:null; }
 function cloneState(s){ return {level:s.level,xp:s.xp,party:s.party,log:new Map([...s.log].map(([k,v])=>[k,{...v,objs:v.objs?new Set(v.objs):undefined,stk:v.stk?new Set(v.stk):undefined}])),turned:new Set(s.turned),fps:new Set(s.fps),home:s.home,fq:new Map(s.fq||[]),fqs:s.fqs?new Map(s.fqs):undefined,money:s.money||0,lastTrain:s.lastTrain,stkT:s.stkT,fqo:new Map([...(s.fqo||new Map())].map(([k,v])=>[k,new Set(v)])),expl:new Set(s.expl||[])}; }
 // Forever: quest log holds 40, but escort quests can't be started with 25+ quests in the log
@@ -425,7 +426,7 @@ function foreverQuests(){ const key=route.id+':'+(route.guides||[]).map(g=>g.id+
   for(const k in B){ const q=+k; if(m.has(q)||Q(q)) continue; const b=B[k]; if(b[3]===-1) continue; const e={q,n:b[0],acc:[],tin:[],cmp:[],g:'Questie (Forever)',qie:1,l:b[2]||Math.max(1,(b[1]||1)-4),l1:b[1],tgtA:null,tgtT:null,cl:null}; applyB(e,b); if(!e.acc.length) continue; m.set(q,e); }
   for(const e of m.values()){ if(!e.n) e.n='Quest '+e.q; e.minL=e.req||Math.max(1,Math.min(e.l,e.lv?e.lv-4:e.l)); } FQ.key=key; FQ.map=m; return m; }
 function fqBlocked(e,ci){ ci=ci||charInfo(route);
-  if(e.ra){ if(e.ra===-1) return 'not for the classic races (Skyborne)'; if(ci.rb&&!(e.ra&ci.rb)) return 'not available to your race'; if(!ci.rb&&(e.ra&FMASK[ci.fac])!==FMASK[ci.fac]) return 'restricted to specific races'; }
+  if(e.ra){ if(e.ra===-1) return 'not for the classic races (Skyborne)'; if(ci.rb&&!(e.ra&ci.rb)&&!(ci.sky&&e.ra>0&&(e.ra&FMASK[ci.fac])===FMASK[ci.fac])) return 'not available to your race'; if(!ci.rb&&(e.ra&FMASK[ci.fac])!==FMASK[ci.fac]) return 'restricted to specific races'; }
   if(e.cls&&!(e.cls&ci.cb)) return 'class quest for another class'; if(e.sort<0&&CLASS_SORT_NAME[e.sort]&&CLASS_SORT_NAME[e.sort]!==route.char.cls) return 'class quest for another class';
   if(e.qb){ for(const n of e.qb[5]){ const fr=DB.n[n]?.fr; if(fr&&!fr.includes(ci.fac)) return 'quest giver is hostile to your faction'; } if(e.sort<0&&PROF_SORTS.has(e.sort)&&!ci.opts.prof) return 'profession quest (enable in Settings)'; if(e.sort<0&&EVENT_SORTS.has(e.sort)&&!ci.opts.event) return 'event quest (enable in Settings)'; }
   return null; }
@@ -639,7 +640,7 @@ function buildPaths(){
   for(const [m,c] of Object.entries(META.geo.cont)){
     const off=META.off[m]; const land=new Path2D();
     for(const r of c.coast){ land.moveTo(r[0]+off[0],r[1]+off[1]); for(let i=2;i<r.length;i+=2) land.lineTo(r[i]+off[0],r[i+1]+off[1]); land.closePath(); }
-    landPaths.push(land);
+    landPaths.push(land); land.m=m;
     for(const [z,rings] of Object.entries(c.zones)){
       const p=new Path2D(); for(const r of rings){ p.moveTo(r[0]+off[0],r[1]+off[1]); for(let i=2;i<r.length;i+=2) p.lineTo(r[i]+off[0],r[i+1]+off[1]); p.closePath(); }
       zonePaths.set(+z,p);
@@ -705,7 +706,7 @@ function draw(){
     // cut the coastline out of the land using the relief images' alpha (fine ocean mask)
     const k=maskCtx(); k.setTransform(1,0,0,1,0,0); k.globalCompositeOperation='source-over'; k.clearRect(0,0,k.canvas.width,k.canvas.height);
     k.setTransform(DPR*s,0,0,DPR*s,DPR*view.tx,DPR*view.ty); k.imageSmoothingEnabled=true;
-    reliefDraw(k,'r');
+    reliefDraw(k,'r'); k.fillStyle='#000'; for(const lp of landPaths) if(!reliefImgs.some(o=>String(o.m)===String(lp.m))) k.fill(lp); /* landmasses without relief images (Zephras Isle): keep the outline */
     g.setTransform(1,0,0,1,0,0); g.globalCompositeOperation='destination-in'; g.drawImage(k.canvas,0,0); g.globalCompositeOperation='source-over';
     ctx.setTransform(1,0,0,1,0,0); ctx.save(); ctx.shadowColor='rgba(160,205,195,.6)'; ctx.shadowBlur=Math.min(50,Math.max(5,160*s))*DPR; ctx.drawImage(g.canvas,0,0); ctx.shadowColor='rgba(40,28,12,.95)'; ctx.shadowBlur=2.5*DPR; ctx.drawImage(g.canvas,0,0); ctx.restore();
     ctx.setTransform(DPR*s,0,0,DPR*s,DPR*view.tx,DPR*view.ty);
