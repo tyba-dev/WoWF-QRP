@@ -282,7 +282,7 @@ dialog textarea{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-
       <div class="pfoot">
         <button class="btn sm" id="addGrind">Add grind</button>
         <button class="btn sm" id="addTravel">Add travel or note</button>
-        <button class="btn sm" id="hsBtn">Hearth</button>
+        <button class="btn sm" id="flyBtn" title="Learn flight paths the route walks past, and fly every leg where flying is quicker than walking">Add flights</button><button class="btn sm" id="hsBtn">Hearth</button>
         <button class="btn sm" id="dieBtn" title="Die and res at a Spirit Healer (deathskip)">Die</button>
         <button class="btn sm" id="trainBtn" title="Train class spells at the nearest trainer for your class">Train</button>
         <button class="btn sm" id="buyBtn" title="Buy items from a vendor (sets the RestedXP target to them)">Buy</button>
@@ -370,6 +370,10 @@ dialog textarea{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-
     <p class="note" style="margin:0">These kills add XP but no time: the mob dies while you keep moving. XP per kill uses the average level of the mobs along each walking leg and your group size. Lower = more grinding (a priest dotting and running might be ~100 yards, stopping to kill everything ~40).</p>
     <div class="grid4"><label>Calibrate: at step<input type="number" name="calStep" min="1"></label><label>I was level<input type="number" name="calLvl" min="1" max="60"></label><label>with XP<input type="number" name="calXp" min="0"></label><label>&nbsp;<button type="button" class="btn sm" id="calBtn">Calibrate</button></label></div>
     <p class="note" id="calMsg" style="margin:0"></p>
+  </fieldset>
+  <fieldset style="border:1px solid var(--line);border-radius:8px;padding:6px 10px;display:flex;flex-direction:column;gap:8px"><legend class="note">Movement speed</legend>
+    <label>Speed bonuses by level (level:+%, comma-separated)<input type="text" name="spd" placeholder="e.g. 20:5, 21:10, 22:15"></label>
+    <p class="note" style="margin:0">Walking is 7 yards/s; from the mount level (above) 11.2. Add your speed increases here: Ghost Wolf or Travel Form (20:40, the default for shamans and druids), Pursuit of Justice ranks, and so on. In a group, the planner moves everyone at the slowest member's speed.</p>
   </fieldset>
   <fieldset style="border:1px solid var(--line);border-radius:8px;padding:6px 10px;display:flex;flex-direction:column;gap:8px"><legend class="note">Objectives close together</legend>
     <label class="inline"><input type="checkbox" name="grpAcc"> In a group: quest pick-ups in the same hub become one step, with every quest giver in the target macro (split up and share)</label>
