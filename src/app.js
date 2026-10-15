@@ -122,7 +122,9 @@ function objectives(qid){
   objCache.set(qid,list); return list;
 }
 const dqCache=new Map();
-function isDungeonQuest(qid){ if(dqCache.has(qid)) return dqCache.get(qid); const q=Q(qid); let v=false;
+/* Forever dungeon quests Questie can't place yet (picked up inside the dungeon from an object or a drop) */
+const FOREVER_DGQ={98423:'The Hall of Thanes'};
+function isDungeonQuest(qid){ if(dqCache.has(qid)) return dqCache.get(qid); const q=Q(qid); let v=false; if(FOREVER_DGQ[qid]){ dqCache.set(qid,true); return true; }
   if(q){ if(q.z>0 && META.dgAreas.includes(q.z)) v=true; else { const pts=objectives(qid).flatMap(o=>o.pts); if(pts.length && pts.filter(p=>p.dg).length>=pts.length/2) v=true;
       else if(q.fv&&!pts.length&&!(q.z>0)&&textDg(q)) v=true; /* Forever quests Questie has no zone or objectives for yet: "...in the Hall of Thanes" */
       else if(q.fv&&!pts.length){ const ends=[...(q.s?.n||[]).flatMap(n=>entPts('n',n)),...(q.f?.n||[]).flatMap(n=>entPts('n',n))]; if(ends.length&&ends.every(p=>p.dg)) v=true; } } }
@@ -1136,7 +1138,7 @@ function questDgTag(qid){ if(qdgCache.has(qid)) return qdgCache.get(qid); let ta
   qdgCache.set(qid,tag); return tag; }
 const bdgCache=new Map();
 function baseDgTag(qid){ if(bdgCache.has(qid)) return bdgCache.get(qid); let tag=null; const q=Q(qid);
-  if(q&&isDungeonQuest(qid)){ let name=META.dungeons[q.z]?.n; if(!name){ const p=objectives(qid).flatMap(o=>o.pts).find(p=>p.dg); if(p) name=dungeonAt(p); } if(!name) name=textDg(q);
+  if(q&&isDungeonQuest(qid)){ let name=FOREVER_DGQ[qid]||META.dungeons[q.z]?.n; if(!name){ const p=objectives(qid).flatMap(o=>o.pts).find(p=>p.dg); if(p) name=dungeonAt(p); } if(!name) name=textDg(q);
     if(name){ const d=DUNGEONS.find(d=>d[1]===name)||DUNGEONS.find(d=>name.startsWith(d[1])||d[1].startsWith(name)); tag=d?d[0]:name; } }
   bdgCache.set(qid,tag); return tag; }
 function stepDgTags(i){ const s=route.steps[i]; const out=[]; const gs=s.src?G(s.src.g)?.steps[s.src.i]:null;
