@@ -191,6 +191,7 @@ function whyUnavailable(qid,st,route){
   if(q.cl && !(q.cl&ci.cb)) return {hard:true,why:'Class quest for another class'};
   if(q.z<0 && CLASS_SORT_NAME[q.z] && CLASS_SORT_NAME[q.z]!==route.char.cls) return {hard:true,why:'Class quest for another class'};
   for(const nid of q.s.n){ const fr=DB.n[nid]?.fr; if(fr && !fr.includes(ci.fac)) return {hard:true,why:'Quest giver is hostile to your faction'}; }
+  if(/^<NYI>|<TXT>/.test(q.n||'')) return {hard:true,filter:true,why:'Not in the game (Questie marks it not yet implemented)'};
   if(q.sk && !ci.opts.prof && !q.fv) return {hard:true,filter:true,why:'Profession quest (enable in Settings)'};
   if(q.z<0 && PROF_SORTS.has(q.z) && !ci.opts.prof && !q.fv) return {hard:true,filter:true,why:'Profession quest (enable in Settings)'};
   if((q.ev || (q.z<0&&EVENT_SORTS.has(q.z))) && !ci.opts.event) return {hard:true,filter:true,why:'Seasonal or event quest (enable in Settings)'};
