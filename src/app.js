@@ -594,7 +594,7 @@ function killEstimate(qid,counts,st,skip){
   const use=()=>!(skip&&skip(idx));
   for(const [id] of o.c||[]){ if(!use()){ idx++; continue; } const n=cnt(isUniqueMob(id)); const k=perKillXP([id],st,cfg); xp+=k.xp*n; money+=(k.money||0)*n; kills+=n; dg=dg||k.dg; idx++; }
   for(const _ of o.o||[]) idx++;
-  for(const [id] of o.i||[]){ const src=DB.i[id]?.d||[]; if(src.length&&!genericDrop(src)&&use()){ const boss=src.length<=2&&src.every(n=>isUniqueMob(n)); const n=boss?1:Math.ceil(cnt()/cfg.rate); const k=perKillXP(src,st,cfg); xp+=k.xp*n; money+=(k.money||0)*n; kills+=n; dg=dg||k.dg; } idx++; }
+  for(const [id] of o.i||[]){ const src=DB.i[id]?.d||[]; if(src.length&&!genericDrop(src)&&use()){ const boss=src.length<=2&&src.every(n=>isUniqueMob(n)); const c=cnt(); const n=boss?1:Math.ceil((c>1?c*Math.max(1,st.party||1):c)/cfg.rate); /* a single quest item drops for everyone; several are looted one each, so a group needs one set per player */ const k=perKillXP(src,st,cfg); xp+=k.xp*n; money+=(k.money||0)*n; kills+=n; dg=dg||k.dg; } idx++; }
   for(const [ids,base] of o.k||[]){ if(!use()){ idx++; continue; } const n=cnt(); const k=perKillXP(base?[base,...ids]:ids,st,cfg); xp+=k.xp*n; money+=(k.money||0)*n; kills+=n; dg=dg||k.dg; idx++; }
   return {xp:Math.round(xp),kills,guessed,dg,money};
 }
