@@ -154,6 +154,9 @@ function objCentroid(qid){
   return best;
 }
 
+/* quests in the log at this point that now give only the minimum (10%) XP: abandon them unless the route hands them in later */
+function cleanupList(st){ const drop=[],kept=[]; for(const [qid] of st.log){ const q=Q(qid); if(!q?.xp) continue; const mult=2*(q.xp[0]-st.level)+20; if(mult>1) continue;
+    if(route.steps.some((x,k)=>k>cursor&&x.q===qid&&(x.t==='turnin'||x.t==='complete'))) kept.push(qid); else drop.push(qid); } return {drop,kept}; }
 /* ---------- xp ---------- */
 function questXP(qid,level){
   const q=Q(qid); if(!q||!q.xp||level>=MAXLVL) return 0;
@@ -1128,6 +1131,7 @@ function healthReport(){ simulate(); const rows={err:[],pen:[],hard:[],warn:[],o
 document.addEventListener('click',e=>{ const h=e.target.closest('[data-hgo]'); if(h){ $('#dlgHealth').close(); setCursor(+h.dataset.hgo); } });
 function stickyAccIdx(q){ for(let k=Math.min(cursor,route.steps.length-1);k>=0;k--){ const x=route.steps[k]; if(x.t==='accept'&&x.q===q&&!SIM.res[k]?.inactive) return isSticky(x)&&SIM.res[k]?.passive==null?k:-1; } return -1; }
 const accNowBtn=(q,sm)=>stickyAccIdx(q)>=0?`<button class="btn${sm?' sm':''}" data-accnow="${q}" title="You have it from a sticky accept (step ${stickyAccIdx(q)+1}); add the step where you must have it">Accept now</button>`:'';
+document.addEventListener('click',e=>{ if(!e.target.closest('#logCleanup')) return; const {drop}=cleanupList(SIM.st); if(!drop.length) return; pushHistory(); const at=cursor+1; route.steps.splice(at,0,...drop.map(q=>({id:uid(),t:'abandon',q}))); cursor=at+drop.length-1; refresh(); toast(`Abandoning ${drop.length} grey quest${drop.length>1?'s':''} here`); });
 document.addEventListener('change',e=>{ const sc=e.target.closest('input[data-seccol]'); if(sc){ const S=route.sections?.[sc.dataset.seccol]; if(S){ pushHistory(); S.color=sc.value; refresh(); } return; } const rc=e.target.closest('#routeCol'); if(rc){ pushHistory(); route.char.rcol=rc.value; save(); requestDraw(); return; } const t=e.target.closest('select.stknow'); if(!t||!t.value) return; const i=+t.dataset.now; stepNow(i,t.value==='here'?i+1:cursor+1); });
 function stickyChip(s,i){ const gs=stepGuide(s); if(!gs&&s.stk) return `<span class="stk" title="${esc(s.stk==='next'?'Exported with #completewith next: RestedXP shows it together with the next step and the arrow skips it. Do it on the way.':'Exported with #sticky: RestedXP keeps it on screen until done while you carry on; the arrow skips it.')}">📌 ${s.stk==='next'?'with next step':'sticky'}</span>`; const cw=gs?.cw||s.cw; if(!(gs?.sticky||cw)) return '';
   let tip, lbl;
@@ -1429,7 +1433,7 @@ function renderRight(){
   } else if(tab==='log'){
     const st=SIM.st; const fqRows=fqAvail(st).filter(a=>a.f).map(fqRow).join(''); const rows=[...st.log].map(([qid,v])=>{ const q=Q(qid); if(!q) return ''; const dc=diffClass(q.l,st.level);
       return `<div class="qrow ${selQuest===qid?'sel':''}" data-q="${qid}"><span class="lv c-${dc}">${q.l}</span><span class="nm"><span class="c-${dc}">${esc(q.n)}</span><br><span class="meta">${v.done?'Ready to turn in':'In progress'} · ${esc(areaLabel(q))}</span>${v.done?'':objChecklist(qid,v)}</span><span class="row" style="flex-wrap:nowrap">${v.done?'':`<button class="btn sm" data-complete="${qid}">Done</button>`}<button class="btn sm" data-turnin="${qid}">Turn in</button></span></div>`; });
-    const nf=fqAvail(st).filter(a=>a.f).length; body.innerHTML=`<div class="qgroup"><h3>Quest log at this step (${st.log.size+nf}/${LOGMAX})</h3>${rows.join('')+fqRows||'<div class="empty">Your quest log is empty at this step.</div>'}</div>`;
+    const nf=fqAvail(st).filter(a=>a.f).length; const cu=cleanupList(st); body.innerHTML=`<div class="qgroup"><h3>Quest log at this step (${st.log.size+nf}/${LOGMAX})</h3>${cu.drop.length?`<div class="row" style="margin:2px 0 6px;gap:6px;align-items:center"><button class="btn sm" id="logCleanup" title="${esc(cu.drop.map(q=>Q(q).n).join(', '))}">Clean up: abandon ${cu.drop.length} quest${cu.drop.length>1?'s':''} too low to give XP</button>${cu.kept.length?`<span class="note">${cu.kept.length} more ${cu.kept.length>1?'are':'is'} handed in later in your route, so kept</span>`:''}</div>`:''}${rows.join('')+fqRows||'<div class="empty">Your quest log is empty at this step.</div>'}</div>`;
   } else if(tab==='guides'){ body.innerHTML=renderGuides(); afterGuidesRender(); } else body.innerHTML=renderDetail();
 }
 function renderDetail(){
