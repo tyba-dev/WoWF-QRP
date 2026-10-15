@@ -123,9 +123,11 @@ function objectives(qid){
 }
 const dqCache=new Map();
 /* Forever dungeon quests Questie can't place yet (picked up inside the dungeon from an object or a drop) */
-const FOREVER_DGQ={98423:'The Hall of Thanes'};
+const FOREVER_DGQ={98423:'The Hall of Thanes',95646:'Excavation Site: Wetlands'};
+/* never dungeon quests: Questie data bugs and pre-quests filed under a dungeon */
+const NOT_DGQ=new Set([174,175,177,181,95737]);
 const DQPT=new Map(); /* a dungeon spot for each dungeon quest (names the dungeon) */
-function isDungeonQuest(qid){ if(dqCache.has(qid)) return dqCache.get(qid); const q=Q(qid); let v=false; if(FOREVER_DGQ[qid]){ dqCache.set(qid,true); return true; }
+function isDungeonQuest(qid){ if(dqCache.has(qid)) return dqCache.get(qid); const q=Q(qid); let v=false; if(FOREVER_DGQ[qid]){ dqCache.set(qid,true); return true; } if(NOT_DGQ.has(qid)){ dqCache.set(qid,false); return false; }
   /* dungeon quest = started inside a dungeon (incl. an item that drops there), or its objectives can be done inside (even if also outside).
      "Doable inside": at least a third of the mobs/objects it comes from are in the dungeon (not generic drops like cloth). Pre-quests and outside-only objectives are normal. */
   if(q){ const inDg=p=>p.dg||META.dgAreas.includes(p.z); const pts=objectives(qid).flatMap(o=>o.pts);
@@ -137,7 +139,7 @@ function isDungeonQuest(qid){ if(dqCache.has(qid)) return dqCache.get(qid); cons
     else if(q.fv){ const ends=(q.f?.n||[]).flatMap(n=>entPts('n',n)); if(ends.length&&ends.every(inDg)) v=true; }
     if(v&&(sp.length||pts.length)){ const dp=[...sp,...pts].find(inDg); const nm=dp?dungeonAt(dp):null; const d=nm&&DUNGEONS.find(d=>d[1]===nm); const r=d&&DG_LV[d[0]]; if(r&&q.l>r[1]+5) v=false; else if(dp) DQPT.set(qid,dp); } /* a level-60 cloth turn-in isn't a Blackfathom quest */ }
   dqCache.set(qid,v); return v; }
-const DG_LV={RFC:[13,18],DM:[17,26],WC:[17,24],HOT:[14,22],ROL:[18,26],SFK:[22,30],BFD:[22,32],EXC:[18,28],STOCKS:[22,30],GNOMER:[29,38],RFK:[29,38],SM:[28,45],RFD:[37,46],ULDA:[41,51],ZF:[42,54],MARA:[45,55],ST:[50,60],BRD:[52,60],DME:[55,60],SCHOLO:[58,60],STRAT:[58,60],LBRS:[55,60]};
+const DG_LV={RFC:[13,18],DM:[17,26],WC:[17,24],HOT:[14,22],ROL:[18,26],SFK:[22,30],BFD:[24,32],EXC:[24,33],STOCKS:[22,30],GNOMER:[29,38],RFK:[29,38],SM:[28,45],RFD:[37,46],ULDA:[41,51],ZF:[42,54],MARA:[45,55],ST:[50,60],BRD:[52,60],DME:[55,60],SCHOLO:[58,60],STRAT:[58,60],LBRS:[55,60]};
 function textDg(q){ const t=(Array.isArray(q.t)?q.t.join(' '):q.t||'')+' '+(q.n||''); if(!t.trim()) return null; for(const [tag,name] of DUNGEONS){ if(new RegExp('\\b'+name.replace(/^The /,'').replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\b','i').test(t)) return name; } return null; }
 function objNums(qid){ return objectives(qid).filter(o=>o.rx).map(o=>o.rx); }
 const hasObjectives=qid=>{ const q=Q(qid); return !!(q.o||q.te||q.xk); };

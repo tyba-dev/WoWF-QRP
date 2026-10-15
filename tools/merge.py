@@ -35,8 +35,8 @@ M['geo']['cont']['2'] = {'zones': {'16593': [zring]}, 'coast': [zring]}
 M['labels']['16593'] = zc(51, 52)
 M['towns'] += [[16593, 42.8, 23.4, 'Thendal Village'], [16593, 41.7, 44.8, "Shen'dar Village"], [16593, 60.0, 81.0, 'Valanaar']]
 # Forever dungeons (entrances approximate)
-M['dungeons'].update({'16611':{'n':'Ruins of Lordaeron','l':[[85,61.6,69.5]]},'16919':{'n':'The Hall of Thanes','l':[[1537,40.0,56.0]]},'exc':{'n':'Excavation Site: Wetlands','l':[[11,53.2,65.8]]}})
-M['dgAreas']=sorted(set(M['dgAreas'])|{16611,16919})
+M['dungeons'].update({'16611':{'n':'Ruins of Lordaeron','l':[[85,61.6,69.5]]},'16919':{'n':'The Hall of Thanes','l':[[1537,40.0,56.0]]},'16732':{'n':'Excavation Site: Wetlands','l':[[11,53.2,65.8]]}})
+M['dgAreas']=sorted(set(M['dgAreas'])|{16611,16919,16732})
 M['fqb'] = json.load(open('fqb.json')); M['fqbRev'] = 'QuestieDB '+json.load(open('fqb_rev.json'))['rev']
 try: M['fqw'] = json.load(open('fqw.json'))  # optional local Wowhead lookups, not shipped
 except FileNotFoundError: pass
