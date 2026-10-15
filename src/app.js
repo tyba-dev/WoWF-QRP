@@ -344,7 +344,7 @@ function simulate0(){ computeGroups(); ensureIds(route);
       const w=whyUnavailable(s.q,st,route); if(w) r.err.push(w.why); r.lvAt=st.level;
       if(st.log.size>=LOGMAX) r.err.push(`Quest log is full (${LOGMAX})`); else if(ESCORT.has(s.q)&&st.log.size>=ESC_LIMIT) r.err.push(`Escort quest: you have ${st.log.size} quests in your log; drop below ${ESC_LIMIT} before accepting`);
       st.log.set(s.q,{done:!hasObjectives(s.q)});
-    } else if(s.t==='complete'){
+    } else if(s.t==='complete'){ st._inrun=!!s.inrun;
       if(!st.log.has(s.q)) r.err.push('Not in your quest log yet'); else { const e=st.log.get(s.q); e.objs=e.objs||new Set(); e.stickyDone=isSticky(s); const stkBefore=new Set(e.objs);
         if(s.obj){ if(e.objs.has(s.obj)||e.done) r.warn.push('This objective is already done'); e.prog=e.prog||{}; const had=e.prog[s.obj]||0; const tot=+(s.counts?.[s.obj])||0;
           if(s.upto>0){ // partial: only up to this count now, the rest later (RestedXP .complete q,n,N)
@@ -367,7 +367,8 @@ function simulate0(){ computeGroups(); ensureIds(route);
       } else if(s.mode==='by'){ const j=route.steps.findIndex(x=>x.id===s.at); const now=totalXP(st.level,st.xp); const T=+s._tgt||0; r.byNow=now;
         if(T>now){ r.gained=T-now; const t=fromTotal(T); st.level=t.level; st.xp=t.xp; } else if(T) r.warn.push('Already past the target here: no grinding needed');
         if(j<0) r.err.push('The step to ding at is no longer in the route: edit this grind step'); else if(j<=i) r.err.push(`Step ${j+1} comes before this grind: pick a later step`); else if(T){ const t=fromTotal(T); r.warn.push(`Grind to level ${t.level} + ${fmt(t.xp)} XP, so you are level ${s.level}${s.xp?' + '+fmt(s.xp)+' XP':''} after step ${j+1}`); }
-      } else { r.gained=+s.amount||0; addXP(st,r.gained); }
+      } else if(s.mode==='run'){ const L=st.level, g=L, per=mobXP(L,g,false,st.party||1)||1; r.gained=Math.round((+s.mins||0)*60/killSecs(L,g,st.party||1)*per*DG_RUN_XP); addXP(st,r.gained); }
+      else { r.gained=+s.amount||0; addXP(st,r.gained); }
     } else if(s.t==='party'){ if(s.size===st.party) r.warn.push('Group size is already '+s.size); st.party=s.size;
     } else if(s.t==='custom'){
       if(s.act==='turnin'){ r.gained=+s.xp||0; addXP(st,r.gained); }
@@ -504,6 +505,8 @@ function isKillObjStep(s){ if(!s.q||!Q(s.q)) return false; const ob=objectives(s
 let MOBLV=null; function mobStatsAt(lv){ if(!MOBLV){ MOBLV={}; for(const k in META.mobl?.g||{}) for(const [l,hp,n,arm] of META.mobl.g[k]){ const L=Math.round(l); const o=MOBLV[L]=MOBLV[L]||{hp:0,a:0,n:0}; o.hp+=hp*n; o.a+=(arm>=0?arm:45*L)*n; o.n+=n; } }
   const o=MOBLV[Math.max(1,Math.min(63,Math.round(lv)))]; return o&&o.n?{hp:o.hp/o.n,a:o.a/o.n}:{hp:40+25*lv,a:45*lv}; }
 const gMobL=L=>Math.max(1,L<20?L-1:L-2); /* mobs you grind on: one level below you early, two later */
+const gEff=()=>{ const v=+route.char.geff; return v>0&&v<=1?v:0.8; };
+const DG_RUN_XP=0.5; /* dungeon mobs: ~half the XP per second of an open-world hyperspawn pull rate */
 const gSearch=()=>{ const v=route.char.gsearch; return v!==''&&v!=null&&+v>=0?+v:1; }; /* grinding: finding / walking to the next mob */
 const defDown=()=>route.char.cls==='Hunter'?0:2; /* hunters kill on the move with the pet, no eat/drink */
 const soloDps=L=>(+route.char.dpsl>0?+route.char.dpsl:2)*L;
@@ -519,7 +522,8 @@ function estimateTimes(res){ let t=0; const c=route.char; const mountL=+c.ypkUnt
     if(['accept','turnin','train','buy','prof'].includes(s.t)) dt+=5;
     let kills=0, ml=L; if(r.kill?.kills){ kills+=r.kill.kills; ml=Q(s.q)?Math.min(Q(s.q).l,L+2):L; } dt+=kills*killSecs(L,ml,r.party);
     if(r.walk?.kills) dt+=r.walk.kills*killSecs(L,r.walk.lv||L,r.party);
-    if(s.t==='grind'&&r.gained>0&&(typeof s.src!=='string'||s.src==='mobs'||s.src==='both')){ const g=gMobL(L); const per=mobXP(L,g,false,r.party||1)||1; dt+=r.gained/per*(killSecs(L,g,r.party)+gSearch()); } /* group: XP per kill is split, kills are faster */
+    if(s.t==='grind'&&s.mode==='run') dt+=(+s.mins||0)*60;
+    else if(s.t==='grind'&&r.gained>0&&(typeof s.src!=='string'||s.src==='mobs'||s.src==='both')){ const g=gMobL(L); const per=mobXP(L,g,false,r.party||1)||1; dt+=r.gained/per*(killSecs(L,g,r.party)+gSearch())/(s.camp?1:gEff()); } /* grinding runs at the hyperspawn rate only at a tested camp; elsewhere at the efficiency you set */ /* group: XP per kill is split, kills are faster */
     r.dt=dt; t+=dt; r.tAt=t; }); }
 const fmtT=sec=>{ sec=Math.round(sec||0); const d=Math.floor(sec/86400), h=Math.floor(sec%86400/3600), m=Math.floor(sec%3600/60); return d?`${d}d ${h}h ${m}m`:h?`${h}h ${m}m`:`${m}m`; };
 function travelKills(a,b,st,yp){ const ypk=+(yp??route.char.ypk)||0; if(!ypk||!a||!b) return null; const d=Math.hypot(b.X-a.X,b.Y-a.Y); if(d<30||d>6000) return null;
@@ -599,7 +603,7 @@ function perKillXP(ids,st,cfg){
   if(!best) return {xp:0,none:true,money:0}; const ni=best.ni; return {xp:mobXP(st.level,ni.l,ni.elite,st.party||1,ni.dg?cfg.dg:0),dg:ni.dg,money:killMoney(best.id,ni.l)/(st.party||1)};
 }
 function killEstimate(qid,counts,st,skip){
-  const cfg=killCfg(); const q=Q(qid); if(!cfg.on||!q) return {xp:0,kills:0,guessed:false};
+  const cfg=killCfg(); const q=Q(qid); if(!cfg.on||!q||st._inrun) return {xp:0,kills:0,guessed:false}; /* done during a dungeon run: its kills are in the run */
   const o=q.o||{}; let idx=1, xp=0, kills=0, guessed=false, dg=false, money=0;
   const cnt=(uniq)=>{ const c=counts&&counts[idx]; if(c) return +c; if(uniq) return 1; guessed=true; return cfg.def; };
   const use=()=>!(skip&&skip(idx));
