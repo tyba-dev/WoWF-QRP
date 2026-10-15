@@ -117,5 +117,13 @@ for t,R,k in (('n',RN,0),('o',RO,1)):
             p=rawp(R[i])
             if p: e['p']=p; fixed[k]+=1
 print('spawns restored',fixed)
+# Forever dungeons: spawns inside the instance are shown at the entrance (flag 1 = inside a dungeon), like the Classic ones
+DGENT={16611:[85,61.6,69.5],16919:[1537,40.0,56.0]}
+moved=0
+for t in ('n','o'):
+    for e in D[t].values():
+        if any(p[0] in DGENT for p in e.get('p',[])):
+            e['p']=[[*DGENT[p[0]],1] if p[0] in DGENT else p for p in e['p']]; moved+=1
+print('instance spawns moved to Forever dungeon entrances',moved)
 json.dump(D,open('db.json','w'),separators=(',',':'))
 print('new forever quests',new,'(skyborne-only',sky,') updated',upd,'added',added)
