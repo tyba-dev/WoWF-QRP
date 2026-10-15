@@ -42,6 +42,13 @@ try: M['fqw'] = json.load(open('fqw.json'))  # optional local Wowhead lookups, n
 except FileNotFoundError: pass
 V = json.load(open('vend.json')); M['vend'] = V['vend']; M['trn'] = V['trn']; M['vi'] = V['vi']
 M['mobl'] = json.load(open('mobl.json')); M['expl'] = json.load(open('explore.json')); M['gy'] = json.load(open('gy.json')); M['ptrn'] = json.load(open('ptrn.json')); M['tsp'] = json.load(open('tspells.json')); M['money'] = json.load(open('money.json'))
+# Camping 101 quests end at a profession trainer: add the ones missing from the trainer list (Zephras Isle etc.)
+for qid, q in D['q'].items():
+    if not q['n'].startswith('Camping 101: '): continue
+    prof = q['n'][13:]
+    for nid in q['f']['n']:
+        n = D['n'].get(str(nid))
+        if n and n.get('p') and str(nid) not in M['ptrn']: M['ptrn'][str(nid)] = [n['n'], prof, n.get('fr') or 'AH', n['p'][:3], n.get('sn') or prof + ' Trainer']
 M['taxi'] = json.load(open('taxi_q.json')); M['taxiMig'] = json.load(open('taxi_mig.json'))
 flat = code.ravel().astype(int); ch = np.flatnonzero(np.diff(flat)) + 1
 st = np.r_[0, ch]; ln = np.diff(np.r_[st, len(flat)])
