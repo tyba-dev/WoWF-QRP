@@ -125,7 +125,7 @@ const dqCache=new Map();
 /* Forever dungeon quests Questie can't place yet (picked up inside the dungeon from an object or a drop) */
 const FOREVER_DGQ={98423:'The Hall of Thanes',95646:'Excavation Site: Wetlands',389:'The Stockade'};
 /* never dungeon quests: Questie data bugs and pre-quests filed under a dungeon */
-const NOT_DGQ=new Set([174,175,177,181,95737]);
+const NOT_DGQ=new Set([174,175,177,181,95737,6661,6662]); /* 6661, 6662: Deeprun Tram is not a dungeon */
 const DQPT=new Map(); /* a dungeon spot for each dungeon quest (names the dungeon) */
 function isDungeonQuest(qid){ if(dqCache.has(qid)) return dqCache.get(qid); const q=Q(qid); let v=false; if(FOREVER_DGQ[qid]){ dqCache.set(qid,true); return true; } if(NOT_DGQ.has(qid)){ dqCache.set(qid,false); return false; }
   /* dungeon quest = started inside a dungeon (incl. an item that drops there), or its objectives can be done inside (even if also outside).
