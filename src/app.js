@@ -22,7 +22,7 @@ async function loadData(){
   for(let i=0;i<bin.length;i++) u8[i]=bin.charCodeAt(i);
   const stream=new Blob([u8]).stream().pipeThrough(new DecompressionStream('gzip'));
   const o=JSON.parse(await new Response(stream).text());
-  DB=o.db; META=o.meta; for(const [id,x] of Object.entries(QEXTRA)) if(DB.q[id]) Object.assign(DB.q[id],x);
+  DB=o.db; META=o.meta; for(const [id,x] of Object.entries(QEXTRA)) if(DB.q[id]) Object.assign(DB.q[id],x); /* Deeprun Tram NPCs: Questie puts both on one Stormwind-mapped point; Monty is on the Ironforge platform, Nipsy on the Stormwind one */ if(DB.n[12997]) DB.n[12997].p=[[1537,76.4,51.2]]; if(DB.n[13018]) DB.n[13018].p=[[1519,63.9,8.3,1]];
   labelChains();
 }
 /* quests that share a name and form a chain get "(part k/n)" so follow-ups are distinguishable */
@@ -522,10 +522,14 @@ function spdSched(r){ const own=ownSpd(r); if(!r.group) return {own,grp:own}; co
   const S=mem.map(ownSpd); const lv=[...new Set(S.flat().map(x=>x[0]))].sort((a,b)=>a-b); const at=(sc,L)=>{ let b=0; for(const [l,v] of sc) if(L>=l) b=v; return b; };
   return {own,grp:lv.map(L=>[L,Math.min(...S.map(sc=>at(sc,L)))])}; }
 function runSpeed(L,party){ const c=route.char; const mountL=+c.ypkUntil||40; const sc=runSpeed._s||{own:[],grp:[]}; let b=0; for(const [l,v] of (party>1?sc.grp:sc.own)) if(L>=l) b=v; return Math.max(L>=mountL?11.2:7, 7*(1+b/100)); }
+/* the Deeprun Tram: any walk between the Ironforge and Stormwind sides can use it (entrance walk + about 150 s: wait, tunnel, 58 s ride) */
+let TRAM=null; function tramDocks(){ if(TRAM) return TRAM; const r=RIDES.find(x=>x.kind==='Deeprun Tram'); if(!r) return TRAM=[]; const a=tpPt(r.from), b=tpPt(r.to); return TRAM=a&&b?[a,b]:[]; }
+function tramSecs(a,b,run){ const T=tramDocks(); if(T.length<2||!a||!b) return null; if(META.zones[a.z]?.m!==0||META.zones[b.z]?.m!==0) return null; const h=(p,q)=>Math.hypot(p.X-q.X,p.Y-q.Y)*1.25/run; const [S,I]=T; return Math.min(h(a,S)+150+h(I,b),h(a,I)+150+h(S,b)); }
+function walkSecs(a,b,run,d){ const w=d*1.25/run; const t=tramSecs(a,b,run); return t!=null&&t<w?t:w; }
 function estimateTimes(res){ let t=0; const c=route.char; runSpeed._s=spdSched(route);
   res.forEach((r,i)=>{ const s=route.steps[i]; let dt=0; if(r.inactive||r.passive!=null){ r.dt=0; r.tAt=t; return; } const L=r.before?.level||1; const run=runSpeed(L,r.party||1); const lt=r.leg?.type;
     const dist=(a,b)=>{ if(!a||!b) return 0; const d=Math.hypot(b.X-a.X,b.Y-a.Y); if(!Number.isFinite(d)) return 0; const ma=a.z!=null?META.zones[a.z]?.m:null, mb=b.z!=null?META.zones[b.z]?.m:null; if(ma!=null&&mb!=null&&ma!=mb) return 0; return Math.min(d,5000); }; /* other continent / huge jump: some other transport, not walking */
-    if(!r.stk){ if(lt==='fly'){ dt+=dist(r.from,r.dep)*1.25/run+dist(r.dep,r.pt)/32+10; } else if(lt==='ride'){ dt+=dist(r.from,r.dep)*1.25/run+150; } else if(lt==='hs'){ dt+=25; } else if(lt==='death'){ dt+=dist(r.from,r.dep)*1.25/run+40; } else dt+=dist(r.from,r.pt)*1.25/run;
+    if(!r.stk){ if(lt==='fly'){ dt+=dist(r.from,r.dep)*1.25/run+dist(r.dep,r.pt)/32+10; } else if(lt==='ride'){ dt+=dist(r.from,r.dep)*1.25/run+150; } else if(lt==='hs'){ dt+=25; } else if(lt==='death'){ dt+=dist(r.from,r.dep)*1.25/run+40; } else { const d=dist(r.from,r.pt); dt+=d?walkSecs(r.from,r.pt,run,d):0; }
       if(r.path&&r.path.length>1) { let d=0; for(let k=0;k<r.path.length;k++) d+=dist(r.path[k],r.path[(k+1)%r.path.length]); dt+=d/run; } }
     if(['accept','turnin','train','buy','prof'].includes(s.t)) dt+=5;
     let kills=0, ml=L; if(r.kill?.kills){ kills+=r.kill.kills; ml=Q(s.q)?Math.min(Q(s.q).l,L+2):L; } dt+=kills*killSecs(L,ml,r.party);
@@ -543,12 +547,12 @@ function autoTravel(o={}){ const fpR=o.fpR??200, gain=o.gain??30; let added={fp:
       if(META.dgAreas.includes(a.z)||META.dgAreas.includes(b.z)) return; const run=runSpeed(r.before?.level||1,r.party||1);
       for(const n of nodes){ if(fps.has(n.id)||n.m!==contOf(a)) continue; const p=taxiPt(n.id); if(p&&segDist(p,a,b)<fpR){ ins.push([i,{t:'travel',kind:'fp',node:n.id,text:taxiShort(n.id),auto:1}]); fps.add(n.id); added.fp++; } }
       const dep=nearestNode(a,fps), arr=nearestNode(b,fps); if(!dep||!arr||dep===arr) return; const P=taxiPt(dep), Q2=taxiPt(arr); if(!P||!Q2||META.zones[P.z]?.m!==m||META.zones[Q2.z]?.m!==m) return;
-      const walk=d*1.25/run, fly=Math.hypot(P.X-a.X,P.Y-a.Y)*1.25/run+Math.hypot(Q2.X-P.X,Q2.Y-P.Y)/32+10+Math.hypot(b.X-Q2.X,b.Y-Q2.Y)*1.25/run;
+      const walk=walkSecs(a,b,run,d), fly=Math.hypot(P.X-a.X,P.Y-a.Y)*1.25/run+Math.hypot(Q2.X-P.X,Q2.Y-P.Y)/32+10+Math.hypot(b.X-Q2.X,b.Y-Q2.Y)*1.25/run;
       if(fly<walk-gain){ ins.push([i,{t:'travel',kind:'fly',node:arr,text:taxiShort(arr),auto:1}]); added.fly++; } });
     if(!ins.length) break; for(let k=ins.length-1;k>=0;k--){ const [i,st]=ins[k]; route.steps.splice(i,0,{id:uid(),...st}); } }
   simulate(); return added; }
 const fmtT=sec=>{ sec=Math.round(sec||0); const d=Math.floor(sec/86400), h=Math.floor(sec%86400/3600), m=Math.floor(sec%3600/60); return d?`${d}d ${h}h ${m}m`:h?`${h}h ${m}m`:`${m}m`; };
-function travelKills(a,b,st,yp){ const ypk=+(yp??route.char.ypk)||0; if(!ypk||!a||!b) return null; const d=Math.hypot(b.X-a.X,b.Y-a.Y); if(d<30||d>6000) return null;
+function travelKills(a,b,st,yp){ const ypk=+(yp??route.char.ypk)||0; if(!ypk||!a||!b) return null; const d=Math.hypot(b.X-a.X,b.Y-a.Y); if(d<30||d>6000) return null; { const tt=tramSecs(a,b,7); if(tt!=null&&tt<d*1.25/7) return null; } /* by tram: nothing to kill */
   const walk=d*1.2, n=Math.max(1,Math.ceil(d/60)); let xp=0,kills=0,lvs=0,m=0;
   for(let k=0;k<n;k++){ const t=(k+0.5)/n; const lv=mobLevelAt(a.X+(b.X-a.X)*t,a.Y+(b.Y-a.Y)*t); if(lv==null) continue; const kk=walk/n/ypk; const per=mobXP(st.level,Math.round(lv),false,st.party||1); kills+=kk; xp+=kk*per; lvs+=lv; m++; }
   return xp>0?{xp:Math.round(xp),kills,lv:lvs/m}:null; }
