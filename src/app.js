@@ -22,7 +22,7 @@ async function loadData(){
   for(let i=0;i<bin.length;i++) u8[i]=bin.charCodeAt(i);
   const stream=new Blob([u8]).stream().pipeThrough(new DecompressionStream('gzip'));
   const o=JSON.parse(await new Response(stream).text());
-  DB=o.db; META=o.meta; for(const [id,x] of Object.entries(QEXTRA)) if(DB.q[id]) Object.assign(DB.q[id],x); /* Deeprun Tram NPCs: Questie puts both on one Stormwind-mapped point; Monty is on the Ironforge platform, Nipsy on the Stormwind one */ if(DB.n[12997]) DB.n[12997].p=[[1537,76.4,51.2]]; if(DB.n[13018]) DB.n[13018].p=[[1519,63.9,8.3,1]];
+  DB=o.db; META=o.meta; for(const [id,x] of Object.entries(QEXTRA)) if(DB.q[id]) Object.assign(DB.q[id],x); /* Deeprun Tram NPCs: Questie puts both on one Stormwind-mapped point; Monty is on the Ironforge platform, Nipsy on the Stormwind one */ if(DB.n[12997]) DB.n[12997].p=[[1537,76.4,51.2]]; if(DB.n[13018]) DB.n[13018].p=[[1519,63.9,8.3,1]]; if(DB.n[13016]) DB.n[13016].p=[[1537,77.2,50.4]]; /* Deeprun Rats: on the Ironforge side with Monty */
   labelChains();
 }
 /* quests that share a name and form a chain get "(part k/n)" so follow-ups are distinguishable */
