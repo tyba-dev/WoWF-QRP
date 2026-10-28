@@ -67,13 +67,19 @@ const TRANSPORTS=[
   {n:'Zeppelin: Orgrimmar ⇄ Undercity',a:[14,50.8,13.6],b:[85,60.9,58.9],f:'H',c:1000},
   {n:"Zeppelin: Orgrimmar ⇄ Grom'gol",a:[14,50.8,13.6],b:[33,31.5,29.6],f:'H',c:1000},
   {n:"Zeppelin: Undercity ⇄ Grom'gol",a:[85,61.3,58.9],b:[33,31.5,29.6],f:'H',c:1000},
-  {n:'Boat: Ratchet ⇄ Booty Bay',a:[17,63.74,38.66],b:[33,25.9,73.1],f:'AH',c:900},
-  {n:'Boat: Menethil ⇄ Theramore',a:[11,5.08,63.41],b:[15,71.5,56.4],f:'A',c:900},
-  {n:'Boat: Menethil ⇄ Auberdine',a:[11,4.37,56.76],b:[148,32.4,43.8],f:'A',c:900},
-  {n:"Boat: Auberdine ⇄ Rut'theran",a:[148,33.2,39.9],b:[141,54.9,96.8],f:'A',c:700},
+  {n:'Boat: Ratchet ⇄ Booty Bay',a:[17,63.74,38.66],b:[33,25.9,73.1],f:'AH',c:3600},
+  {n:'Boat: Menethil ⇄ Theramore',a:[11,5.08,63.41],b:[15,71.5,56.4],f:'A',c:3600},
+  {n:'Boat: Menethil ⇄ Auberdine',a:[11,4.37,56.76],b:[148,32.4,43.8],f:'A',c:3600},
+  {n:'Boat: Menethil → Southshore',a:[11,4.37,56.76],b:[267,51.0,62.0],f:'A',c:3600},
+  {n:'Boat: Southshore → Auberdine',a:[267,51.0,62.0],b:[148,32.4,43.8],f:'A',c:3600},
+  {n:'Boat: Stormwind Harbor ⇄ Auberdine',a:[1519,22.6,56.1],b:[148,30.7,41.0],f:'A',c:3600},
+  {n:"Boat: Auberdine ⇄ Rut'theran",a:[148,33.2,39.9],b:[141,54.9,96.8],f:'A',c:3600},
   {n:'Ferry: Feralas ⇄ Feathermoon',a:[357,43.3,42.8],b:[357,31.1,39.9],f:'A',c:300},
-  {n:'Deeprun Tram',a:[1519,63.9,8.3,1],b:[1537,76.4,51.2],f:'A',c:500},
-  {n:'Portal: Rut\'theran ⇄ Darnassus',a:[141,55.9,89.8],b:[1657,29.5,41.4],f:'A',c:60},
+  {n:'Deeprun Tram',a:[1519,63.9,8.3,1],b:[1537,76.4,51.2],f:'A',c:1050},
+  {n:'Walk: Menethil Harbor gate',a:{X:15152,Y:-2192},b:{X:15184,Y:-2256},f:'AH',c:'walk'},
+  {n:'Walk: South Gate Pass (Dun Morogh ⇄ Loch Modan)',a:[1,86.1,50.9],b:[38,19.1,62.2],f:'AH',c:'walk'},
+  {n:'Walk: Dun Algaz tunnel (Loch Modan ⇄ Wetlands)',a:[38,25.1,9.0],b:[11,53.7,70.3],f:'AH',c:'walk'},
+  {n:'Portal: Rut\'theran ⇄ Darnassus',a:[141,55.9,89.8],b:[1657,29.5,41.4],f:'A',c:70},
 ];
 // rideable transports, one entry per direction; text matches RestedXP guides (".zone <Zone> >>Take the Zeppelin to <Zone>")
 const RIDES=(()=>{ const out=[]; const add=(kind,f,A,Al,Ad,B,Bl,Bd)=>{ out.push({id:out.length,kind,f,from:A,dock:Al,to:B,dest:Bd}); out.push({id:out.length,kind,f,from:B,dock:Bl,to:A,dest:Ad}); };
@@ -100,15 +106,23 @@ function navInit(){
   const n=META.nav; if(!n) return; const N=n.w*n.h; const g=new Uint8Array(N); let k=0;
   for(let i=0;i<n.rle.length;i+=2){ g.fill(n.rle[i],k,k+n.rle[i+1]); k+=n.rle[i+1]; }
   NAV={x0:n.x0,y0:n.y0,cell:n.cell,w:n.w,h:n.h,g,gs:new Float64Array(N),stamp:new Int32Array(N),closed:new Int32Array(N),par:new Int32Array(N),run:0,links:[]};
-  for(const t of TRANSPORTS){ const a=tpPt(t.a), b=tpPt(t.b); if(!a||!b) continue; const ia=navSnap(navCell(a)), ib=navSnap(navCell(b)); if(ia<0||ib<0) continue; NAV.links.push({ia,ib,c:t.c,f:t.f,n:t.n}); }
+  /* bridge narrow gaps in the walkable map (gates, bridges, ramps the spawn data misses): a small walkable area within 3 cells of another area is joined to it (two big areas never are: that would be a mountain ridge) */
+  { const {w,h}=NAV; const comp=new Int32Array(w*h).fill(-1); let nc=0; const q=new Int32Array(w*h); const size=[];
+    for(let i=0;i<w*h;i++){ if(!g[i]||comp[i]>=0) continue; let qh=0,qt=0; q[qt++]=i; comp[i]=nc; while(qh<qt){ const j=q[qh++], r=(j/w)|0, c=j%w; if(c>0&&g[j-1]&&comp[j-1]<0){ comp[j-1]=nc; q[qt++]=j-1; } if(c<w-1&&g[j+1]&&comp[j+1]<0){ comp[j+1]=nc; q[qt++]=j+1; } if(r>0&&g[j-w]&&comp[j-w]<0){ comp[j-w]=nc; q[qt++]=j-w; } if(r<h-1&&g[j+w]&&comp[j+w]<0){ comp[j+w]=nc; q[qt++]=j+w; } } size.push(qt); nc++; }
+    NAV.comp=comp; NAV.csz=size; const seen=new Set(); const R=3;
+    for(let i=0;i<w*h;i++){ if(g[i]) continue; const r=(i/w)|0, c=i%w; let a=-1, ia=-1;
+      for(let dr=-R;dr<=R;dr++) for(let dc=-R;dc<=R;dc++){ const rr=r+dr, cc=c+dc; if(rr<0||cc<0||rr>=h||cc>=w) continue; const j=rr*w+cc, k=comp[j]; if(k<0||size[k]<8) continue;
+        if(a<0){ a=k; ia=j; } else if(k!==a&&Math.min(size[a],size[k])<3000){ const key=a<k?a+'_'+k:k+'_'+a; if(!seen.has(key)){ seen.add(key); const pa={X:NAV.x0+((ia%w)+.5)*NAV.cell,Y:NAV.y0+(((ia/w)|0)+.5)*NAV.cell}, pb={X:NAV.x0+((j%w)+.5)*NAV.cell,Y:NAV.y0+(((j/w)|0)+.5)*NAV.cell}; const len=Math.hypot(pa.X-pb.X,pa.Y-pb.Y); if(len<=2.4*NAV.cell) NAV.links.push({ia,ib:j,c:len*1.15,f:'AH',n:'Walk: gap',len}); else seen.delete(key); } } } }
+  }
+  for(const t of TRANSPORTS){ const a=Array.isArray(t.a)?tpPt(t.a):t.a, b=Array.isArray(t.b)?tpPt(t.b):t.b; if(!a||!b) continue; const ia=navSnap(navCell(a)), ib=navSnap(navCell(b)); if(ia<0||ib<0) continue; const len=Math.hypot(a.X-b.X,a.Y-b.Y); NAV.links.push({ia,ib,c:t.c==='walk'?len*1.15:t.c,f:t.f,n:t.n,len}); }
 }
 function navCell(p){ const c=Math.floor((p.X-NAV.x0)/NAV.cell), r=Math.floor((p.Y-NAV.y0)/NAV.cell); return (c<0||r<0||c>=NAV.w||r>=NAV.h)?-1:r*NAV.w+c; }
 function navSnap(i){
-  if(i<0) return -1; const {g,w,h}=NAV; if(g[i]>=2) return i;
+  if(i<0) return -1; const {g,w,h}=NAV; const big=j=>!NAV.csz||NAV.csz[NAV.comp[j]]>=50; if(g[i]>=2&&big(i)) return i;
   const r0=(i/w)|0, c0=i%w; let any=-1;
   for(let rad=1;rad<=16;rad++){ let best=-1,bd=1e9;
     for(let dr=-rad;dr<=rad;dr++) for(let dc=-rad;dc<=rad;dc++){ if(Math.max(Math.abs(dr),Math.abs(dc))!==rad) continue; const r=r0+dr,c=c0+dc; if(r<0||c<0||r>=h||c>=w) continue; const j=r*w+c;
-      if(g[j]>=2){ const d=dr*dr+dc*dc; if(d<bd){ bd=d; best=j; } } else if(g[j]===1&&any<0) any=j; }
+      if(g[j]>=2&&big(j)){ const d=dr*dr+dc*dc; if(d<bd){ bd=d; best=j; } } else if(g[j]===1&&big(j)&&any<0) any=j; }
     if(best>=0) return best; }
   return g[i]?i:any;
 }
@@ -120,7 +134,7 @@ function navPath(sa,ta){
   for(const l of links) for(const [x,y] of [[l.ia,l.ib],[l.ib,l.ia]]){ if(!lf.has(x)) lf.set(x,[]); lf.get(x).push([y,l.c]); }
   const tr=(t/w)|0, tc=t%w;
   const hd=(r,c,r2,c2)=>{ const dr=Math.abs(r-r2),dc=Math.abs(c-c2); return (Math.max(dr,dc)+0.4142*Math.min(dr,dc))*cell; };
-  const lk=links.map(l=>({ar:(l.ia/w)|0,ac:l.ia%w,br:(l.ib/w)|0,bc:l.ib%w,c:l.c/MIN}));
+  const lk=links.filter(l=>!/^Walk/.test(l.n)).map(l=>({ar:(l.ia/w)|0,ac:l.ia%w,br:(l.ib/w)|0,bc:l.ib%w,c:l.c/MIN})); /* walking links are no shortcut: leave them out of the estimate */
   const H=i=>{ const r=(i/w)|0,c=i%w; let v=hd(r,c,tr,tc); for(const L of lk){ const v1=hd(r,c,L.ar,L.ac)+L.c+hd(L.br,L.bc,tr,tc); if(v1<v) v=v1; const v2=hd(r,c,L.br,L.bc)+L.c+hd(L.ar,L.ac,tr,tc); if(v2<v) v=v2; } return v*MIN*WT; };
   // binary heap
   let hk=new Float64Array(4096), hv=new Int32Array(4096), hn=0;

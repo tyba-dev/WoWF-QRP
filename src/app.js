@@ -529,13 +529,21 @@ function runSpeed(L,party){ const c=route.char; const mountL=+c.ypkUntil||40; co
 /* the Deeprun Tram: any walk between the Ironforge and Stormwind sides can use it (entrance walk + about 150 s: wait, tunnel, 58 s ride) */
 let TRAM=null; function tramDocks(){ if(TRAM) return TRAM; const r=RIDES.find(x=>x.kind==='Deeprun Tram'); if(!r) return TRAM=[]; const a=tpPt(r.from), b=tpPt(r.to); return TRAM=a&&b?[a,b]:[]; }
 function tramSecs(a,b,run){ const T=tramDocks(); if(T.length<2||!a||!b) return null; if(META.zones[a.z]?.m!==0||META.zones[b.z]?.m!==0) return null; const h=(p,q)=>Math.hypot(p.X-q.X,p.Y-q.Y)*1.25/run; const [S,I]=T; return Math.min(h(a,S)+150+h(I,b),h(a,I)+150+h(S,b)); }
-function walkSecs(a,b,run,d){ const w=d*1.25/run; const t=tramSecs(a,b,run); return t!=null&&t<w?t:w; }
+/* walking time along the walkable-ground map: straight when the straight line is clear, otherwise the real way round (mountains, water, cities), including any tram, portal or boat the way uses */
+function pathSecs(a,b,run,d){ if(typeof NAV==='undefined'||!NAV||d<150) return null; const ia=navSnap(navCell(a)), ib=navSnap(navCell(b)); if(ia<0||ib<0||ia===ib) return null;
+  const lc=navLineCost(ia,ib); if(Number.isFinite(lc)&&lc<=d*1.15) return d*1.05/run;
+  const k=navCell(a)+'>'+navCell(b)+'|'+taxiFac(); let P=PATHS.get(k); if(P===undefined){ try{ P=navPath(a,b); }catch(e){ P=null; } PATHS.set(k,P); } if(!P) return null;
+  let t=0; for(const sg of P.segs){ if(sg.k==='ship'){ t+=shipSecs(sg.pts[0],sg.pts[sg.pts.length-1]); continue; } for(let i=1;i<sg.pts.length;i++) t+=Math.hypot(sg.pts[i].X-sg.pts[i-1].X,sg.pts[i].Y-sg.pts[i-1].Y)*1.05/run; } return t; }
+function shipSecs(p,q){ let best=null,bd=1e18; for(const L of NAV.links){ const A={X:NAV.x0+((L.ia%NAV.w)+.5)*NAV.cell,Y:NAV.y0+(((L.ia/NAV.w)|0)+.5)*NAV.cell}, B={X:NAV.x0+((L.ib%NAV.w)+.5)*NAV.cell,Y:NAV.y0+(((L.ib/NAV.w)|0)+.5)*NAV.cell};
+    const d=Math.min(Math.hypot(A.X-p.X,A.Y-p.Y)+Math.hypot(B.X-q.X,B.Y-q.Y),Math.hypot(B.X-p.X,B.Y-p.Y)+Math.hypot(A.X-q.X,A.Y-q.Y)); if(d<bd){ bd=d; best=L; } }
+  const n=best?.n||''; if(/^Walk/.test(n)) return (best.len||0)*1.15/7; if(/^Portal/.test(n)) return 10; if(/Tram/.test(n)) return 150; return Math.max(2,+route.char.boatMin||8.5)*60; }
+function walkSecs(a,b,run,d){ const p=pathSecs(a,b,run,d); if(p!=null) return p; const w=d*1.25/run; const t=tramSecs(a,b,run); return t!=null&&t<w?t:w; }
 /* a ride's time: the tram is about 150 s door to door; boats, zeppelins and skyships cross in about 2 min plus the wait for the next one (on average half the cycle). Staying on the same boat for its next stop has no wait. */
 function rideSecs(rd,s){ if(!rd) return 150; if(rd.kind==='Deeprun Tram') return 150; const avg=Math.max(2,+route.char.boatMin||8.5)*60, cross=120; return s?.same?cross:avg; }
 function estimateTimes(res){ let t=0; const c=route.char; runSpeed._s=spdSched(route);
   res.forEach((r,i)=>{ const s=route.steps[i]; let dt=0; if(r.inactive||r.passive!=null){ r.dt=0; r.tAt=t; return; } const L=r.before?.level||1; const run=runSpeed(L,r.party||1); const lt=r.leg?.type;
     const dist=(a,b)=>{ if(!a||!b) return 0; const d=Math.hypot(b.X-a.X,b.Y-a.Y); if(!Number.isFinite(d)) return 0; const ma=a.z!=null?META.zones[a.z]?.m:null, mb=b.z!=null?META.zones[b.z]?.m:null; if(ma!=null&&mb!=null&&ma!=mb) return 0; return Math.min(d,5000); }; /* other continent / huge jump: some other transport, not walking */
-    if(!r.stk){ if(lt==='fly'){ dt+=dist(r.from,r.dep)*1.25/run+dist(r.dep,r.pt)/32+10; } else if(lt==='ride'){ dt+=dist(r.from,r.dep)*1.25/run+rideSecs(r.ride,s); } else if(lt==='hs'){ dt+=25; } else if(lt==='death'){ dt+=dist(r.from,r.dep)*1.25/run+40; } else { const d=dist(r.from,r.pt); dt+=d?walkSecs(r.from,r.pt,run,d):0; }
+    if(!r.stk){ if(lt==='fly'){ const d0=dist(r.from,r.dep); dt+=(d0?walkSecs(r.from,r.dep,run,d0):0)+(r.flight?.secs??dist(r.dep,r.pt)/32)+10; } else if(lt==='ride'){ const d0=dist(r.from,r.dep); dt+=(d0?walkSecs(r.from,r.dep,run,d0):0)+rideSecs(r.ride,s); } else if(lt==='hs'){ dt+=25; } else if(lt==='death'){ dt+=dist(r.from,r.dep)*1.25/run+40; } else { const d=dist(r.from,r.pt); dt+=d?walkSecs(r.from,r.pt,run,d):0; }
       if(r.path&&r.path.length>1) { let d=0; for(let k=0;k<r.path.length;k++) d+=dist(r.path[k],r.path[(k+1)%r.path.length]); dt+=d/run; } }
     if(['accept','turnin','train','buy','prof'].includes(s.t)) dt+=5;
     let kills=0, ml=L; if(r.kill?.kills){ kills+=r.kill.kills; ml=Q(s.q)?(questMobLv(s.q,r.pt?.z,L)??Math.min(Q(s.q).l,L+2)):L; } dt+=kills*killSecs(L,ml,r.party);
