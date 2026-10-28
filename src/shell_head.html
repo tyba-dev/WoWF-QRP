@@ -372,6 +372,7 @@ dialog textarea{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-
     <p class="note" id="calMsg" style="margin:0"></p>
   </fieldset>
   <fieldset style="border:1px solid var(--line);border-radius:8px;padding:6px 10px;display:flex;flex-direction:column;gap:8px"><legend class="note">Movement speed</legend>
+    <label>Boats, zeppelins and skyships: average minutes per trip, waiting included (default 8.5: about 2 min sailing plus half of a ~13 min wait)<input type="number" name="boatMin" min="2" max="30" step="0.5" placeholder="8.5"></label>
     <label>Speed bonuses by level (level:+%, comma-separated)<input type="text" name="spd" placeholder="e.g. 20:5, 21:10, 22:15"></label>
     <p class="note" style="margin:0">Walking is 7 yards/s; from the mount level (above) 11.2. Add your speed increases here: Ghost Wolf or Travel Form (20:40, the default for shamans and druids), Pursuit of Justice ranks, and so on. In a group, the planner moves everyone at the slowest member's speed.</p>
   </fieldset>
