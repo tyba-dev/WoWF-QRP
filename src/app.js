@@ -1042,7 +1042,7 @@ function pushHistory(){ history.push(JSON.stringify({steps:route.steps,cursor}))
 function undo(){ selSteps.clear(); const h=history.pop(); if(!h) return toast('Nothing to undo'); future.push(JSON.stringify({steps:route.steps,cursor})); const o=JSON.parse(h); route.steps=o.steps; cursor=o.cursor; refresh(); }
 // sticky / completewith: guide steps carry it from RestedXP; your own steps use s.stk = 'next' | 'sticky'
 function stepGuide(s){ return s.src&&!s.src.auto&&typeof G==='function'?G(s.src.g)?.steps[s.src.i]:null; }
-function isSticky(s){ const gs=stepGuide(s); return gs?!!(gs.sticky||gs.cw):!!s.stk; }
+function isSticky(s){ if(s.stk!=null&&s.stkSet) return !!s.stk; /* set by hand: done alongside other steps */ const gs=stepGuide(s); return gs?!!(gs.sticky||gs.cw):!!s.stk; }
 function guideStickyDefault(t,q){ for(const g of route.guides||[]) for(const x of g.steps||[]) if(x.q===q&&x.t===t&&x.cond&&(x.sticky||x.cw)) return {stk:x.cw==='next'?'next':'sticky',g:g.name}; return null; }
 /* ---------- objective paths (#loop): the arrow walks you round the spawns ---------- */
 function planeToZp(z,X,Y){ const Z=META.zones[z]; const [L,R,T,B]=Z.b; const off=META.off[Z.m]; const wy=-(X-off[0]), wx=-(Y-off[1]); return {z:+z,px:+((L-wy)/(L-R)*100).toFixed(2),py:+((T-wx)/(T-B)*100).toFixed(2)}; }
