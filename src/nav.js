@@ -90,6 +90,8 @@ const RIDES=(()=>{ const out=[]; const add=(kind,f,A,Al,Ad,B,Bl,Bd)=>{ out.push(
   add('Skyship','H',[16593,58.2,79.5],'Valanaar skydock (Horde)','Zephras Isle',[1638,45.5,52.0],'Thunder Bluff','Thunder Bluff');
   /* Forever: the Menethil Harbor ⇄ Auberdine boat also stops at Southshore (route to the Ruins of Lordaeron) */
   add('boat','A',[11,4.37,56.76],'Menethil Harbor docks','Menethil Harbor',[267,51.0,62.0],'Southshore docks','Southshore');
+  /* Forever: Stormwind Harbor ⇄ Auberdine boat */
+  add('boat','A',[1519,22.6,56.1],'Stormwind Harbor','Stormwind City',[148,30.7,41.0],'Auberdine docks (Stormwind boat)','Auberdine');
   for(const r of out){ r.zone=r.to[0]; r.text=`Take the ${r.kind} to ${r.dest}`; } return out; })();
 function rideDocks(){ const docks=[]; for(const r of RIDES){ const p=tpPt(r.from); if(!p) continue; let d=docks.find(d=>d.label===r.dock); if(!d){ d={label:r.dock,p,rides:[]}; docks.push(d); } d.rides.push(r); } return docks; }
 function tpPt([z,x,y,era]){ const cv=era&&META.zones[z]?.cv; if(cv){ x=x*cv[0]+cv[1]; y=y*cv[2]+cv[3]; } return zp2plane(z,x,y); }
