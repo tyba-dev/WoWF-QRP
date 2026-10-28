@@ -512,8 +512,12 @@ const defDown=()=>route.char.cls==='Hunter'?0:2; /* hunters kill on the move wit
 const soloDps=L=>(+route.char.dpsl>0?+route.char.dpsl:2)*L;
 /* the group's DPS: what you entered at a level, scaled with level like solo DPS; else group size × your DPS */
 /* DPS = per-level rate × the group's total level (everyone assumed your level) */
-function groupDps(L,party){ const c=route.char; if(party<=1) return soloDps(L); const k=party===2?(+c.dps2>0?+c.dps2:2):(+c.dps3>0?+c.dps3:1.66); return k*party*L; }
-function killSecs(L,ml,party){ const c=route.char; const dps=Math.max(1,groupDps(L,Math.max(1,party||1))), down=(party||1)>=2?0:(c.kdown!==''&&c.kdown!=null&&+c.kdown>=0?+c.kdown:defDown()); /* a group of 3+ has a healer: no eat/drink */ const m=mobStatsAt(ml); const dr=Math.min(.75,m.a/(m.a+400+85*L)); return m.hp/(dps*(1-dr))+down; }
+function groupDps(L,party){ const c=route.char; if(party<=1) return soloDps(L); const k=party===2?(+c.dps2>0?+c.dps2:2):(+c.dps3>0?+c.dps3:1.5); return k*party*L; }
+/* mobs above your level: more misses, dodges, parries, glancing blows and spell resists (Classic hit tables, melee and casters averaged) */
+const LVGAP=[1,0.98,0.95,0.91,0.85,0.77,0.69,0.6]; const gapF=d=>d<=0?1:LVGAP[Math.min(d,LVGAP.length-1)];
+/* the level of the mobs a quest has you kill or loot, from its objective creatures and drop sources that spawn in that zone */
+const QMLV=new Map(); function questMobLv(q,z,L){ const k=q+':'+z; if(QMLV.has(k)) return QMLV.get(k); const x=Q(q); let v=null; if(x){ const ids=[...((x.o?.c)||[]).map(c=>c[0]),...((x.o?.i)||[]).flatMap(i=>DB.i[i[0]]?.d||[])]; let sw=0,sl=0; for(const id of new Set(ids)){ const n=DB.n[id]; if(!n?.l) continue; const k=(n.p||[]).filter(p=>z==null||p[0]===z).length; if(!k) continue; sw+=k; sl+=k*(n.l[0]+(n.l[1]??n.l[0]))/2; } if(sw) v=sl/sw; } /* weighted by spawns in the zone */ QMLV.set(k,v); return v; }
+function killSecs(L,ml,party){ const c=route.char; const dps=Math.max(1,groupDps(L,Math.max(1,party||1))*gapF(Math.round(ml-L))), down=(party||1)>=2?0:(c.kdown!==''&&c.kdown!=null&&+c.kdown>=0?+c.kdown:defDown()); /* a group of 3+ has a healer: no eat/drink */ const m=mobStatsAt(ml); const dr=Math.min(.75,m.a/(m.a+400+85*L)); return m.hp/(dps*(1-dr))+down; }
 /* movement speed: base run 7 yd/s, mount from the mount level, plus speed bonuses by level (Ghost Wolf, Travel Form, Pursuit of Justice…); a group moves at its slowest member's pace */
 const SPD_DEF={Shaman:'20:40',Druid:'20:40'};
 function parseSpd(t){ return String(t||'').split(/[,;\s]+/).map(x=>x.match(/^(\d+)\s*:\s*\+?(\d+(?:\.\d+)?)%?$/)).filter(Boolean).map(m=>[+m[1],+m[2]]).sort((a,b)=>a[0]-b[0]); }
@@ -532,7 +536,7 @@ function estimateTimes(res){ let t=0; const c=route.char; runSpeed._s=spdSched(r
     if(!r.stk){ if(lt==='fly'){ dt+=dist(r.from,r.dep)*1.25/run+dist(r.dep,r.pt)/32+10; } else if(lt==='ride'){ dt+=dist(r.from,r.dep)*1.25/run+150; } else if(lt==='hs'){ dt+=25; } else if(lt==='death'){ dt+=dist(r.from,r.dep)*1.25/run+40; } else { const d=dist(r.from,r.pt); dt+=d?walkSecs(r.from,r.pt,run,d):0; }
       if(r.path&&r.path.length>1) { let d=0; for(let k=0;k<r.path.length;k++) d+=dist(r.path[k],r.path[(k+1)%r.path.length]); dt+=d/run; } }
     if(['accept','turnin','train','buy','prof'].includes(s.t)) dt+=5;
-    let kills=0, ml=L; if(r.kill?.kills){ kills+=r.kill.kills; ml=Q(s.q)?Math.min(Q(s.q).l,L+2):L; } dt+=kills*killSecs(L,ml,r.party);
+    let kills=0, ml=L; if(r.kill?.kills){ kills+=r.kill.kills; ml=Q(s.q)?(questMobLv(s.q,r.pt?.z,L)??Math.min(Q(s.q).l,L+2)):L; } dt+=kills*killSecs(L,ml,r.party);
     /* kills on the way are made while moving: free XP, no time */
     if(s.t==='grind'&&s.mode==='run') dt+=(+s.mins||0)*60;
     else if(s.t==='grind'&&r.gained>0&&(typeof s.src!=='string'||s.src==='mobs'||s.src==='both')){ const g=gMobL(L); const per=mobXP(L,g,false,r.party||1)||1; dt+=r.gained/per*(killSecs(L,g,r.party)+gSearch())/(s.camp?1:gEff()); } /* grinding runs at the hyperspawn rate only at a tested camp; elsewhere at the efficiency you set */ /* group: XP per kill is split, kills are faster */
