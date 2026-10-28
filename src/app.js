@@ -536,10 +536,11 @@ function pathSecs(a,b,run,d){ if(typeof NAV==='undefined'||!NAV||d<150) return n
   let t=0; for(const sg of P.segs){ if(sg.k==='ship'){ t+=shipSecs(sg.pts[0],sg.pts[sg.pts.length-1]); continue; } for(let i=1;i<sg.pts.length;i++) t+=Math.hypot(sg.pts[i].X-sg.pts[i-1].X,sg.pts[i].Y-sg.pts[i-1].Y)*1.05/run; } return t; }
 function shipSecs(p,q){ let best=null,bd=1e18; for(const L of NAV.links){ const A={X:NAV.x0+((L.ia%NAV.w)+.5)*NAV.cell,Y:NAV.y0+(((L.ia/NAV.w)|0)+.5)*NAV.cell}, B={X:NAV.x0+((L.ib%NAV.w)+.5)*NAV.cell,Y:NAV.y0+(((L.ib/NAV.w)|0)+.5)*NAV.cell};
     const d=Math.min(Math.hypot(A.X-p.X,A.Y-p.Y)+Math.hypot(B.X-q.X,B.Y-q.Y),Math.hypot(B.X-p.X,B.Y-p.Y)+Math.hypot(A.X-q.X,A.Y-q.Y)); if(d<bd){ bd=d; best=L; } }
-  const n=best?.n||''; if(/^Walk/.test(n)) return (best.len||0)*1.15/7; if(/^Portal/.test(n)) return 10; if(/Tram/.test(n)) return 150; return Math.max(2,+route.char.boatMin||8.5)*60; }
+  const n=best?.n||''; if(/^Walk/.test(n)) return (best.len||0)*1.15/7; if(/^Portal/.test(n)) return 10; if(/Tram/.test(n)) return 150; if(best?.s) return best.s; return Math.max(2,+route.char.boatMin||8.5)*60; }
 function walkSecs(a,b,run,d){ const p=pathSecs(a,b,run,d); if(p!=null) return p; const w=d*1.25/run; const t=tramSecs(a,b,run); return t!=null&&t<w?t:w; }
 /* a ride's time: the tram is about 150 s door to door; boats, zeppelins and skyships cross in about 2 min plus the wait for the next one (on average half the cycle). Staying on the same boat for its next stop has no wait. */
-function rideSecs(rd,s){ if(!rd) return 150; if(rd.kind==='Deeprun Tram') return 150; const avg=Math.max(2,+route.char.boatMin||8.5)*60, cross=120; return s?.same?cross:avg; }
+/* boats/zeppelins with a known cycle: half a cycle waiting on average, plus the sailing legs; hopping back on the same boat skips the wait */
+function rideSecs(rd,s){ if(!rd) return 150; if(rd.kind==='Deeprun Tram') return 150; if(rd.cyc){ const sail=rd.cyc/rd.stops*rd.legs; return s?.same?sail:rd.cyc/2+sail; } const avg=Math.max(2,+route.char.boatMin||8.5)*60, cross=120; return s?.same?cross:avg; }
 function estimateTimes(res){ let t=0; const c=route.char; runSpeed._s=spdSched(route);
   res.forEach((r,i)=>{ const s=route.steps[i]; let dt=0; if(r.inactive||r.passive!=null){ r.dt=0; r.tAt=t; return; } const L=r.before?.level||1; const run=runSpeed(L,r.party||1); const lt=r.leg?.type;
     const dist=(a,b)=>{ if(!a||!b) return 0; const d=Math.hypot(b.X-a.X,b.Y-a.Y); if(!Number.isFinite(d)) return 0; const ma=a.z!=null?META.zones[a.z]?.m:null, mb=b.z!=null?META.zones[b.z]?.m:null; if(ma!=null&&mb!=null&&ma!=mb) return 0; return Math.min(d,5000); }; /* other continent / huge jump: some other transport, not walking */

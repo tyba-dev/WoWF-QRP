@@ -64,17 +64,17 @@ function travelGeo(s,r,st,lastPt){
 let NAV=null; const PATHS=new Map(); const PATHQ=[]; let pathBusy=false;
 const NAV_COST=[0,7,1,0.7];
 const TRANSPORTS=[
-  {n:'Zeppelin: Orgrimmar ⇄ Undercity',a:[14,50.8,13.6],b:[85,60.9,58.9],f:'H',c:1000},
-  {n:"Zeppelin: Orgrimmar ⇄ Grom'gol",a:[14,50.8,13.6],b:[33,31.5,29.6],f:'H',c:1000},
-  {n:"Zeppelin: Undercity ⇄ Grom'gol",a:[85,61.3,58.9],b:[33,31.5,29.6],f:'H',c:1000},
-  {n:'Boat: Ratchet ⇄ Booty Bay',a:[17,63.74,38.66],b:[33,25.9,73.1],f:'AH',c:3600},
-  {n:'Boat: Menethil ⇄ Theramore',a:[11,5.08,63.41],b:[15,71.5,56.4],f:'A',c:3600},
-  {n:'Boat: Menethil ⇄ Auberdine',a:[11,4.37,56.76],b:[148,32.4,43.8],f:'A',c:3600},
-  {n:'Boat: Menethil → Southshore',a:[11,4.37,56.76],b:[267,51.0,62.0],f:'A',c:3600},
-  {n:'Boat: Southshore → Auberdine',a:[267,51.0,62.0],b:[148,32.4,43.8],f:'A',c:3600},
-  {n:'Boat: Stormwind Harbor ⇄ Auberdine',a:[1519,22.6,56.1],b:[148,30.7,41.0],f:'A',c:3600},
-  {n:"Boat: Auberdine ⇄ Rut'theran",a:[148,33.2,39.9],b:[141,54.9,96.8],f:'A',c:3600},
-  {n:'Ferry: Feralas ⇄ Feathermoon',a:[357,43.3,42.8],b:[357,31.1,39.9],f:'A',c:300},
+  {n:'Zeppelin: Orgrimmar ⇄ Undercity',s:356,a:[14,50.8,13.6],b:[85,60.9,58.9],f:'H',c:1000},
+  {n:"Zeppelin: Orgrimmar ⇄ Grom'gol",s:303,a:[14,50.8,13.6],b:[33,31.5,29.6],f:'H',c:1000},
+  {n:"Zeppelin: Undercity ⇄ Grom'gol",s:333,a:[85,61.3,58.9],b:[33,31.5,29.6],f:'H',c:1000},
+  {n:'Boat: Ratchet ⇄ Booty Bay',s:351,a:[17,63.74,38.66],b:[33,25.9,73.1],f:'AH',c:3600},
+  {n:'Boat: Menethil ⇄ Theramore',s:329,a:[11,5.08,63.41],b:[15,71.5,56.4],f:'A',c:3600},
+  {n:'Boat: Menethil ⇄ Auberdine',s:444,a:[11,4.37,56.76],b:[148,32.4,43.8],f:'A',c:3600},
+  {n:'Boat: Menethil → Southshore',s:370,a:[11,4.37,56.76],b:[267,51.0,62.0],f:'A',c:3600},
+  {n:'Boat: Southshore → Auberdine',s:370,a:[267,51.0,62.0],b:[148,32.4,43.8],f:'A',c:3600},
+  {n:'Boat: Stormwind Harbor ⇄ Auberdine',s:296,a:[1519,22.6,56.1],b:[148,30.7,41.0],f:'A',c:3600},
+  {n:"Boat: Auberdine ⇄ Rut'theran",s:316,a:[148,33.2,39.9],b:[141,54.9,96.8],f:'A',c:3600},
+  {n:'Ferry: Feralas ⇄ Feathermoon',s:317,a:[357,43.3,42.8],b:[357,31.1,39.9],f:'A',c:300},
   {n:'Deeprun Tram',a:[1519,63.9,8.3,1],b:[1537,76.4,51.2],f:'A',c:1050},
   {n:'Walk: Menethil Harbor gate',a:{X:15152,Y:-2192},b:{X:15184,Y:-2256},f:'AH',c:'walk'},
   {n:'Walk: South Gate Pass (Dun Morogh ⇄ Loch Modan)',a:[1,86.1,50.9],b:[38,19.1,62.2],f:'AH',c:'walk'},
@@ -99,7 +99,13 @@ const RIDES=(()=>{ const out=[]; const add=(kind,f,A,Al,Ad,B,Bl,Bd)=>{ out.push(
   out.push({id:out.length,kind:'boat',f:'A',from:[267,51.0,62.0],dock:'Southshore docks',to:[148,32.4,43.8],dest:'Auberdine'});
   /* Forever: Stormwind Harbor ⇄ Auberdine boat */
   add('boat','A',[1519,22.6,56.1],'Stormwind Harbor','Stormwind City',[148,30.7,41.0],'Auberdine docks (Stormwind boat)','Auberdine');
-  for(const r of out){ r.zone=r.to[0]; r.text=`Take the ${r.kind} to ${r.dest}`; } return out; })();
+  /* sailing times: full cycle (s) from the CMaNGOS classic transports table; Forever's Menethil loop has 3 stops, so its cycle is 1.5 × the classic Menethil ⇄ Auberdine one; the new Stormwind ⇄ Auberdine boat uses the classic Menethil ⇄ Auberdine cycle */
+  const cy=(r)=>{ const d=r.dock, t=r.dest; const has=(a,b)=>(d.startsWith(a)&&t.startsWith(b))||(d.startsWith(b)&&t.startsWith(a));
+    if(r.kind==='Zeppelin') return has('Orgrimmar','Tirisfal')?[356,2,1]:has('Orgrimmar','Stranglethorn')||has('Grom','Durotar')?[303,2,1]:[333,2,1];
+    if(r.kind!=='boat') return null; if(has('Ratchet','Booty')) return [351,2,1]; if(has('Menethil','Theramore')) return [329,2,1]; if(has('Auberdine',"Rut'theran")) return [316,2,1];
+    if(d.startsWith('Stormwind')||t.startsWith('Stormwind')||/Stormwind boat/.test(d)) return [296,2,1];
+    if(d.startsWith('Menethil')&&t==='Auberdine') return [444,3,2]; return [444,3,1]; };
+  for(const r of out){ r.zone=r.to[0]; r.text=`Take the ${r.kind} to ${r.dest}`; const c=cy(r); if(c){ [r.cyc,r.stops,r.legs]=c; } } return out; })();
 function rideDocks(){ const docks=[]; for(const r of RIDES){ const p=tpPt(r.from); if(!p) continue; let d=docks.find(d=>d.label===r.dock); if(!d){ d={label:r.dock,p,rides:[]}; docks.push(d); } d.rides.push(r); } return docks; }
 function tpPt([z,x,y,era]){ const cv=era&&META.zones[z]?.cv; if(cv){ x=x*cv[0]+cv[1]; y=y*cv[2]+cv[3]; } return zp2plane(z,x,y); }
 function navInit(){
@@ -114,7 +120,7 @@ function navInit(){
       for(let dr=-R;dr<=R;dr++) for(let dc=-R;dc<=R;dc++){ const rr=r+dr, cc=c+dc; if(rr<0||cc<0||rr>=h||cc>=w) continue; const j=rr*w+cc, k=comp[j]; if(k<0||size[k]<8) continue;
         if(a<0){ a=k; ia=j; } else if(k!==a&&Math.min(size[a],size[k])<3000){ const key=a<k?a+'_'+k:k+'_'+a; if(!seen.has(key)){ seen.add(key); const pa={X:NAV.x0+((ia%w)+.5)*NAV.cell,Y:NAV.y0+(((ia/w)|0)+.5)*NAV.cell}, pb={X:NAV.x0+((j%w)+.5)*NAV.cell,Y:NAV.y0+(((j/w)|0)+.5)*NAV.cell}; const len=Math.hypot(pa.X-pb.X,pa.Y-pb.Y); if(len<=2.4*NAV.cell) NAV.links.push({ia,ib:j,c:len*1.15,f:'AH',n:'Walk: gap',len}); else seen.delete(key); } } } }
   }
-  for(const t of TRANSPORTS){ const a=Array.isArray(t.a)?tpPt(t.a):t.a, b=Array.isArray(t.b)?tpPt(t.b):t.b; if(!a||!b) continue; const ia=navSnap(navCell(a)), ib=navSnap(navCell(b)); if(ia<0||ib<0) continue; const len=Math.hypot(a.X-b.X,a.Y-b.Y); NAV.links.push({ia,ib,c:t.c==='walk'?len*1.15:t.c,f:t.f,n:t.n,len}); }
+  for(const t of TRANSPORTS){ const a=Array.isArray(t.a)?tpPt(t.a):t.a, b=Array.isArray(t.b)?tpPt(t.b):t.b; if(!a||!b) continue; const ia=navSnap(navCell(a)), ib=navSnap(navCell(b)); if(ia<0||ib<0) continue; const len=Math.hypot(a.X-b.X,a.Y-b.Y); NAV.links.push({ia,ib,c:t.c==='walk'?len*1.15:t.s?t.s*7:t.c,f:t.f,n:t.n,len,s:t.s}); }
 }
 function navCell(p){ const c=Math.floor((p.X-NAV.x0)/NAV.cell), r=Math.floor((p.Y-NAV.y0)/NAV.cell); return (c<0||r<0||c>=NAV.w||r>=NAV.h)?-1:r*NAV.w+c; }
 function navSnap(i){
