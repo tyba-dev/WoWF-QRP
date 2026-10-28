@@ -88,8 +88,9 @@ const RIDES=(()=>{ const out=[]; const add=(kind,f,A,Al,Ad,B,Bl,Bd)=>{ out.push(
   /* Zephras Isle (Skyborne): skyship to Dalaran, then the Violet Citadel portal to Stormwind / the Horde skyship to Thunder Bluff */
   add('Skyship','A',[16593,64.9,80.9],'Valanaar skydock (Alliance)','Zephras Isle',[1519,39.5,81.5],'Stormwind Mage Quarter (via Dalaran)','Stormwind City');
   add('Skyship','H',[16593,58.2,79.5],'Valanaar skydock (Horde)','Zephras Isle',[1638,45.5,52.0],'Thunder Bluff','Thunder Bluff');
-  /* Forever: the Menethil Harbor ⇄ Auberdine boat also stops at Southshore (route to the Ruins of Lordaeron) */
-  add('boat','A',[11,4.37,56.76],'Menethil Harbor docks','Menethil Harbor',[267,51.0,62.0],'Southshore docks','Southshore');
+  /* Forever: the Auberdine boat sails one way round: Auberdine → Menethil → Southshore → Auberdine (so Menethil to Auberdine calls at Southshore first) */
+  out.push({id:out.length,kind:'boat',f:'A',from:[11,4.37,56.76],dock:'Menethil Harbor docks',to:[267,51.0,62.0],dest:'Southshore'});
+  out.push({id:out.length,kind:'boat',f:'A',from:[267,51.0,62.0],dock:'Southshore docks',to:[148,32.4,43.8],dest:'Auberdine'});
   /* Forever: Stormwind Harbor ⇄ Auberdine boat */
   add('boat','A',[1519,22.6,56.1],'Stormwind Harbor','Stormwind City',[148,30.7,41.0],'Auberdine docks (Stormwind boat)','Auberdine');
   for(const r of out){ r.zone=r.to[0]; r.text=`Take the ${r.kind} to ${r.dest}`; } return out; })();
