@@ -285,7 +285,10 @@ function migrateRoute(r){ ensureIds(r); if(r.char&&!r.char.dpsv2){ delete r.char
   for(const g of r.guides) for(const gs of g.steps||[]) if(gs.opt){ gs.gopt=true; delete gs.opt; }
   for(const st of r.steps||[]){ if(!st.src||st.src.auto||!st.opt) continue; const g=r.guides.find(x=>x.id===st.src.g); if(g&&g.steps&&g.steps[st.src.i]?.gopt){ st.gopt=true; delete st.opt; } }
   return r; }
-function initState(r){ return {level:+r.char.level||1,xp:+r.char.xp||0,party:Math.max(1,+r.char.party||1),log:new Map(),turned:new Set(r.char.doneQs||[]),fps:new Set(r.char.fps||[]),home:startHome(r),fq:new Map(),expl:startExpl(r)}; }
+/* flight paths a new character already knows on Forever: dwarves and gnomes start with Ironforge */
+const RACE_FPS={Dwarf:['Ironforge'],Gnome:['Ironforge']};
+function raceFps(race){ const want=RACE_FPS[race]||[]; if(!want.length||typeof taxiNodes!=='function') return []; return taxiNodes('A').filter(n=>want.some(w=>taxiShort(n.id).startsWith(w))).map(n=>n.id); }
+function initState(r){ return {level:+r.char.level||1,xp:+r.char.xp||0,party:Math.max(1,+r.char.party||1),log:new Map(),turned:new Set(r.char.doneQs||[]),fps:new Set([...(r.char.fps||[]),...raceFps(r.char.race)]),home:startHome(r),fq:new Map(),expl:startExpl(r)}; }
 function startExpl(r){ const s=new Set(); const h=START[r.char.race]; if(h&&META?.expl){ const p=zp2plane(...h); if(p){ const a=areaAt(p.X,p.Y); if(a) s.add(a); } } return s; }
 // a new character's hearthstone is bound to where they first spawn
 const START_NAME={Human:'Northshire Abbey',Dwarf:'Coldridge Valley',Gnome:'Coldridge Valley','Night Elf':'Shadowglen',Orc:'Valley of Trials',Troll:'Valley of Trials',Undead:'Deathknell',Tauren:'Camp Narache',Skyborne:'Thendal Village'};
@@ -2494,7 +2497,7 @@ function fillNodeSel(f,sel){ const list=taxiNodes().sort((x,y)=>x.n.localeCompar
   f.node.innerHTML='<option value="">Choose…</option>'+list.map(n=>`<option value="${n.id}" ${n.id===sel?'selected':''}>${esc(n.n)}${known.has(n.id)?' ✓':''}</option>`).join('');
   const upd=()=>{ const fly=f.kind.value==='fly'||f.kind.value==='fp'; $('#travelNode').hidden=!fly; $('#travelText').hidden=fly; }; f.kind.onchange=upd; upd(); }
 
-function fillFpSettings(c){ const list=taxiNodes(c.faction).sort((x,y)=>taxiShort(x.id).localeCompare(taxiShort(y.id))); const set=new Set(c.fps||[]);
-  $('#fpSettings').innerHTML=list.map(n=>`<label><input type="checkbox" data-fpk="${n.id}" ${set.has(n.id)?'checked':''}> ${esc(taxiShort(n.id))}</label>`).join(''); $('#fpAll').checked=!!c.allfps; }
+function fillFpSettings(c){ const list=taxiNodes(c.faction).sort((x,y)=>taxiShort(x.id).localeCompare(taxiShort(y.id))); const set=new Set(c.fps||[]); const rf=new Set(raceFps(c.race||route?.char?.race));
+  $('#fpSettings').innerHTML=list.map(n=>rf.has(n.id)?`<label title="Known from the start for this race"><input type="checkbox" checked disabled> ${esc(taxiShort(n.id))} <span class="note">(race)</span></label>`:`<label><input type="checkbox" data-fpk="${n.id}" ${set.has(n.id)?'checked':''}> ${esc(taxiShort(n.id))}</label>`).join(''); $('#fpAll').checked=!!c.allfps; }
 
 try{ const b=document.querySelector('.brand small'); if(b){ b.textContent='Questie data · v'+BUILD; b.title='Planner version (build time, UK)'; } }catch(e){}
