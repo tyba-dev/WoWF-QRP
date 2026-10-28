@@ -285,9 +285,9 @@ function migrateRoute(r){ ensureIds(r); if(r.char&&!r.char.dpsv2){ delete r.char
   for(const g of r.guides) for(const gs of g.steps||[]) if(gs.opt){ gs.gopt=true; delete gs.opt; }
   for(const st of r.steps||[]){ if(!st.src||st.src.auto||!st.opt) continue; const g=r.guides.find(x=>x.id===st.src.g); if(g&&g.steps&&g.steps[st.src.i]?.gopt){ st.gopt=true; delete st.opt; } }
   return r; }
-/* flight paths a new character already knows on Forever: dwarves and gnomes start with Ironforge */
-const RACE_FPS={Dwarf:['Ironforge'],Gnome:['Ironforge']};
-function raceFps(race){ const want=RACE_FPS[race]||[]; if(!want.length||typeof taxiNodes!=='function') return []; return taxiNodes('A').filter(n=>want.some(w=>taxiShort(n.id).startsWith(w))).map(n=>n.id); }
+/* flight paths a new character already knows on Forever: every race starts with its capital */
+const RACE_FPS={Human:['Stormwind'],Dwarf:['Ironforge'],Gnome:['Ironforge'],'Night Elf':["Rut'theran Village"],Orc:['Orgrimmar'],Troll:['Orgrimmar'],Tauren:['Thunder Bluff'],Undead:['Undercity']};
+function raceFps(race){ const want=RACE_FPS[race]||[]; if(!want.length||typeof taxiNodes!=='function') return []; const f=RACES[race]?.[1]||'A'; return taxiNodes(f).filter(n=>want.some(w=>taxiShort(n.id).startsWith(w))).map(n=>n.id); }
 function initState(r){ return {level:+r.char.level||1,xp:+r.char.xp||0,party:Math.max(1,+r.char.party||1),log:new Map(),turned:new Set(r.char.doneQs||[]),fps:new Set([...(r.char.fps||[]),...raceFps(r.char.race)]),home:startHome(r),fq:new Map(),expl:startExpl(r)}; }
 function startExpl(r){ const s=new Set(); const h=START[r.char.race]; if(h&&META?.expl){ const p=zp2plane(...h); if(p){ const a=areaAt(p.X,p.Y); if(a) s.add(a); } } return s; }
 // a new character's hearthstone is bound to where they first spawn
