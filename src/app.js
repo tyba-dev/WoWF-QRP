@@ -661,7 +661,7 @@ const mctx=document.createElement('canvas').getContext('2d');
 let W=0,H=0,DPR=1;
 const view={s:0.03,tx:0,ty:0};
 const zonePaths=new Map(); let landPaths=[];
-const layers={vendors:true,avail:true,locked:true,trivial:false,objectives:true,route:true,fp:true,towns:true,dungeons:true,relief:true,heat:false};
+const layers={paths:true,vendors:true,avail:true,locked:true,trivial:false,objectives:true,route:true,fp:true,towns:true,dungeons:true,relief:true,heat:false};
 const reliefImgs=[];
 function loadRelief(){ for(const [m,r] of Object.entries(META.relief||{})){ const o={...r,m,ri:new Image(),wi:new Image(),rs:new Set(r.tile?.r||[]),ws:new Set(r.tile?.w||[])}; o.ri.onload=o.wi.onload=requestDraw; o.ri.src='data:image/webp;base64,'+r.rel; o.wi.src='data:image/webp;base64,'+r.wat; reliefImgs.push(o);} }
 const _cv={}; function offCtx(n){ let c=_cv[n]; if(!c){ c=_cv[n]=document.createElement('canvas').getContext('2d'); } if(c.canvas.width!==canvas.width||c.canvas.height!==canvas.height){ c.canvas.width=canvas.width; c.canvas.height=canvas.height; } return c; }
@@ -773,7 +773,7 @@ function draw(){
   // Zephras Isle (floating, position illustrative)
   ctx.beginPath(); ctx.ellipse(11200,-9800,900,600,0,0,Math.PI*2); ctx.fillStyle=mix('#b6c7d9','#d9c69a',0.35); ctx.fill(); ctx.setLineDash([6/s,5/s]); ctx.strokeStyle='#3a2915'; ctx.stroke(); ctx.setLineDash([]);
   ctx.setTransform(DPR,0,0,DPR,0,0);
-  drawLabels(); drawPOIs(); drawGhosts(); if(layers.route){ drawPaths(); drawRoute(); } drawQuests(); drawFQ();
+  drawLabels(); drawPOIs(); drawGhosts(); if(layers.route&&layers.paths) drawPaths(); if(layers.route) drawRoute(); drawQuests(); drawFQ();
   $('#status').textContent=s>=0.035?'':'Zoom in to see towns'+(s<0.03?', flight paths and dungeons':'');
 }
 function haloText(t,x,y,font,fill,stroke,lw){ ctx.font=font; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.lineJoin='round'; ctx.strokeStyle=stroke; ctx.lineWidth=lw; ctx.strokeText(t,x,y); ctx.fillStyle=fill; ctx.fillText(t,x,y); }
@@ -1253,12 +1253,12 @@ function simRoute(r){ const key=(r.savedAt||0)+':'+r.steps.length+':'+(r.char.le
   PSIM.set(r.id,{key,d}); return d; }
 function pathData(S,r){ const lvT={}; let ti=0, errs=0; const pts=[]; S.res.forEach((x,i)=>{ if(x.inactive) return; if(x.err?.length) errs++; if(r.steps[i].t==='turnin') ti++; if(x.pt&&!x.stk) pts.push({X:x.pt.X,Y:x.pt.Y,z:x.pt.z,i}); const a=x.after; if(a) for(let L=(x.before?.level||1)+1;L<=a.level;L++) if(lvT[L]==null) lvT[L]=x.tAt; });
   const e=S.end; return {pts,lvT,errs,endL:e.level+(e.level<MAXLVL?e.xp/XP_TABLE[e.level]:0),endT:e.t||0,ti,n:r.steps.length,start:+r.char.level||1}; }
-function drawPaths(){ if(!route.group) return; for(const r of pathSet()){ if(r===route||r.cmpHide) continue; const d=simRoute(r); const k=sharedPrefix(route,r); const P=d.pts.filter(p=>p.i>=Math.max(0,k-1)); if(P.length<2) continue;
+function drawPaths(){ if(!route.group) return; for(const r of pathSet()){ if(r===route||pathHidden(r)) continue; const d=simRoute(r); const k=sharedPrefix(route,r); const P=d.pts.filter(p=>p.i>=Math.max(0,k-1)); if(P.length<2) continue;
     const col=r.char.rcol||'#cccccc'; ctx.strokeStyle=col; ctx.globalAlpha=.75; ctx.lineWidth=2.5; ctx.setLineDash([8,6]); ctx.beginPath(); let last=null;
     for(const p of P){ const [x,y]=toS(p); const far=last&&Math.hypot(p.X-last.X,p.Y-last.Y)>5000; if(!last||far) ctx.moveTo(x,y); else ctx.lineTo(x,y); last=p; } ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha=1;
     const e=P[P.length-1]; const [x,y]=toS(e); haloText(r.name,x,y-14,'600 12px "Alegreya Sans", sans-serif',col,'rgba(20,12,4,.85)',3); } }
 function openPaths(){ const set=pathSet(); const rows=set.map(r=>{ const d=simRoute(r); const k=r===route?null:sharedPrefix(route,r);
-    return `<tr><td><input type="color" data-pcol="${r.id}" value="${r.char.rcol||'#ffcd46'}" style="width:24px;height:20px;padding:0;border:0;background:none"></td><td><b>${esc(r.name)}</b>${r===route?' <span class="note">(editing)</span>':''} <span class="note">${esc(r.char.race+' '+r.char.cls)}${r.member?' · group of '+(r.char.party||1):''}</span>${d.errs?` <span style="color:#e0533d" title="Steps that can't be done as planned for this character: open it and use Health">⚠ ${d.errs}</span>`:''}<br><span class="note">${k==null?'':k?`shares steps 1–${k} with this path · forks after step ${k}`:'no shared start yet'}</span></td><td>${d.endL.toFixed(2)}</td><td>${fmtT(d.endT)}</td><td>${d.ti}</td><td>${d.n}</td><td style="white-space:nowrap">${r===route?'':`<button class="btn sm" data-pact="go:${r.id}">Edit</button><label class="note"><input type="checkbox" data-pshow="${r.id}" ${r.cmpHide?'':'checked'}> map</label>`}${set.length>1?`<button class="btn sm" data-pact="keep:${r.id}" title="Keep only this path: the others leave the set (not deleted)">Keep</button><button class="btn sm" data-pact="drop:${r.id}" title="Remove from the set (the route itself is kept)">Remove</button><button class="btn sm" data-pact="del:${r.id}" title="Delete this route">🗑</button>`:''}</td></tr>`; }).join('');
+    return `<tr><td><input type="color" data-pcol="${r.id}" value="${r.char.rcol||'#ffcd46'}" style="width:24px;height:20px;padding:0;border:0;background:none"></td><td><b>${esc(r.name)}</b>${r===route?' <span class="note">(editing)</span>':''} <span class="note">${esc(r.char.race+' '+r.char.cls)}${r.member?' · group of '+(r.char.party||1):''}</span>${d.errs?` <span style="color:#e0533d" title="Steps that can't be done as planned for this character: open it and use Health">⚠ ${d.errs}</span>`:''}<br><span class="note">${k==null?'':k?`shares steps 1–${k} with this path · forks after step ${k}`:'no shared start yet'}</span></td><td>${d.endL.toFixed(2)}</td><td>${fmtT(d.endT)}</td><td>${d.ti}</td><td>${d.n}</td><td style="white-space:nowrap">${r===route?'':`<button class="btn sm" data-pact="go:${r.id}">Edit</button><label class="note"><input type="checkbox" data-pshow="${r.id}" ${pathHidden(r)?'':'checked'}> map</label>`}${set.length>1?`<button class="btn sm" data-pact="keep:${r.id}" title="Keep only this path: the others leave the set (not deleted)">Keep</button><button class="btn sm" data-pact="drop:${r.id}" title="Remove from the set (the route itself is kept)">Remove</button><button class="btn sm" data-pact="del:${r.id}" title="Delete this route">🗑</button>`:''}</td></tr>`; }).join('');
   const D=set.map(r=>simRoute(r)); const lo=Math.min(...D.map(d=>d.start))+1, hi=Math.max(...D.map(d=>Math.floor(d.endL))); let race='';
   if(set.length>1&&hi>=lo){ race=`<h4 style="margin:10px 0 4px">Time to reach each level</h4><table class="ptab"><tr><th>Level</th>${set.map(r=>`<th style="color:${r.char.rcol||'inherit'}">${esc(r.name)}</th>`).join('')}</tr>${Array.from({length:hi-lo+1},(_,j)=>lo+j).map(L=>{ const ts=D.map(d=>d.lvT[L]); const best=Math.min(...ts.filter(t=>t!=null)); return `<tr><td>${L}</td>${ts.map(t=>`<td${t!=null&&t===best?' style="color:var(--gold);font-weight:700"':''}>${t==null?'–':fmtT(t)}</td>`).join('')}</tr>`; }).join('')}</table>`; }
   const others=store.routes.filter(r=>!set.includes(r));
@@ -1285,7 +1285,7 @@ async function pathAct(a,id){ const set=pathSet(); const r=store.routes.find(x=>
   if(a==='keep'&&r){ for(const x of set) if(x!==r) delete x.group; delete r.group; route=r; cursor=r.steps.length-1; history=[]; FQ.key=null; refresh(); toast(`Kept “${r.name}”. The other paths are still in your route list.`,4000); return openPaths(); }
   if(a==='del'&&r){ if(!confirm(`Delete the route “${r.name}”?`)) return; store.routes=store.routes.filter(x=>x!==r); if(r===route){ route=set.find(x=>x!==r)||store.routes[0]; cursor=route.steps.length-1; history=[]; FQ.key=null; } if(pathSet().length<=1) delete route.group; refresh(); saveNow&&saveNow(); return openPaths(); } }
 document.addEventListener('click',e=>{ const b=e.target.closest('[data-pact]'); if(!b) return; const [a,id]=b.dataset.pact.split(':'); pathAct(a,id); });
-document.addEventListener('change',e=>{ const t=e.target; if(t.id==='pathSync'){ store.pathSync=store.pathSync||{}; store.pathSync[route.group]=t.checked; save(); return; } if(t.id==='pathAdd'&&t.value) return pathAct('add',t.value); if(t.dataset?.pshow){ const r=store.routes.find(x=>x.id===t.dataset.pshow); if(r){ r.cmpHide=!t.checked; save(); requestDraw(); } } if(t.dataset?.pcol){ const r=store.routes.find(x=>x.id===t.dataset.pcol); if(r){ r.char.rcol=t.value; save(); refresh(); openPaths(); } } });
+document.addEventListener('change',e=>{ const t=e.target; if(t.id==='pathSync'){ store.pathSync=store.pathSync||{}; store.pathSync[route.group]=t.checked; save(); return; } if(t.id==='pathAdd'&&t.value) return pathAct('add',t.value); if(t.dataset?.pshow){ const r=store.routes.find(x=>x.id===t.dataset.pshow); if(r){ const s=new Set(store.pathHide||[]); t.checked?s.delete(r.id):s.add(r.id); store.pathHide=[...s]; saveNow(); requestDraw(); } } if(t.dataset?.pcol){ const r=store.routes.find(x=>x.id===t.dataset.pcol); if(r){ r.char.rcol=t.value; save(); refresh(); openPaths(); } } });
 function stepFor(r,st){ const x=JSON.parse(JSON.stringify(st)); x.id=uid(); delete x.sec; if(x.src&&!x.src.auto){ const g=G(x.src.g); const tg=g&&(r.guides||[]).find(y=>y.name===g.name); if(tg) x.src={...x.src,g:tg.id}; else delete x.src; } return x; }
 function copyToPaths(steps,prevStep,targets){ let n=0; const sig=prevStep?stepSig(prevStep):null;
   for(const r of targets){ let at=r.steps.length; if(sig){ for(let k=r.steps.length-1;k>=0;k--) if(stepSig(r.steps[k])===sig){ at=k+1; break; } } else at=0;
@@ -1930,7 +1930,7 @@ $('#imgClose').addEventListener('click',()=>$('#dlgImg').close());
 
 /* ---------- misc ---------- */
 function toast(t,ms){ const el=$('#toast'); el.textContent=t; el.style.display='block'; clearTimeout(toast._t); toast._t=setTimeout(()=>el.style.display='none',ms||2200); }
-$$('#layers input').forEach(i=>i.addEventListener('change',()=>{ layers[i.dataset.l]=i.checked; requestDraw(); }));
+$$('#layers input').forEach(i=>i.addEventListener('change',()=>{ layers[i.dataset.l]=i.checked; store.layers={...(store.layers||{}),[i.dataset.l]:i.checked}; saveNow(); requestDraw(); }));
 $('#zin').addEventListener('click',()=>zoomAt(1.5,W/2,H/2)); $('#zout').addEventListener('click',()=>zoomAt(1/1.5,W/2,H/2)); $('#zfit').addEventListener('click',fitAll);
 $('#zcur').addEventListener('click',()=>{ let p=null; for(let i=cursor;i>=0&&!p;i--) p=SIM.res[i]?.pt; if(p) flyTo(p.X,p.Y,Math.max(view.s,0.12)); else toast('No step with a location yet'); });
 $('#zoneJump').addEventListener('change',e=>{ if(e.target.value) flyToZone(+e.target.value); e.target.value=''; });
@@ -1947,7 +1947,8 @@ canvas.addEventListener('pointerdown',()=>{ if(innerWidth<=900) closePanels(); }
   await loadData();
   buildPaths(); makePatterns(); loadRelief(); navInit();
   $('#zoneJump').innerHTML='<option value="">Jump to zone…</option>'+Object.entries(META.zones).sort((a,b)=>a[1].n.localeCompare(b[1].n)).map(([z,Z])=>`<option value="${z}">${esc(Z.n)}${Z.lv?' ('+Z.lv+')':''}</option>`).join('');
-  await loadStore(); await loadCatalog(); new ResizeObserver(resize).observe(canvas); resize();
+  await loadStore(); for(const [k,v] of Object.entries(store.layers||{})) if(k in layers){ layers[k]=!!v; const i=document.querySelector(`#layers input[data-l="${k}"]`); if(i) i.checked=!!v; }
+  await loadCatalog(); new ResizeObserver(resize).observe(canvas); resize();
   rawLoad(store.routes.flatMap(r=>(r.guides||[]).map(g=>g.id))).then(()=>{ if(tab==='guides') renderRight(); });
   refresh();
   const first=SIM.res.find(r=>r.pt)?.pt;
@@ -1980,7 +1981,7 @@ function objChecklist(qid,v){ const obs=objectives(qid).filter(o=>o.rx); if(obs.
 const GCOLORS=['#5fd9e8','#ff8fd6','#a6ff7a','#ffb35c','#b39dff'];
 let GH=new Map();            // guideId -> {res:[...], pts:[...]}
 let selGuide=null, selGhost=null, gFilter='relevant';
-layers.ghost=true;
+if(layers.ghost===undefined) layers.ghost=true;
 
 function zoneLookup(){
   if(zoneLookup.m) return zoneLookup.m; const m=new Map();
@@ -2203,7 +2204,7 @@ function nextGuides(g){ const names=(g.next||'').split(';').map(s=>s.trim().toLo
 function continueWith(prev,id){
   const ng=G(id); if(!ng) return;
   const left=GH.get(prev.id)?.res.filter(r=>r.i>=prev.from&&r.i<=prev.to&&(r.status==='ok'||r.status==='blocked')).length||0;
-  cursor=route.steps.length-1; selGuide=id; selGhost=null; ng.visible=true; prev.visible=false; ng.from=0; ng.to=ng.steps.length-1; refresh();
+  cursor=route.steps.length-1; selGuide=id; selGhost=null; setGuideVisible(ng,true); setGuideVisible(prev,false); ng.from=0; ng.to=ng.steps.length-1; refresh();
   const first=GH.get(id).res.find(r=>['ok','xp','blocked','info'].includes(r.status));
   if(first){ ng.from=first.i; selGhost={g:id,i:first.i}; }
   renderGuides._scroll=true; refresh();
@@ -2234,9 +2235,13 @@ function arrow(ax,ay,bx,by,col,label){
   const a=Math.atan2(by-ay,bx-ax); ctx.fillStyle=col; ctx.beginPath(); ctx.moveTo(bx,by); ctx.lineTo(bx-10*Math.cos(a-0.4),by-10*Math.sin(a-0.4)); ctx.lineTo(bx-10*Math.cos(a+0.4),by-10*Math.sin(a+0.4)); ctx.closePath(); ctx.fill();
   if(label) haloText(label,(ax+bx)/2,(ay+by)/2-9,'600 12px "Alegreya Sans", sans-serif','#fff3c4','rgba(20,12,4,.9)',3);
 }
+/* what's shown on the map is a per-browser choice, kept outside the routes so a shared or re-imported route never turns lines back on */
+function pathHidden(r){ return (store.pathHide||[]).includes(r.id); }
+function guideVisible(g){ const v=store.guideVis?.[g.id]; return v===undefined?!!g.visible:v; }
+function setGuideVisible(g,on){ if(!g) return; store.guideVis={...(store.guideVis||{}),[g.id]:!!on}; }
 function drawGhosts(){
   if(!layers.ghost||!route.guides) return;
-  for(const g of route.guides){ if(!g.visible) continue; const gh=GH.get(g.id); if(!gh) continue;
+  for(const g of route.guides){ if(!guideVisible(g)) continue; const gh=GH.get(g.id); if(!gh) continue;
     const nodes=gh.res.filter(r=>r.pt&&!['cond','dungeon','xprate'].includes(r.status));
     ctx.lineCap='round';
     for(let k=1;k<nodes.length;k++){ const a=nodes[k-1], b=nodes[k]; const [ax,ay]=toS(a.pt),[bx,by]=toS(b.pt);
@@ -2302,7 +2307,7 @@ function renderGuides(){
   const firstBlock=res.find((r,i)=>i>=g.from&&i<=g.to&&r.status==='blocked');
   const opt=(i)=>`<option value="${i}">${i+1}. ${esc(rxpPlain(ghostText(g.steps[i])).slice(0,48))}</option>`;
   const endLvl=[...res].reverse().find((r,i)=>r.i<=g.to&&r.i>=g.from)?.level;
-  h+=`<div class="row"><span class="gchip" style="background:${g.color}"></span><input type="text" id="gName" value="${esc(g.name)}" aria-label="Guide name" style="flex:1;min-width:0;padding:3px 6px;border:1px solid var(--line);border-radius:5px;background:var(--panel2)"><label><input type="checkbox" id="gVis" ${g.visible?'checked':''}> Show</label><button class="btn sm" id="gDel">Remove</button></div>
+  h+=`<div class="row"><span class="gchip" style="background:${g.color}"></span><input type="text" id="gName" value="${esc(g.name)}" aria-label="Guide name" style="flex:1;min-width:0;padding:3px 6px;border:1px solid var(--line);border-radius:5px;background:var(--panel2)"><label><input type="checkbox" id="gVis" ${guideVisible(g)?'checked':''}> Show</label><button class="btn sm" id="gDel">Remove</button></div>
   <div class="row"><label style="flex:1">Join at<select id="gFrom" style="flex:1;min-width:0">${g.steps.map((_,i)=>opt(i)).join('')}</select></label></div>
   <div class="row"><label style="flex:1">Leave at<select id="gTo" style="flex:1;min-width:0">${g.steps.map((_,i)=>opt(i)).join('')}</select></label></div>
   ${g.from>0||g.to<g.steps.length-1?`<div class="row"><button class="linkish" id="gReset">Clear join and leave (use the whole guide)</button></div>`:''}
@@ -2327,11 +2332,11 @@ function renderGuides(){
 function afterGuidesRender(){
   const g=G(selGuide); const on=(id,ev,fn)=>{ const el=document.getElementById(id); el&&el.addEventListener(ev,fn); };
   on('gImport','click',openImport);
-  on('gSel','change',e=>{ selGuide=e.target.value; const sg=G(selGuide); if(sg) sg.visible=true; selGhost=null; renderRight(); requestDraw(); });
+  on('gSel','change',e=>{ selGuide=e.target.value; const sg=G(selGuide); if(sg) setGuideVisible(sg,true); selGhost=null; renderRight(); requestDraw(); });
   if(!g) return;
   $('#gFrom').value=g.from; $('#gTo').value=g.to; $('#gFilt').value=gFilter;
   on('gName','change',e=>{ g.name=e.target.value||'Guide'; save(); renderRight(); });
-  on('gVis','change',e=>{ g.visible=e.target.checked; save(); requestDraw(); });
+  on('gVis','change',e=>{ setGuideVisible(g,e.target.checked); saveNow(); requestDraw(); });
   on('gDel','click',async()=>{ if(!await ask('Remove this guide from the route? Steps already added stay.')) return; route.guides=route.guides.filter(x=>x!==g); selGuide=null; refresh(); });
   on('gFrom','change',e=>{ g.from=+e.target.value; if(g.to<g.from) g.to=g.steps.length-1; refresh(); });
   on('gTo','change',e=>{ g.to=+e.target.value; if(g.to<g.from) g.from=g.to; refresh(); });
