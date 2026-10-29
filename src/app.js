@@ -1167,7 +1167,7 @@ function renderSteps(){
     { const fm=forkMark(i); if(fm) parts.push(fm); }
   });
   if(selSteps.size>1) parts.unshift(`<li class="selbar"><b>${selSteps.size} steps selected</b> <button class="btn sm" data-blk="up" title="Move the block up one step">▲ Up</button><button class="btn sm" data-blk="down" title="Move the block down one step">▼ Down</button><button class="btn sm" data-blk="cursor" title="Move the block to just after the highlighted step">Move after step…</button><button class="btn sm" data-blk="ypk" title="Kills on the way for these steps: yards per kill, 0 = none, empty = route setting">Travel kills…</button>${isGrp()?`<button class="btn sm" data-who="${[...selSteps][0]}" title="Set which group members do these steps">Who…</button>`:''}${route.group?`<button class="btn sm" data-blk="topaths" title="Copy these steps into the other paths, after the same step they follow here">Copy to other paths</button>`:''}<button class="btn sm" data-blk="sec" title="Group steps ${'${'}Math.min(...selSteps)+1}–${'${'}Math.max(...selSteps)+1} into a named, coloured section">Make section</button><button class="btn sm" data-blk="del">Delete</button><button class="btn sm" data-blk="clear">Clear</button><span class="note">Drag any selected step to move them all</span></li>`);
-  ul.innerHTML=parts.join(''); if(findQ) markFind();
+  ul.innerHTML=parts.join(''); if(findQ) markFind(); { const mb=ul.querySelector('.mbar'), sb=ul.querySelector('.selbar'); if(mb&&sb) sb.style.top=mb.offsetHeight+'px'; }
 }
 let selSteps=new Set(), selAnchor=null;
 // RestedXP keeps #completewith/#sticky steps on screen alongside later steps; show that in the list
