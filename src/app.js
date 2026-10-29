@@ -311,7 +311,7 @@ function objArea(s,ref){ const obs=objectives(s.q).filter(o=>!o.pre&&(!s.obj||o.
 function computeGroups(){ GRP={lead:new Map(),mem:new Map()}; if(!grpOn()) return; const R=grpYd(); let g=null, ref=null;
   const ok=(x,i)=>x.t==='complete'&&x.q&&Q(x.q)&&!x.src&&!isSticky(x)&&!(x.upto>0)&&!x.pin&&!x.nogrp&&!SIM?.res?.[i]?.inactive;
   route.steps.forEach((x,i)=>{ if(!ok(x,i)){ g=null; return; } const A=objArea(x,ref||(SIM?.res?routeRefBefore(i):null)); if(!A){ g=null; return; } ref=A.c;
-    const ed=x.path&&x.pathSrc==='edited'; if(g&&!ed&&A.c.m===g.c.m&&Math.hypot(A.c.X-g.c.X,A.c.Y-g.c.Y)<=R){ g.mem.push(i); g.pts.push(...A.pts); GRP.mem.set(i,g.lead); return; }
+    const ed=x.path&&x.pathSrc==='edited'; if(g&&!ed&&A.c.m===g.c.m&&(x.joinPrev||Math.hypot(A.c.X-g.c.X,A.c.Y-g.c.Y)<=R)){ g.mem.push(i); g.pts.push(...A.pts); GRP.mem.set(i,g.lead); return; }
     g={lead:i,mem:[],pts:[...A.pts],c:A.c,own:!!ed}; GRP.lead.set(i,g); });
   for(const [i,g] of GRP.lead){ if(!g.mem.length){ GRP.lead.delete(i); continue; } if(!g.own) g.path=genPath(null,{pts:g.pts},null); } }
 function simulate0(){ computeGroups(); ensureIds(route);
