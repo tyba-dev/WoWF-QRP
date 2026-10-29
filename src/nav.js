@@ -77,7 +77,7 @@ const TRANSPORTS=[
   {n:'Ferry: Feralas ⇄ Feathermoon',s:317,a:[357,43.3,42.8],b:[357,31.1,39.9],f:'A',c:300},
   {n:'Deeprun Tram',a:[1519,63.9,8.3,1],b:[1537,76.4,51.2],f:'A',c:1050},
   {n:'Walk: Menethil Harbor gate',a:{X:15152,Y:-2192},b:{X:15184,Y:-2256},f:'AH',c:'walk'},
-  {n:'Walk: South Gate Pass (Dun Morogh ⇄ Loch Modan)',a:[1,86.1,50.9],b:[38,19.1,62.2],f:'AH',c:'walk'},
+  {n:'Walk: South Gate Pass (Dun Morogh ⇄ Loch Modan)',a:[1,80.0,52.0],b:[38,19.1,62.2],f:'AH',c:'walk'},
   {n:'Walk: Dun Algaz tunnel (Loch Modan ⇄ Wetlands)',a:[38,25.1,9.0],b:[11,53.7,70.3],f:'AH',c:'walk'},
   {n:'Portal: Rut\'theran ⇄ Darnassus',a:[141,55.9,89.8],b:[1657,29.5,41.4],f:'A',c:70},
 ];
