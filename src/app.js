@@ -146,7 +146,9 @@ function textDg(q){ const t=(Array.isArray(q.t)?q.t.join(' '):q.t||'')+' '+(q.n|
 function objNums(qid){ return objectives(qid).filter(o=>o.rx).map(o=>o.rx); }
 const hasObjectives=qid=>{ const q=Q(qid); return !!(q.o||q.te||q.xk); };
 // objectives the game doesn't list but the quest needs (Forever): kill these to be able to hand in. Not exported as .complete (the quest has no such objective).
-const QEXTRA={6383:{xk:[12676,12677,12678],note:'Kill Sharptalon, Shadumbra and Ursangous, then hand in to Senani Thunderheart'}};
+const QEXTRA={6383:{xk:[12676,12677,12678],note:'Kill Sharptalon, Shadumbra and Ursangous, then hand in to Senani Thunderheart'},
+  /* Holy Diver (Forever): Gwennyth only offers it once every Beached Sea Turtle / Creature has been handed in to her (from testing; Questie lists no prerequisite) */
+  87760:{pg:[4722,4723,4725,4727,4728,4730,4731,4732,4733]}};
 
 function objPoint(qid,rx,ref){
   let all=objectives(qid).filter(o=>!o.pre&&(!rx||o.rx===rx)).flatMap(o=>o.pts); if(!all.length) return rx?objPoint(qid,null,ref):null;
