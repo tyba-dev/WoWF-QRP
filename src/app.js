@@ -557,6 +557,7 @@ function estimateTimes(res){ let t=0; const c=route.char; runSpeed._s=spdSched(r
     let kills=0, ml=L; if(r.kill?.kills){ kills+=r.kill.kills; ml=Q(s.q)?(questMobLv(s.q,r.pt?.z,L)??Math.min(Q(s.q).l,L+2)):L; } dt+=kills*killSecs(L,ml,r.party);
     /* kills on the way are made while moving: free XP, no time */
     if(s.t==='grind'&&s.mode==='run') dt+=(+s.mins||0)*60;
+    else if(s.t==='grind'&&r.gained>0&&+s.xph>0) dt+=r.gained/(+s.xph)*3600; /* a tested spot with a known XP/hour */
     else if(s.t==='grind'&&r.gained>0&&(typeof s.src!=='string'||s.src==='mobs'||s.src==='both')){ const g=gMobL(L); const per=mobXP(L,g,false,r.party||1)||1; dt+=r.gained/per*(killSecs(L,g,r.party)+gSearch())/(s.camp?1:gEff()); } /* grinding runs at the hyperspawn rate only at a tested camp; elsewhere at the efficiency you set */ /* group: XP per kill is split, kills are faster */
     r.dt=dt; t+=dt; r.tAt=t; }); }
 
