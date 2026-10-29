@@ -96,8 +96,10 @@ const isItemStart=qid=>{ const q=Q(qid); return !!q&&!q.s.n.length&&!q.s.o.lengt
 function itemStartPts(qid){ /* one representative spot per dropping mob/object: the spawn nearest that mob's centre */ const out=[]; const IS=new Map();
   for(const i of Q(qid).s.i){ const it=DB.i[i]; if(!it) continue; for(const [t,ids] of [['n',it.d||[]],['o',it.od||[]]]) for(const id of ids.slice(0,4)){ const ps=entPts(t,id).filter(p=>!p.dg); if(!ps.length) continue; const mx=ps.reduce((a,p)=>a+p.X,0)/ps.length, my=ps.reduce((a,p)=>a+p.Y,0)/ps.length; const c=ps.reduce((b,p)=>Math.hypot(p.X-mx,p.Y-my)<Math.hypot(b.X-mx,b.Y-my)?p:b); out.push({...c,label:entName(t,id)+' (drops '+(it.n||'item')+')',item:i}); } }
   return out; }
+/* cloth drops off almost any humanoid: a quest asking for it means 'have it in your bags', not a place to go */
+const BAG_ITEM=/^(Linen|Wool|Silk|Mageweave) Cloth$|^Runecloth$/;
 function itemSourcePts(iid,kind){
-  const it=DB.i[iid]; const out=[]; if(!it) return out;
+  const it=DB.i[iid]; const out=[]; if(!it) return out; if(BAG_ITEM.test(it.n||'')&&!(it.d||[]).length) return out;
   for(const id of it.d||[]) out.push(...entPts('n',id).map(p=>({...p,kind,label:entName('n',id)})));
   for(const id of it.od||[]) out.push(...entPts('o',id).map(p=>({...p,kind,label:entName('o',id)})));
   if(!out.length) for(const id of it.v||[]) out.push(...entPts('n',id).map(p=>({...p,kind:'buy',label:entName('n',id)+' (vendor)'})));
