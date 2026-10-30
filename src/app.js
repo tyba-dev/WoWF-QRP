@@ -539,7 +539,7 @@ function killSecs(L,ml,party){ const c=route.char; const dps=Math.max(1,groupDps
 const SPD_DEF={Shaman:'20:40',Druid:'20:40'};
 function parseSpd(t){ return String(t||'').split(/[,;\s]+/).map(x=>x.match(/^(\d+)\s*:\s*\+?(\d+(?:\.\d+)?)%?$/)).filter(Boolean).map(m=>[+m[1],+m[2]]).sort((a,b)=>a[0]-b[0]); }
 function ownSpd(r){ const c=r.char; return parseSpd(c.spd!=null?c.spd:(SPD_DEF[c.cls]||'')); }
-function spdSched(r){ const own=ownSpd(r); if(!r.group&&!isGrp(r)) return {own,grp:own}; const mem=isGrp(r)?r.members.map(m=>({char:m})):(store.routes||[]).filter(x=>x.group===r.group); if(mem.length<2) return {own,grp:own};
+function spdSched(r){ const own=ownSpd(r); if(!r.group&&!isGrp(r)&&!r.grpMem) return {own,grp:own}; const mem=isGrp(r)?r.members.map(m=>({char:m})):r.grpMem?r.grpMem.map(m=>({char:m})):(store.routes||[]).filter(x=>x.group===r.group); if(mem.length<2) return {own,grp:own};
   const S=mem.map(ownSpd); const lv=[...new Set(S.flat().map(x=>x[0]))].sort((a,b)=>a-b); const at=(sc,L)=>{ let b=0; for(const [l,v] of sc) if(L>=l) b=v; return b; };
   return {own,grp:lv.map(L=>[L,Math.min(...S.map(sc=>at(sc,L)))])}; }
 function runSpeed(L,party){ const c=route.char; const mountL=+c.ypkUntil||40; const sc=runSpeed._s||{own:[],grp:[]}; let b=0; for(const [l,v] of (party>1?sc.grp:sc.own)) if(L>=l) b=v; return Math.max(L>=mountL?11.2:7, 7*(1+b/100)); }
@@ -1928,9 +1928,17 @@ function buildRXP(){
     outL.push(...H, ...sg.text(), ']])'); if(k<segs.length-1) outL.push(''); });
   return outL.join('\n');
 }
-async function exportText(){ const m=$('#expMode [aria-pressed="true"]').dataset.m; const ids=route.steps.filter(s=>s.src&&!s.src.auto).map(s=>s.src.g); await rawLoad(ids);
+async function exportText(){ const m=$('#expMode [aria-pressed="true"]').dataset.m; const ids=route.steps.filter(s=>s.src&&!s.src.auto).flatMap(s=>[s.src.g,...Object.values(s.srcs||{})]); await rawLoad(ids); if(typeof memSync==='function') memSync(route);
   if(m==='rxp'){ $('#expText').value=buildRXP(); const miss=[...new Set(ids)].filter(id=>!rawCache.has(id)).map(id=>G(id)?.name).filter(Boolean); const msgs=[]; if(miss.length) msgs.push(`Re-import ${miss.join(', ')} to export ${miss.length>1?'their':'its'} steps exactly as written in the guide.`); msgs.push(...EXPORT_WARN); $('#expMsg').innerHTML=msgs.map(m=>`<div>⚠ ${esc(m)}</div>`).join(''); }
-  else { const used=new Set(ids); const r=JSON.parse(JSON.stringify(route)); for(const g of r.guides||[]) if(used.has(g.id)&&rawCache.has(g.id)) g.raw=rawCache.get(g.id); $('#expText').value=JSON.stringify({format:'forever-route-planner/1',route:r},null,1); $('#expMsg').textContent=''; } }
+  else { const r=shareRoute(route); $('#expText').value=JSON.stringify({format:'forever-route-planner/2',route:r},null,1); $('#expMsg').innerHTML=r.guides.length?`<div>Guide text is not included. Whoever imports this route then imports these guides themselves (with the route open): ${[...new Set(r.guides.map(g=>g.name))].map(esc).join(', ')}.</div>`:''; } }
+/* a route file for sharing: no guide text (guides are imported by each person). Guide steps keep only what's needed to link them up again when the guide is imported */
+function shareRoute(R){ if(typeof memSync==='function'&&isGrp(R)) memSync(R); const r=JSON.parse(JSON.stringify(R)); const KEEP=['t','loc','cond','rx','q','kind','info','sticky','reqs','cw','gopt','counts','dg','dgs','lmin','lmax','mode','level','xp','ride','xr','path'];
+  /* group routes keep each member's own copy of a guide (parsed for that race/class): remember whose copy each one is */
+  const forMem={}; if(isGrp(r)){ for(const st of r.steps){ for(const [mid,gid] of Object.entries(st.srcs||{})) forMem[gid]=forMem[gid]||mid; if(st.src&&st.who&&st.who.length===1) forMem[st.src.g]=forMem[st.src.g]||st.who[0]; } }
+  for(const st of r.steps){ if(st.src&&st.src.g&&!st.src.auto){ delete st.text; delete st.label; delete st.note; delete st.cl; } }
+  const used=new Set(r.steps.flatMap(x=>x.src?[x.src.g,...Object.values(x.srcs||{})]:[])); r.guides=(r.guides||[]).filter(g=>used.has(g.id));
+  for(const g of r.guides){ delete g.raw; g.steps=(g.steps||[]).map(x=>{ const o={}; for(const k of KEEP) if(x[k]!=null) o[k]=x[k]; return o; }); g.needsImport=1; if(forMem[g.id]) g.forMem=forMem[g.id]; }
+  delete r.savedAt; return r; }
 $('#exportBtn').addEventListener('click',()=>{ $('#expGroup').value=route.guide?.group||'Forever Routes'; $('#expName').value=route.name; $('#expNext').value=route.guide?.next||''; $('#expExtra').value=route.guide?.extra||''; setSeg('#expMode','rxp'); exportText(); $('#dlgExport').showModal(); });
 $('#expMode').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) return; setSeg('#expMode',b.dataset.m); exportText(); });
 ['#expGroup','#expName','#expNext','#expExtra','#expMerge'].forEach(s=>$(s).addEventListener('input',exportText));
@@ -1942,7 +1950,9 @@ $('#expSave').addEventListener('click',async()=>{ const m=$('#expMode [aria-pres
   try{ await dl.save({filename:m==='rxp'?name+'.txt':name+'.json',data:new TextEncoder().encode($('#expText').value)}); toast('Saved'); }
   catch(e){ if(e?.code!=='declined') toast('Download failed: '+(e?.message||e?.code||'unknown')); } });
 $('#expFile').addEventListener('change',async e=>{ const f=e.target.files[0]; if(!f) return; $('#expText').value=await f.text(); e.target.value=''; $('#expImport').click(); });
-$('#expImport').addEventListener('click',()=>{ try{ const o=JSON.parse($('#expText').value); const r=o.route||o; if(!Array.isArray(r.steps)) throw 0; const nr=migrateRoute(newRoute({...r,id:uid(),name:(r.name||'Imported')+' (imported)'})); for(const g of nr.guides||[]) if(g.raw){ rawPut(g.id,g.raw); delete g.raw; } store.routes.push(nr); route=nr; cursor=nr.steps.length-1; history=[]; refresh(); $('#dlgExport').close(); toast('Route imported'); }catch(e){ toast('That text isn\u2019t a route file'); } });
+function importRouteFile(txt){ let o; try{ o=JSON.parse(txt); }catch(e){ return false; } const r=o&&(o.route||o); if(!r||!Array.isArray(r.steps)) return false;
+  const nr=newRoute({...r,id:uid(),name:(r.name||'Imported')+' (imported)'}); for(const g of nr.guides||[]) if(g.raw){ rawPut(g.id,g.raw); delete g.raw; } migrateRoute(nr); store.routes.push(nr); route=nr; cursor=nr.steps.length-1; history=[]; FQ.key=null; save(); refresh(); const need=[...new Set((nr.guides||[]).filter(g=>g.needsImport).map(g=>g.name))]; toast('Route imported: '+nr.name+(nr.members?.length?' ('+nr.members.map(m=>m.name).join(', ')+')':'')+(need.length?'. Now import the guides it uses, with this route open: '+need.join(', '):''),need.length?12000:4000); return true; }
+$('#expImport').addEventListener('click',()=>{ if(importRouteFile($('#expText').value)) $('#dlgExport').close(); else toast('That text isn\u2019t a route file'); });
 
 /* ---------- zone images (IndexedDB, this browser only) ---------- */
 const IDB={db:null,
@@ -2124,20 +2134,24 @@ async function kvKeys(){ const db=await rawDB(); if(!db) return []; return new P
 async function kvGet(k){ const db=await rawDB(); if(!db) return null; return new Promise(res=>{ try{ const rq=db.transaction('kv').objectStore('kv').get(k); rq.onsuccess=()=>res(rq.result??null); rq.onerror=()=>res(null); }catch(e){ res(null); } }); }
 function rawPut(id,blocks){ rawCache.set(id,blocks); rawDB().then(db=>{ if(!db) return; try{ db.transaction('g','readwrite').objectStore('g').put(blocks,id); }catch(e){} }); }
 async function rawLoad(ids){ const db=await rawDB(); await Promise.all([...new Set(ids)].filter(id=>!rawCache.has(id)).map(id=>new Promise(res=>{ if(!db) return res(); try{ const rq=db.transaction('g').objectStore('g').get(id); rq.onsuccess=()=>{ if(rq.result) rawCache.set(id,rq.result); res(); }; rq.onerror=()=>res(); }catch(e){ res(); } }))); }
+/* re-parse a guide the route already has and re-point the route's steps at the new parse */
+function refreshGuide(ex,pg,steps){ // same guide again: swap in the new parse and re-point your route's steps at it, keeping their order
+      rawPut(ex.id,pg.blocks.map(b=>(b.raw||[]).join('\n')));
+      const sig=x=>[x.rx,x.t,x.q||'',x.t==='travel'&&(x.info||x.kind==='note'||x.kind==='goto')?'info':(x.kind||''),x.t==='grind'?x.level:''].join('|'); const pool=new Map(); steps.forEach((x,k)=>{ const k2=sig(x); if(!pool.has(k2)) pool.set(k2,[]); pool.get(k2).push(k); });
+      const map=ex.steps.map((o,oi)=>{ if(steps[oi]&&sig(steps[oi])===sig(o)){ const a=pool.get(sig(o)); const k=a.indexOf(oi); if(k>=0) a.splice(k,1); return oi; } return null; }); ex.steps.forEach((o,oi)=>{ if(map[oi]!=null) return; const a=pool.get(sig(o)); map[oi]=a&&a.length?a.shift():-1; }); /* same place in an unchanged guide first, so a block's per-class variants keep their own line */
+      for(const r of store.routes){ r.steps=r.steps.filter(st=>{ if(!st.src||st.src.g!==ex.id) return true; const ni=map[st.src.i];
+          if(ni==null||ni<0){ if(st.t==='travel'&&(st.kind==='note'||st.kind==='goto')&&!st.src.auto) return false; if(st.src.auto){ st.src={...st.src,i:Math.max(0,Math.min(steps.length-1,st.src.i))}; return true; } delete st.src; return true; } // unmatched guide notes are re-added in place by the fill below; other unmatched steps become your own steps
+          st.src.i=ni; const ns=steps[ni]; for(const f of (ex.needsImport?['qn','label','text']:['reqs','rx','qn','ride','gopt','cw','sticky','label','text','kind','loc'])) if(ns[f]!=null) st[f]=ns[f]; /* a shared route keeps its own step settings; only the guide's wording comes back */ return true; }); if(r===route) cursor=Math.min(cursor,r.steps.length-1); }
+      ex.excluded=(ex.excluded||[]).map(i=>map[i]).filter(i=>i>=0); ex.removed=(ex.removed||[]).map(i=>map[i]).filter(i=>i>=0); ex.from=Math.max(0,map[ex.from]??0); ex.steps=steps; ex.pv=3; ex.to=steps.length-1; }
+/* a group route keeps one copy of a guide per member, parsed for that member's race and class */
+function memParse(pg,convert,mid){ const R0=route; const m=R0.members?.find(x=>x.id===mid); if(!m) return buildGuideSteps(pg,convert).steps; const v=memberRoute(R0,m); route=v; try{ return buildGuideSteps(pg,convert).steps; } finally{ route=R0; } }
 function importGuides(text,convert){ FQ.key=null;
   const parsed=parseRXP(text); if(!parsed.length) return {err:'No RestedXP steps found. Paste the whole guide, including the step lines.'};
   route.guides=route.guides||[]; const added=[], refreshed=[]; const unknown=new Set();
   for(const pg of parsed){
     const {steps,unknownZones}=buildGuideSteps(pg,convert); unknownZones.forEach(z=>unknown.add(z)); if(!steps.length) continue;
-    const nm=pg.name||pg.group||'Imported guide'; const ex=route.guides.find(x=>x.name===nm&&x.group===pg.group);
-    if(ex){ // same guide again: swap in the new parse and re-point your route's steps at it, keeping their order
-      rawPut(ex.id,pg.blocks.map(b=>(b.raw||[]).join('\n')));
-      const sig=x=>[x.rx,x.t,x.q||'',x.t==='travel'&&(x.info||x.kind==='note'||x.kind==='goto')?'info':(x.kind||''),x.t==='grind'?x.level:''].join('|'); const pool=new Map(); steps.forEach((x,k)=>{ const k2=sig(x); if(!pool.has(k2)) pool.set(k2,[]); pool.get(k2).push(k); });
-      const map=ex.steps.map(o=>{ const a=pool.get(sig(o)); return a&&a.length?a.shift():-1; });
-      for(const r of store.routes){ r.steps=r.steps.filter(st=>{ if(!st.src||st.src.g!==ex.id) return true; const ni=map[st.src.i];
-          if(ni==null||ni<0){ if(st.t==='travel'&&(st.kind==='note'||st.kind==='goto')&&!st.src.auto) return false; if(st.src.auto){ st.src={...st.src,i:Math.max(0,Math.min(steps.length-1,st.src.i))}; return true; } delete st.src; return true; } // unmatched guide notes are re-added in place by the fill below; other unmatched steps become your own steps
-          st.src.i=ni; const ns=steps[ni]; for(const f of ['reqs','rx','qn','ride','gopt','cw','sticky','label','text','kind','loc']) if(ns[f]!=null) st[f]=ns[f]; return true; }); if(r===route) cursor=Math.min(cursor,r.steps.length-1); }
-      ex.excluded=(ex.excluded||[]).map(i=>map[i]).filter(i=>i>=0); ex.removed=(ex.removed||[]).map(i=>map[i]).filter(i=>i>=0); ex.from=Math.max(0,map[ex.from]??0); ex.steps=steps; ex.pv=3; ex.to=steps.length-1; refreshed.push(ex); continue; }
+    const nm=pg.name||pg.group||'Imported guide'; const exs=route.guides.filter(x=>x.name===nm&&x.group===pg.group);
+    if(exs.length){ for(const ex of exs){ const st2=ex.forMem&&isGrp()?memParse(pg,convert,ex.forMem):steps; refreshGuide(ex,pg,st2); refreshed.push(ex); } continue; }
     const g={id:uid(),pv:3,name:pg.name||pg.group||'Imported guide',group:pg.group,cond:pg.cond,next:pg.next,ver:pg.ver||'',xprate:pg.xprate||'',color:GCOLORS[route.guides.length%GCOLORS.length],visible:false,from:0,to:steps.length-1,excluded:[],stopAtBlocked:false,includeNotes:true,includeXp:true,steps};
     route.guides.push(g); added.push(g); rawPut(g.id,pg.blocks.map(b=>(b.raw||[]).join('\n')));
   }
@@ -2412,10 +2426,11 @@ function openImport(){ $('#impText').value=''; $('#impMsg').textContent=''; $('#
 $('#impFile').addEventListener('change',async e=>{ const f=e.target.files[0]; if(!f) return; $('#impText').value=await f.text(); $('#impMsg').textContent=`Loaded ${f.name} (${fmt(f.size/1024)} KB).`; e.target.value=''; });
 $('#impCancel').addEventListener('click',()=>$('#dlgImport').close());
 $('#impGo').addEventListener('click',()=>{
+  if(/^\s*\{/.test($('#impText').value)){ if(importRouteFile($('#impText').value)){ $('#dlgImport').close(); return; } }
   { const gm=memFromHeader($('#impText').value); if(gm){ const e=importGroupRoute(gm,$('#impText').value); if(e){ $('#impMsg').textContent=e; return; } $('#dlgImport').close(); return; } }
   const r=importGuides($('#impText').value,$('#impConvert').checked);
   if(r.err){ $('#impMsg').textContent=r.err; return; }
-  let filled=0; for(const g of r.refreshed) filled+=fillGuide(g);
+  let filled=0; for(const g of r.refreshed){ if(g.needsImport){ delete g.needsImport; continue; } filled+=fillGuide(g); } /* a shared route's guide: just link it up, never add steps the route left out */
   if(!r.added.length&&r.refreshed.length){ $('#dlgImport').close(); refresh(); toast(`Updated ${r.refreshed.length} guide${r.refreshed.length>1?'s':''} you already had`+(filled?` and added ${filled} missing step${filled>1?'s':''} in their guide positions`:'')+'. Your own steps and order are unchanged.'); return; }
   if(!r.added.length){ $('#impMsg').textContent='The guide had no steps this planner understands (accept, complete, turn in, xp, fly, flight path, hearth).'; return; }
   selGuide=(r.added.find(x=>x.visible)||r.added[0]).id; selGhost=null; tab='guides'; $('#dlgImport').close(); refresh(); openPanel('right');

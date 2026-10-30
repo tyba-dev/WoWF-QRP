@@ -18,7 +18,7 @@ function memAbbr(m,r){ r=r||route; const c=(m.cls||m.name||'?')[0].toUpperCase()
 function whoLabel(s){ if(!s.who) return {all:1,t:'all',title:'Everyone does this step (click to change)'}; const ms=route.members.filter(m=>s.who.includes(m.id));
   return {t:ms.map(m=>memAbbr(m)).join('·'),title:'Only '+ms.map(m=>m.name).join(', ')+' (click to change)',col:ms.length===1?ms[0].rcol:null}; }
 /* each member as a route of their own (for the export and the summary): only their steps, their character */
-function memberRoute(r,m){ const v=JSON.parse(JSON.stringify({...r,members:null,view:null})); v.id=r.id+'~'+m.id; v.name=m.name; memApply(v,m); v.steps=v.steps.filter(s=>!s.who||s.who.includes(m.id)); for(const s of v.steps) delete s.who; delete v.members; delete v.view; return v; }
+function memberRoute(r,m){ const v=JSON.parse(JSON.stringify({...r,members:null,view:null})); v.id=r.id+'~'+m.id; v.name=m.name; memApply(v,m); v.steps=v.steps.filter(s=>!s.who||s.who.includes(m.id)); for(const s of v.steps) delete s.who; v.grpMem=JSON.parse(JSON.stringify(r.members)); /* the group moves at its slowest member's speed */ delete v.members; delete v.view; return v; }
 function memberRoutes(r){ r=r||route; memSync(r); return r.members.map(m=>memberRoute(r,m)); }
 function memSummary(){ const R0=route,C0=cursor,S0=SIM; const out=[]; memSync(R0);
   try{ for(const m of R0.members){ const v=memberRoute(R0,m); route=v; cursor=v.steps.length-1; simulate(); const res=SIM.res; const last=res[res.length-1];
