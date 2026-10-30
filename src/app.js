@@ -1233,7 +1233,7 @@ function baseDgTag(qid){ if(bdgCache.has(qid)) return bdgCache.get(qid); let tag
 function stepDgTags(i){ const s=route.steps[i]; const out=[]; const gs=s.src?G(s.src.g)?.steps[s.src.i]:null;
   if(gs) for(const t of gs.dg||[]) if(dgOn(t)&&!out.includes(t)) out.push(t);
   const t=s.q?questDgTag(s.q):null; if(t&&!out.includes(t)) out.push(t); return out; }
-function selectDungeon(tag,add){ if(!add) selSteps.clear(); route.steps.forEach((_,i)=>{ if(stepDgTags(i).includes(tag)) selSteps.add(i); }); renderSteps(); toast(selSteps.size?`Selected ${selSteps.size} ${tag} steps`:`No ${tag} steps`); }
+function selectDungeon(tag,add){ if(!add) selSteps.clear(); route.steps.forEach((_,i)=>{ if(stepDgTags(i).includes(tag)) selSteps.add(i); }); for(const i of selSteps){ const sc=secOf(i); if(sc&&sc.col) sc.col=false; } renderSteps(); { const f=Math.min(...selSteps); const li=Number.isFinite(f)?$$('#steps li.step').find(el=>+(el.querySelector('.n')?.textContent)===f+1):null; if(li) li.scrollIntoView({block:'center'}); } toast(selSteps.size?`Selected ${selSteps.size} ${tag} steps`:`No ${tag} steps`); }
 function moveBlock(idxs,to){ // move steps idxs (any order) so they sit before index `to` (to may equal steps.length)
   idxs=[...new Set(idxs)].sort((a,b)=>a-b); if(!idxs.length) return; const items=idxs.map(i=>route.steps[i]);
   const ins=to-idxs.filter(i=>i<to).length; pushHistory();
