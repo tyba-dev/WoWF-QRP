@@ -45,12 +45,8 @@ The planner is free software under the **GNU General Public License v3.0** (see 
 
 This project is not affiliated with or endorsed by Blizzard Entertainment, RestedXP or WoW: Forever.
 
-## Shared routes
+## Sharing a route
 
-`routes/` holds route files exported from the planner (Export → Route file). Route files never contain guide text: everyone imports their own RestedXP guides.
+Export → Route file gives a file with the whole route, including the text of the guides it uses. Send it only to the people you want to have it; don't publish it. They load it with **Import** (choose the file, press Import) and it opens as a new route. Group routes keep their members: use the "Viewing as" buttons above the step list to see each character.
 
-1. Download the route file (for example `routes/forever-trio-1-30.json`: open it, **Raw**, save).
-2. In the planner click **Import**, choose the file and press Import. The route opens as a new route.
-3. With that route open, import the guide files it uses (the planner lists them after step 2) the same way. Its steps link back up to your guides.
-
-Group routes keep their members: use the "Viewing as" buttons above the step list to see each character's levels and errors.
+This repository contains no guides. Everyone imports their own RestedXP guides.
