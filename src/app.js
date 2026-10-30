@@ -351,7 +351,7 @@ function simulate0(){ computeGroups(); ensureIds(route);
       const w=whyUnavailable(s.q,st,route); if(w) r.err.push(w.why); r.lvAt=st.level;
       if(st.log.size>=LOGMAX) r.err.push(`Quest log is full (${LOGMAX})`); else if(ESCORT.has(s.q)&&st.log.size>=ESC_LIMIT) r.err.push(`Escort quest: you have ${st.log.size} quests in your log; drop below ${ESC_LIMIT} before accepting`);
       st.log.set(s.q,{done:!hasObjectives(s.q)});
-    } else if(s.t==='complete'){ st._inrun=!!s.inrun;
+    } else if(s.t==='complete'){ st._inrun=!!s.inrun; { const hw=hiMobWarn(s,st); if(hw) r.warn.push(hw); }
       if(!st.log.has(s.q)) r.err.push('Not in your quest log yet'); else { const e=st.log.get(s.q); e.objs=e.objs||new Set(); e.stickyDone=isSticky(s); const stkBefore=new Set(e.objs);
         if(s.obj){ if(e.objs.has(s.obj)||e.done) r.warn.push('This objective is already done'); e.prog=e.prog||{}; const had=e.prog[s.obj]||0; const tot=+(s.counts?.[s.obj])||0;
           if(s.upto>0){ // partial: only up to this count now, the rest later (RestedXP .complete q,n,N)
@@ -523,7 +523,17 @@ function groupDps(L,party){ const c=route.char; if(party<=1) return soloDps(L); 
 /* mobs above your level: more misses, dodges, parries, glancing blows and spell resists (Classic hit tables, melee and casters averaged) */
 const LVGAP=[1,0.98,0.95,0.91,0.85,0.77,0.69,0.6]; const gapF=d=>d<=0?1:LVGAP[Math.min(d,LVGAP.length-1)];
 /* the level of the mobs a quest has you kill or loot, from its objective creatures and drop sources that spawn in that zone */
-const QMLV=new Map(); function questMobLv(q,z,L){ const k=q+':'+z; if(QMLV.has(k)) return QMLV.get(k); const x=Q(q); let v=null; if(x){ const ids=[...((x.o?.c)||[]).map(c=>c[0]),...((x.o?.i)||[]).flatMap(i=>DB.i[i[0]]?.d||[])]; let sw=0,sl=0; for(const id of new Set(ids)){ const n=DB.n[id]; if(!n?.l) continue; const k=(n.p||[]).filter(p=>z==null||p[0]===z).length; if(!k) continue; sw+=k; sl+=k*(n.l[0]+(n.l[1]??n.l[0]))/2; } if(sw) v=sl/sw; } /* weighted by spawns in the zone */ QMLV.set(k,v); return v; }
+const QMLV=new Map(); /* warn when a step means killing more than one mob 3+ levels above you (unique named mobs count once; others assume the usual kill count) */
+function vendItem(id){ if(!vendItem.S){ vendItem.S=new Set(); for(const v of Object.values(META.vend||{})) for(const x of (v[4]||[])) vendItem.S.add(+x); } return vendItem.S.has(+id); }
+function hiMobWarn(s,st){ const q=Q(s.q); if(!q||!st.log.has(s.q)||s.xpo!=null) return ''; const L=st.level, e=st.log.get(s.q); const hi=[]; let n=0;
+  for(const o of objectives(s.q)){ if(s.obj&&o.rx!==s.obj) continue; if(e.objs&&e.objs.has(o.rx)) continue; if(o.kind!=='kill'&&o.kind!=='loot') continue;
+    const zc={}; for(const p of o.pts||[]) zc[p.z]=(zc[p.z]||0)+1; const z=+Object.keys(zc).sort((a,b)=>zc[b]-zc[a])[0];
+    if(o.kind==='loot'&&vendItem(o.id)) continue; /* bought, not looted */
+    const ids=o.kind==='kill'?[o.id]:(DB.i[o.id]?.d||[]); let sw=0,sl=0,nm=''; for(const id of ids){ const m=DB.n[id]; if(!m?.l) continue; const k=(m.p||[]).filter(p=>p[0]===z).length||(ids.length===1?1:0); if(!k) continue; sw+=k; sl+=k*m.l[0]; if(!nm) nm=m.n; }
+    if(!sw) continue; const lv=sl/sw; if(lv<L+3) continue; const one=ids.length===1&&(DB.n[ids[0]]?.p||[]).length<=8; /* a named mob or boss: one kill */ const cnt=+(s.counts?.[o.rx])||(one?1:killCfg().def||8);
+    n+=cnt; hi.push(`${o.kind==='kill'?nm:o.text} (level ${Math.round(lv)})`); }
+  return n>1?`Dangerous: about ${n} kills of mobs 3+ levels above you (you are ${L}): ${hi.join(', ')}`:''; }
+function questMobLv(q,z,L){ const k=q+':'+z; if(QMLV.has(k)) return QMLV.get(k); const x=Q(q); let v=null; if(x){ const ids=[...((x.o?.c)||[]).map(c=>c[0]),...((x.o?.i)||[]).flatMap(i=>DB.i[i[0]]?.d||[])]; let sw=0,sl=0; for(const id of new Set(ids)){ const n=DB.n[id]; if(!n?.l) continue; const k=(n.p||[]).filter(p=>z==null||p[0]===z).length; if(!k) continue; sw+=k; sl+=k*(n.l[0]+(n.l[1]??n.l[0]))/2; } if(sw) v=sl/sw; } /* weighted by spawns in the zone */ QMLV.set(k,v); return v; }
 function killSecs(L,ml,party){ const c=route.char; const dps=Math.max(1,groupDps(L,Math.max(1,party||1))*gapF(Math.round(ml-L))), down=(party||1)>=2?0:(c.kdown!==''&&c.kdown!=null&&+c.kdown>=0?+c.kdown:defDown()); /* a group of 3+ has a healer: no eat/drink */ const m=mobStatsAt(ml); const dr=Math.min(.75,m.a/(m.a+400+85*L)); return m.hp/(dps*(1-dr))+down; }
 /* movement speed: base run 7 yd/s, mount from the mount level, plus speed bonuses by level (Ghost Wolf, Travel Form, Pursuit of Justice…); a group moves at its slowest member's pace */
 const SPD_DEF={Shaman:'20:40',Druid:'20:40'};
