@@ -49,8 +49,20 @@ async function clRetryFailed(){ const ids=Object.keys(CLOUD.why); if(!ids.length
 async function cloudInit(){ let db=null; try{ db=typeof claude!=='undefined'&&claude.use?await claude.use('db'):null; }catch(e){ db=null; } if(!db) return; CLOUD.db=db; CLOUD.on=true; clBadge('☁ Connecting…');
   try{ const snap=await clRetry(()=>db.collection('routes').get()); let changed=false; for(const d of snap.docs) if(await clApply(d.data())) changed=true;
     if(changed){ store.cur=route.id; saveNow(); refresh(); toast('Loaded the shared routes',2500); }
+    await clRouteFiles(); /* route versions Claude published with the page */
     await clPushAll(); /* anything only in this browser goes up */
     if(Object.keys(CLOUD.why).length) setTimeout(clRetryFailed,8000);
     db.collection('routes').onSnapshot(async s=>{ let ch=false; for(const c of s.docChanges()){ if(c.type==='removed'||c.doc.metadata.hasPendingWrites) continue; if(await clApply(c.doc.data())) ch=true; } if(ch){ store.cur=route.id; saveNow(); refresh(); toast('Route updated from the shared copy',2500); } },
       e=>clBadge('☁ Live updates stopped: '+(e?.code||'error'),true)); }
   catch(e){ CLOUD.initErr=String(e?.stack||e); clBadge('☁ Online copy unavailable: '+(e?.code||e?.message||'error'),true); } }
+
+/* Claude publishes route updates as files next to the page (routes/index.json lists {id, rev, file}); a newer one is loaded here and written to the shared copy, so Claude needs no database edits */
+async function clRouteFiles(){ let idx=null; try{ const r=await fetch('routes/index.json',{cache:'no-store'}); if(!r.ok) return; idx=await r.json(); }catch(e){ return; } let changed=false;
+  for(const e of (idx&&idx.routes)||[]){ const known=Math.max(CLOUD.revs[e.id]||0,CLOUD.seen[e.id]||0); if(!(e.rev>known)) continue;
+    try{ const rr=await fetch(e.file,{cache:'no-store'}); if(!rr.ok) continue; const r=await rr.json(); if(!r||r.id!==e.id||!Array.isArray(r.steps)) continue;
+      const old=store.routes.find(x=>x.id===e.id); if(old&&CLOUD.ed[e.id]>0){ const copy=JSON.parse(clRouteJSON(old)); copy.id=uid(); copy.name=(old.name||'Route')+' (your edits '+new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})+')'; delete copy.group; store.routes.push(copy); }
+      migrateRoute(r); await clEnsureGuides(r); const i=store.routes.findIndex(x=>x.id===e.id); if(i>=0) store.routes[i]=r; else store.routes.push(r); if(route?.id===e.id){ route=r; cursor=Math.min(cursor,r.steps.length-1); }
+      const js=clRouteJSON(r); const parts=clSplit(js); for(let k=0;k<parts.length;k++){ const kk=k; await clRetry(()=>CLOUD.db.doc('routes/'+r.id+'/parts/'+kk).set({s:parts[kk]})); }
+      await clRetry(()=>CLOUD.db.doc('routes/'+r.id).set({id:r.id,name:r.name||'',rev:e.rev,n:parts.length,updatedAt:Date.now(),by:'claude'}));
+      CLOUD.revs[r.id]=e.rev; CLOUD.seen[r.id]=e.rev; CLOUD.sent[r.id]=js; CLOUD.ed[r.id]=0; delete CLOUD.why[r.id]; changed=true; }catch(err){ console.warn('route file',e.id,err); } }
+  if(changed){ store.cur=route.id; saveNow(); refresh(); toast('Route updated from Claude',3000); } }
