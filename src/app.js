@@ -516,10 +516,12 @@ const gEff=()=>{ const v=+route.char.geff; return v>0&&v<=1?v:0.8; };
 const DG_RUN_XP=0.36; /* dungeon mobs: ~0.36x the XP per hour of an open-world hyperspawn camp */
 const gSearch=()=>{ const v=route.char.gsearch; return v!==''&&v!=null&&+v>=0?+v:1; }; /* grinding: finding / walking to the next mob */
 const defDown=()=>route.char.cls==='Hunter'?0:2; /* hunters kill on the move with the pet, no eat/drink */
-const soloDps=L=>(+route.char.dpsl>0?+route.char.dpsl:2)*L;
+/* past 30 real DPS grows faster than level (gear, talents): dpsx is the exponent, calibrated against speedrun splits; 0 = plain linear */
+const dpsGrow=L=>{ const x=+route.char.dpsx; return x>0&&L>30?Math.pow(L/30,x):1; };
+const soloDps=L=>(+route.char.dpsl>0?+route.char.dpsl:2)*L*dpsGrow(L);
 /* the group's DPS: what you entered at a level, scaled with level like solo DPS; else group size × your DPS */
 /* DPS = per-level rate × the group's total level (everyone assumed your level) */
-function groupDps(L,party){ const c=route.char; if(party<=1) return soloDps(L); const k=party===2?(+c.dps2>0?+c.dps2:2):(+c.dps3>0?+c.dps3:1.5); return k*party*L; }
+function groupDps(L,party){ const c=route.char; if(party<=1) return soloDps(L); const k=party===2?(+c.dps2>0?+c.dps2:2):(+c.dps3>0?+c.dps3:1.5); return k*party*L*dpsGrow(L); }
 /* mobs above your level: more misses, dodges, parries, glancing blows and spell resists (Classic hit tables, melee and casters averaged) */
 const LVGAP=[1,0.98,0.95,0.91,0.85,0.77,0.69,0.6]; const gapF=d=>d<=0?1:LVGAP[Math.min(d,LVGAP.length-1)];
 /* the level of the mobs a quest has you kill or loot, from its objective creatures and drop sources that spawn in that zone */
