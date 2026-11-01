@@ -1335,7 +1335,7 @@ function routeVer(r){ r=r||route; const c=(typeof CLOUD!=='undefined'&&CLOUD.rev
 function routeVerTag(r){ const v=routeVer(r); return v?` r${v}`:''; }
 function routeIsGroupPart(){ return !!route&&!!route.grpMem; }
 async function exportGroupGuide(){ const set=isGrp()?memberRoutes():pathSet(); const R0=route,C0=cursor,S0=SIM; const nm0=$('#expName').value; const per=[]; const warns=[];
-  const name=(set[0].name.replace(/\s*\(.*\)$/,''))||'Group';
+  const name=(isGrp()?route.name:set[0].name.replace(/\s*\(.*\)$/,''))||'Group';
   try{ for(const r of set){ await rawLoad((r.guides||[]).map(g=>g.id)); route=r; cursor=r.steps.length-1; simulate(); $('#expName').value=name; buildRXP(); per.push(LAST_SEGS); EXPORT_WARN.forEach(w=>warns.push(r.name+': '+w)); } }
   finally{ route=R0; cursor=C0; SIM=S0; $('#expName').value=nm0; }
   const mem=set.map(r=>({name:r.name,race:r.char.race,cls:r.char.cls,fac:charInfo(r).fac})); const U=new Set(mem.map((x,i)=>i)); const conf=new Set();
@@ -1953,6 +1953,30 @@ $('#expSave').addEventListener('click',async()=>{ const m=$('#expMode [aria-pres
   const dl=window.claude&&await window.claude.use('downloads').catch(()=>null);
   if(!dl){ try{ const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([$('#expText').value],{type:'text/plain'})); a.download=m==='rxp'?name+'.lua':name+'.json'; document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); },1000); toast('Saved'); }catch(e){ toast('Download isn\u2019t available here. Use Copy instead.'); } return; }
   try{ await dl.save({filename:m==='rxp'?name+'.txt':name+'.json',data:new TextEncoder().encode($('#expText').value)}); toast('Saved'); }
+  catch(e){ if(e?.code!=='declined') toast('Download failed: '+(e?.message||e?.code||'unknown')); } });
+/* "Download as addon": the RestedXP guide as its own addon folder (zip), so friends can drop it in Interface/AddOns or keep it in a synced folder.
+   The folder name stays the same between versions, so a new download replaces the old one; the version (rN) is in the guide names and the .toc. */
+const CRC_T=(()=>{ const t=new Uint32Array(256); for(let n=0;n<256;n++){ let c=n; for(let k=0;k<8;k++) c=c&1?0xEDB88320^(c>>>1):c>>>1; t[n]=c>>>0; } return t; })();
+function crc32(u8){ let c=0xFFFFFFFF; for(let i=0;i<u8.length;i++) c=CRC_T[(c^u8[i])&255]^(c>>>8); return (c^0xFFFFFFFF)>>>0; }
+function zipStore(files){ /* files: [{name, data:Uint8Array}] -> Uint8Array (stored, no compression) */
+  const enc=new TextEncoder(), parts=[], cen=[]; let off=0; const d=new Date(); const dt=((d.getFullYear()-1980)<<9)|((d.getMonth()+1)<<5)|d.getDate(), tm=(d.getHours()<<11)|(d.getMinutes()<<5)|(d.getSeconds()>>1);
+  for(const f of files){ const nm=enc.encode(f.name), crc=crc32(f.data), n=f.data.length;
+    const h=new DataView(new ArrayBuffer(30)); h.setUint32(0,0x04034b50,true); h.setUint16(4,20,true); h.setUint16(6,0x0800,true); h.setUint16(8,0,true); h.setUint16(10,tm,true); h.setUint16(12,dt,true); h.setUint32(14,crc,true); h.setUint32(18,n,true); h.setUint32(22,n,true); h.setUint16(26,nm.length,true); h.setUint16(28,0,true);
+    parts.push(new Uint8Array(h.buffer),nm,f.data);
+    const c=new DataView(new ArrayBuffer(46)); c.setUint32(0,0x02014b50,true); c.setUint16(4,20,true); c.setUint16(6,20,true); c.setUint16(8,0x0800,true); c.setUint16(10,0,true); c.setUint16(12,tm,true); c.setUint16(14,dt,true); c.setUint32(16,crc,true); c.setUint32(20,n,true); c.setUint32(24,n,true); c.setUint16(28,nm.length,true); c.setUint32(42,off,true);
+    cen.push(new Uint8Array(c.buffer),nm); off+=30+nm.length+n; }
+  const cs=cen.reduce((t,a)=>t+a.length,0); const e=new DataView(new ArrayBuffer(22)); e.setUint32(0,0x06054b50,true); e.setUint16(8,files.length,true); e.setUint16(10,files.length,true); e.setUint32(12,cs,true); e.setUint32(16,off,true);
+  const all=[...parts,...cen,new Uint8Array(e.buffer)]; const out=new Uint8Array(all.reduce((t,a)=>t+a.length,0)); let p=0; for(const a of all){ out.set(a,p); p+=a.length; } return out; }
+function addonFiles(){ const nm=(route.name||'Route').replace(/\s*\(.*?\)\s*/g,' ').trim(); const folder='RXPGuides_'+(nm.replace(/[^A-Za-z0-9]+/g,'')||'Route'); const v=routeVer(route);
+  const toc=['## Interface: 11509, 38002, 50504, 120007, 120105, 16001',`## Title: RestedXP route: ${nm}${v?' (r'+v+')':''}`,'## Notes: Custom RestedXP guide made with the Forever Route Planner','## Author: Forever Route Planner','## Dependencies: RXPGuides',...(v?[`## Version: r${v}`]:[]),'','guides.lua',''].join('\r\n');
+  const enc=new TextEncoder(); return {folder,files:[{name:folder+'/'+folder+'.toc',data:enc.encode(toc)},{name:folder+'/guides.lua',data:enc.encode($('#expText').value)}]}; }
+$('#expAddon').addEventListener('click',async()=>{ const m=$('#expMode [aria-pressed="true"]')?.dataset.m; if(m!=='rxp'){ setSeg('#expMode','rxp'); exportText(); }
+  if(isGrp()&&!/^-- Forever group:/m.test($('#expText').value)) await exportGroupGuide(); /* the addon holds the whole group's guide (one file, per-member steps) */
+  if(!/RegisterGuide/.test($('#expText').value)){ toast('Nothing to export yet'); return; }
+  const {folder,files}=addonFiles(); const zip=zipStore(files); const fn=folder+'.zip';
+  const dl=window.claude&&await window.claude.use('downloads').catch(()=>null);
+  try{ if(dl) await dl.save({filename:fn,data:zip}); else { const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([zip],{type:'application/zip'})); a.download=fn; document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); },1000); }
+    toast(`Saved ${fn}: unzip into Interface/AddOns (replace the old ${folder} folder), then /reload`,7000); }
   catch(e){ if(e?.code!=='declined') toast('Download failed: '+(e?.message||e?.code||'unknown')); } });
 $('#expFile').addEventListener('change',async e=>{ const f=e.target.files[0]; if(!f) return; $('#expText').value=await f.text(); e.target.value=''; $('#expImport').click(); });
 function importRouteFile(txt){ let o; try{ o=JSON.parse(txt); }catch(e){ return false; } const r=o&&(o.route||o); if(!r||!Array.isArray(r.steps)) return false;
