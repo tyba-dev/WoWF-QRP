@@ -1832,13 +1832,13 @@ function buildRXP(){
       let j=i; const run=[]; while(j<route.steps.length){ const t=route.steps[j]; const tg=t.src&&!t.src.auto?G(t.src.g):null; const tx=tg?.steps[t.src.i]; if(!tx||tg.id!==gg.id||tx.rx!==gsx.rx) break; run.push(t); done.add(j); j++; }
       if(seg.lastBlk&&seg.lastBlk.g===gg.id) for(let k=seg.lastBlk.rx+1;k<gsx.rx;k++){ const t=raw[k-1]; if(!t) continue; if(blkLines(t).slice(1).every(l=>/^\s*(#|--)/.test(l)) && condOK(blkHdrCond(t))) seg.items.push({rx:k,text:t,step:null}); } // label-only anchors
       const runActs=new Set(run.filter(x=>x.q).map(x=>actKey(x.t,x.q))); const rm=new Set(gg.removed||[]); const blkActs=new Set(gg.steps.map((x,k)=>[x,k]).filter(([x,k])=>x.rx===gsx.rx&&x.cond&&x.q&&rm.has(k)).map(([x])=>actKey(x.t,x.q)));
-      const out=[]; let cut=0; for(const ln of raw[gsx.rx-1].split('\n')){ const am=ln.match(/^\s*\.(accept|turnin|complete)\s+(\d+)/i); if(am){ const k=actKey(am[1].toLowerCase(),+am[2]); if(blkActs.has(k)&&!runActs.has(k)){ cut++; continue; } } out.push(ln); }
+      const out=[]; let cut=0; for(const ln of raw[gsx.rx-1].split('\n')){ const am=ln.match(/^\s*\.(accept|turnin|complete)\s+-?(\d+)/i); if(am){ const k=actKey(am[1].toLowerCase(),+am[2]); if(blkActs.has(k)&&!runActs.has(k)){ cut++; continue; } } out.push(ln); }
       for(let k=out.length-1;k>=0;k--){ const am=out[k].match(/^\s*\.accept\s+(\d+)/i); if(am&&ESCORT.has(+am[1])&&!out.some(l=>l.includes('Forever bug'))) out.splice(k+1,0,`    >>|cRXP_WARN_${ESC_NOTE}|r`); }
       if(run.some(x=>x.opt)&&!out.some(l=>/^\s*#optional\b/i.test(l))) out.splice(1,0,'    #optional');
       const pn=run.find(x=>x.pin&&pinnable(x)&&!(x.path&&x.path.length>=2)); if(pn){ const gl=gotoLine(pn.pin); const k=out.findIndex((l,k)=>k>0&&/^\s*\.goto\b/i.test(l)); if(k>0){ const m=out[k].match(/^\s*\.goto\s+[^,]+,\s*[\d.]+\s*,\s*[\d.]+(.*)$/i); out[k]=gl+(m?m[1]:''); } else { let h=1; while(h<out.length&&/^\s*#/.test(out[h])) h++; out.splice(h,0,gl); } }
       const ep=run.find(x=>x.path!==undefined); if(ep){ for(let k=out.length-1;k>0;k--) if(/^\s*(#loop\b|\.goto\b)/i.test(out[k])) out.splice(k,1); if(ep.path&&ep.path.length>=2){ let h=1; while(h<out.length&&/^\s*#/.test(out[h])) h++; out.splice(h,0,'    #loop',gotoLine(ep.path[0])+',0',...ep.path.map(w=>gotoLine(w)+',30,0')); } }
       const un=run.map(x=>x.unote).filter(Boolean); if(un.length){ let e=out.length; while(e>1&&!out[e-1].trim()) e--; out.splice(e,0,...un.flatMap(n=>n.split('\n')).filter(l=>l.trim()).map(l=>'    >>'+l.trim())); }
-      for(const m of out.join('\n').matchAll(/^\s*\.turnin\s+(\d+)/gm)) flushFin(+m[1]);
+      for(const m of out.join('\n').matchAll(/^\s*\.turnin\s+-?(\d+)/gm)) flushFin(+m[1]);
       const txt=out.join('\n'); seg.items.push({rx:gsx.rx,text:txt,step:i,cut}); seg.lastBlk={g:gg.id,rx:gsx.rx}; seg.prevKey=null; return;
     }
     const r=SIM.res[i]; if(GRP.mem.has(i)&&!r.inactive) return; if(ACR.mem.has(i)) return; /* picked up in its group's first step */ /* done together with its group's first step */ const p=r.pt; const q=s.q?(Q(s.q)||{n:s.qn||('Quest '+s.q)}):null; const lines=[];
@@ -2096,7 +2096,7 @@ function parseGuideBody(body,group){
     if(hdr){ const k=hdr[1].toLowerCase(); if(cur&&k==='optional') cur.optional=true; if(cur&&(k==='completewith'||k==='label'||k==='requires')){ const [v,c]=hdr[2].split('<<'); if(condOK(c||'')) cur[k]=v.trim(); } if(cur&&k==='loop'){ const c=hdr[2].split('<<')[1]; if(condOK(c||'')) cur.loop=true; } if(cur&&k==='sticky'){ const c=hdr[2].split('<<')[1]; if(condOK(c||'')) cur.sticky=true; } if(k==='xprate'){ const [xr,xc]=hdr[2].split('<<'); if(cur){ if(condOK(xc||'')) cur.xprate=xr.trim(); } else g.xprate=xr.trim(); } { const vw=verTag(k,hdr[2]); if(vw){ if(cur) cur.ver=cur.ver||vw; else g.ver=g.ver||vw; } }
       if(!cur){ if(k==='name') g.name=hdr[2].trim(); else if(k==='next'){ for(const alt of hdr[2].split(';')){ const [nx,nc]=alt.split('<<'); const nm=nx.replace(/^\s*#group\s+/i,'').split('\\').pop().trim(); if(nm&&condOK(nc||'')) g.nexts.push(nm); } g.next=g.nexts.join(';'); } else if(k==='group'&&!g.group){ for(const alt of hdr[2].split(';')){ const [gn,gc]=alt.split('<<'); if(condOK(gc||'')){ g.group=gn.trim(); break; } } } } continue; }
     if(/^step\b/i.test(line)){ cur={cond:(line.match(/<<\s*(.+)$/)||[])[1]||'',lines:[],raw:[raw.replace(/\s+$/,'')]}; g.blocks.push(cur); continue; }
-    if(!cur){ if(line.startsWith('<<')) g.cond=line.slice(2).trim(); continue; }
+    if(!cur){ if(line.startsWith('<<')) g.cond=line.slice(2).replace(/(^|\s)skip(?=\s|$)/gi,' ').trim(); /* "skip": RestedXP hides the guide from the start list (reached via #next): not a condition */ continue; }
     cur.lines.push(line);
   }
   return g;
@@ -2122,9 +2122,9 @@ function buildGuideSteps(g,convert){
         loc=convertLoc(z,px,py,false); if(loc) gl.push(loc); if(!firstLoc) firstLoc=loc; for(const p of pend) if(!p.loc) p.loc=loc; continue; }
       if((m=cmd.match(/^\.goto\s+([^,]+),\s*([\d.]+)\s*,\s*([\d.]+)/i))){ if(!ok) continue; const z=zoneFromName(m[1]); if(z==null){ unknownZones.add(m[1].trim()); continue; } loc=convertLoc(z,+m[2],+m[3],convert); if(loc) gl.push(loc); if(!firstLoc) firstLoc=loc; for(const p of pend) if(!p.loc) p.loc=loc; continue; }
       const mk=(o)=>{ o.cond=ok; o.rx=bi+1; o.loc=loc; o.label=txt; if(o.q&&!Q(o.q)&&txt){ const n=txt.replace(/\|c\w{8}|\|r|\|T[^|]*\|t/g,'').replace(/^(Accept|Turn in|Complete)\s+/i,'').trim(); if(n) o.qn=n; } pend.push(o); return o; };
-      if((m=cmd.match(/^\.accept\s+(\d+)/i))) steps.push(mk({t:'accept',q:+m[1]}));
-      else if((m=cmd.match(/^\.turnin\s+(\d+)/i))) steps.push(mk({t:'turnin',q:+m[1]}));
-      else if((m=cmd.match(/^\.complete\s+(\d+)/i))){ let st2=pend.find(p=>p.t==='complete'&&p.q===+m[1]); if(!seenC.has(+m[1])){ seenC.add(+m[1]); st2=mk({t:'complete',q:+m[1]}); steps.push(st2); } const cc=cmd.match(/@@(\d+)=(\d+)/); if(cc&&st2){ st2.counts=st2.counts||{}; st2.counts[cc[1]]=+cc[2]; } }
+      if((m=cmd.match(/^\.accept\s+-?(\d+)/i))) steps.push(mk({t:'accept',q:+m[1]}));
+      else if((m=cmd.match(/^\.turnin\s+-?(\d+)/i))) /* "-ID": RestedXP's optional form, same quest */ steps.push(mk({t:'turnin',q:+m[1]}));
+      else if((m=cmd.match(/^\.complete\s+-?(\d+)/i))){ let st2=pend.find(p=>p.t==='complete'&&p.q===+m[1]); if(!seenC.has(+m[1])){ seenC.add(+m[1]); st2=mk({t:'complete',q:+m[1]}); steps.push(st2); } const cc=cmd.match(/@@(\d+)=(\d+)/); if(cc&&st2){ st2.counts=st2.counts||{}; st2.counts[cc[1]]=+cc[2]; } }
       else if((m=cmd.match(/^\.xp\s+(\d+)(?:\.(\d+))?(?:([+-])(\d+))?\s*$/i))){ let L=+m[1], xp=0; if(m[2]) xp=Math.round(XP_TABLE[L]*(+('0.'+m[2]))); if(m[3]==='+') xp=+m[4]; if(m[3]==='-'){ L=L-1; xp=Math.max(0,XP_TABLE[L]-(+m[4])); } steps.push(mk({t:'grind',mode:'to',level:L,xp,note:txt||'Guide XP checkpoint'})); }
       else if((m=cmd.match(/^\.(fly|fp)\s+(.+)$/i))) steps.push(mk({t:'travel',kind:m[1].toLowerCase(),text:m[2].trim()}));
       else if((m=cmd.match(/^\.zone\s+(.+)$/i)) && /Take the (Zeppelin|boat|Deeprun Tram) to/i.test(txt) && typeof RIDES!=='undefined'){ const zid=zoneFromName(m[1]); const kind=txt.match(/Take the (Zeppelin|boat|Deeprun Tram)/i)[1].toLowerCase();
