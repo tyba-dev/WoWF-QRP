@@ -18,6 +18,9 @@ async function clEnsureGuides(r){ for(const g of r.guides||[]){ if(rawCache.has(
     const m=await clRetry(()=>CLOUD.db.doc('guides/'+g.id).get()); if(!m.exists) continue; try{ rawPut(g.id,JSON.parse(await clReadParts('guides/'+g.id,+m.data().n||0))); }catch(e){} } }
 async function clPushGuides(r){ const used=new Set((r.steps||[]).filter(s=>s.src&&!s.src.auto).map(s=>s.src.g)); for(const g of r.guides||[]){ if(!used.has(g.id)||CLOUD.guides.has(g.id)) continue;
     await rawLoad([g.id]); const raw=rawCache.get(g.id)||g.raw; if(!raw) continue; const m=await CLOUD.db.doc('guides/'+g.id).get(); if(!m.exists){ const parts=clSplit(JSON.stringify(raw)); for(let k=0;k<parts.length;k++) await CLOUD.db.doc('guides/'+g.id+'/parts/'+k).set({s:parts[k]}); await CLOUD.db.doc('guides/'+g.id).set({n:parts.length,name:g.name||''}); } CLOUD.guides.add(g.id); } }
+/* a real edit changes the route itself, not just which member you view or where your cursor is: only then is a local copy worth keeping */
+const clCore=js=>{ try{ const r=typeof js==='string'?JSON.parse(js):JSON.parse(clRouteJSON(js)); return JSON.stringify([r.steps,r.char,r.members,r.sections,r.optOff]); }catch(e){ return null; } };
+function clRealEdit(r){ const sent=CLOUD.sent[r.id]; if(sent==null||sent==='deleted') return true; return clCore(sent)!==clCore(r); }
 /* a route only goes up when you changed it here (an edit, not just opening or viewing it) */
 function clMarkEdit(id){ if(id) CLOUD.ed[id]=(CLOUD.ed[id]||0)+1; }
 async function clPushRoute(r){ const js=clRouteJSON(r); if(CLOUD.sent[r.id]===js) return;
@@ -26,6 +29,7 @@ async function clPushRoute(r){ const js=clRouteJSON(r); if(CLOUD.sent[r.id]===js
   if(CLOUD.seen[r.id]!=null&&CLOUD.revs[r.id]==null) return;
   { const m=await clRetry(()=>CLOUD.db.doc('routes/'+r.id).get()); if(m.exists){ const md=m.data(); CLOUD.seen[r.id]=Math.max(CLOUD.seen[r.id]||0,md.rev||0);
       if((md.rev||0)>(CLOUD.revs[r.id]||0)){ /* a newer shared copy exists (e.g. Claude's): keep your edits as a separate route, then load the newer one */
+        if(!clRealEdit(r)){ CLOUD.ed[r.id]=0; if(await clApply(md)){ store.cur=route.id; saveNow(); refresh(); } return; }
         const copy=JSON.parse(clRouteJSON(r)); copy.id=uid(); copy.name=(r.name||'Route')+' (your edits '+new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})+')'; copy.member=false; delete copy.group; store.routes.push(copy);
         CLOUD.ed[r.id]=0; if(await clApply(md)){ store.cur=route.id; saveNow(); refresh(); toast('A newer shared copy of '+(r.name||'a route')+' was loaded; your edits are kept as “'+copy.name+'”',5000); } return; } } }
   await clPushGuides(r); const parts=clSplit(js);
@@ -60,7 +64,7 @@ async function cloudInit(){ let db=null; try{ db=typeof claude!=='undefined'&&cl
 async function clRouteFiles(){ let idx=null; try{ const r=await fetch('routes/index.json',{cache:'no-store'}); if(!r.ok) return; idx=await r.json(); }catch(e){ return; } let changed=false;
   for(const e of (idx&&idx.routes)||[]){ const known=Math.max(CLOUD.revs[e.id]||0,CLOUD.seen[e.id]||0); if(!(e.rev>known)) continue;
     try{ const rr=await fetch(e.file,{cache:'no-store'}); if(!rr.ok) continue; const r=await rr.json(); if(!r||r.id!==e.id||!Array.isArray(r.steps)) continue;
-      const old=store.routes.find(x=>x.id===e.id); if(old&&CLOUD.ed[e.id]>0){ const copy=JSON.parse(clRouteJSON(old)); copy.id=uid(); copy.name=(old.name||'Route')+' (your edits '+new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})+')'; delete copy.group; store.routes.push(copy); }
+      const old=store.routes.find(x=>x.id===e.id); if(old&&CLOUD.ed[e.id]>0&&clRealEdit(old)){ const copy=JSON.parse(clRouteJSON(old)); copy.id=uid(); copy.name=(old.name||'Route')+' (your edits '+new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})+')'; delete copy.group; store.routes.push(copy); }
       migrateRoute(r); await clEnsureGuides(r); const i=store.routes.findIndex(x=>x.id===e.id); if(i>=0) store.routes[i]=r; else store.routes.push(r); if(route?.id===e.id){ route=r; cursor=Math.min(cursor,r.steps.length-1); }
       const js=clRouteJSON(r); const parts=clSplit(js); for(let k=0;k<parts.length;k++){ const kk=k; await clRetry(()=>CLOUD.db.doc('routes/'+r.id+'/parts/'+kk).set({s:parts[kk]})); }
       await clRetry(()=>CLOUD.db.doc('routes/'+r.id).set({id:r.id,name:r.name||'',rev:e.rev,n:parts.length,updatedAt:Date.now(),by:'claude'}));
