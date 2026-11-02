@@ -287,7 +287,8 @@ function migrateRoute(r){ ensureIds(r); memFix(r); if(r.char&&!r.char.dpsv2){ de
   if((r.notesMig||0)<2){ r.notesMig=2; for(const g of r.guides){ g.includeNotes=true; g.stopAtBlocked=false; } }
   // RestedXP #optional used to be imported as the user's own opt flag
   for(const g of r.guides) for(const gs of g.steps||[]) if(gs.opt){ gs.gopt=true; delete gs.opt; }
-  for(const st of r.steps||[]){ if(!st.src||st.src.auto||!st.opt) continue; const g=r.guides.find(x=>x.id===st.src.g); if(g&&g.steps&&g.steps[st.src.i]?.gopt){ st.gopt=true; delete st.opt; } }
+  /* old routes used opt for RestedXP's own #optional: move it to gopt once. After that, opt is the route maker's own "optional, not counted" mark and stays even on steps RestedXP also marks #optional */
+  if(!r.optMig){ for(const st of r.steps||[]){ if(!st.src||st.src.auto||!st.opt) continue; const g=r.guides.find(x=>x.id===st.src.g); if(g&&g.steps&&g.steps[st.src.i]?.gopt){ st.gopt=true; delete st.opt; } } r.optMig=1; }
   return r; }
 /* flight paths a new character already knows on Forever: every race starts with its capital */
 const RACE_FPS={Human:['Stormwind'],Dwarf:['Ironforge'],Gnome:['Ironforge'],'Night Elf':["Rut'theran Village"],Orc:['Orgrimmar'],Troll:['Orgrimmar'],Tauren:['Thunder Bluff'],Undead:['Undercity']};
@@ -566,7 +567,7 @@ function estimateTimes(res){ let t=0; const c=route.char; runSpeed._s=spdSched(r
     if(!r.stk){ if(lt==='fly'){ const d0=dist(r.from,r.dep); dt+=(d0?walkSecs(r.from,r.dep,run,d0):0)+(r.flight?.secs??dist(r.dep,r.pt)/32)+10; } else if(lt==='ride'){ const d0=dist(r.from,r.dep); dt+=(d0?walkSecs(r.from,r.dep,run,d0):0)+rideSecs(r.ride,s); } else if(lt==='hs'){ dt+=25; if(lastHs!=null&&t-lastHs<hsCd){ r.warn=r.warn||[]; const left=Math.ceil((hsCd-(t-lastHs))/60); r.warn.push(`Hearthstone still on cooldown here (about ${left}m left): fly or travel instead`); } lastHs=t; } else if(lt==='death'){ dt+=dist(r.from,r.dep)*1.25/run+40; } else { const d=dist(r.from,r.pt); dt+=d?walkSecs(r.from,r.pt,run,d):0; }
       if(r.path&&r.path.length>1) { let d=0; for(let k=0;k<r.path.length;k++) d+=dist(r.path[k],r.path[(k+1)%r.path.length]); const lf=+c.loopf>0?Math.min(1,+c.loopf):1; dt+=d*lf/run; } /* loopf: share of a guide's #loop circuit you actually walk before the objectives are done (calibrated from testing) */ }
     if(['accept','turnin','train','buy','prof'].includes(s.t)) dt+=5;
-    let kills=0, ml=L; if(r.kill?.kills){ kills+=r.kill.kills; ml=Q(s.q)?(questMobLv(s.q,r.pt?.z,L)??Math.min(Q(s.q).l,L+2)):L; } dt+=kills*killSecs(L,ml,r.party);
+    let kills=0, ml=L; if(r.kill?.kills){ kills+=r.kill.kills; ml=Q(s.q)?(questMobLv(s.q,r.pt?.z,L)??Math.min(Q(s.q).l,L+2)):L; } dt+=kills*killSecs(L,ml,r.party); if(r.kill?.objn&&(r.party||1)>1) dt+=r.kill.objn*((r.party||1)-1)*OBJ_SECS; /* the other players' own sets of gathered quest items (one player's set is in the walk) */
     /* kills on the way are made while moving: free XP, no time */
     if(s.t==='grind'&&s.mode==='run') dt+=(+s.mins||0)*60;
     else if(s.t==='grind'&&r.gained>0&&+s.xph>0) dt+=r.gained/(+s.xph)*3600; /* a tested spot with a known XP/hour */
@@ -663,16 +664,18 @@ function perKillXP(ids,st,cfg){
     const d=Math.abs(ni.l-st.level); if(!best||d<best.d) best={ni,d,id}; }
   if(!best) return {xp:0,none:true,money:0}; const ni=best.ni; return {xp:mobXP(st.level,ni.l,ni.elite,st.party||1,ni.dg?cfg.dg:0),dg:ni.dg,money:killMoney(best.id,ni.l)/(st.party||1)};
 }
+const OBJ_SECS=15; /* seconds to find and loot one more quest object */
 function killEstimate(qid,counts,st,skip){
   const cfg=killCfg(); const q=Q(qid); if(!cfg.on||!q||st._inrun) return {xp:0,kills:0,guessed:false}; /* done during a dungeon run: its kills are in the run */
-  const o=q.o||{}; let idx=1, xp=0, kills=0, guessed=false, dg=false, money=0;
+  const o=q.o||{}; let idx=1, xp=0, kills=0, guessed=false, dg=false, money=0, objn=0;
   const cnt=(uniq)=>{ const c=counts&&counts[idx]; if(c) return +c; if(uniq) return 1; guessed=true; return cfg.def; };
   const use=()=>!(skip&&skip(idx));
   for(const [id] of o.c||[]){ if(!use()){ idx++; continue; } const n=cnt(isUniqueMob(id)); const k=perKillXP([id],st,cfg); xp+=k.xp*n; money+=(k.money||0)*n; kills+=n; dg=dg||k.dg; idx++; }
   for(const _ of o.o||[]) idx++;
-  for(const [id] of o.i||[]){ const src=DB.i[id]?.d||[]; if(src.length&&!genericDrop(src)&&use()){ const boss=src.length<=2&&src.every(n=>isUniqueMob(n)); const c=cnt(); const n=boss?1:Math.ceil((c>1?c*Math.max(1,st.party||1):c)/cfg.rate); /* a single quest item drops for everyone; several are looted one each, so a group needs one set per player */ const k=perKillXP(src,st,cfg); xp+=k.xp*n; money+=(k.money||0)*n; kills+=n; dg=dg||k.dg; } idx++; }
+  for(const [id] of o.i||[]){ const src=DB.i[id]?.d||[]; if(src.length&&!genericDrop(src)&&use()){ const boss=src.length<=2&&src.every(n=>isUniqueMob(n)); const c=cnt(); const n=boss?1:Math.ceil(c*Math.max(1,st.party||1)/cfg.rate); /* quest items are not shared: every player needs their own set, so a group kills for party x count (a unique boss drops one for each player) */ const k=perKillXP(src,st,cfg); xp+=k.xp*n; money+=(k.money||0)*n; kills+=n; dg=dg||k.dg; }
+    else if(!src.length&&(DB.i[id]?.od||[]).length&&use()) objn+=cnt(); /* gathered from objects: each player loots their own */ idx++; }
   for(const [ids,base] of o.k||[]){ if(!use()){ idx++; continue; } const n=cnt(); const k=perKillXP(base?[base,...ids]:ids,st,cfg); xp+=k.xp*n; money+=(k.money||0)*n; kills+=n; dg=dg||k.dg; idx++; }
-  return {xp:Math.round(xp),kills,guessed,dg,money};
+  return {xp:Math.round(xp),kills,guessed,dg,money,objn};
 }
 
 /* ---------- map ---------- */
