@@ -1830,6 +1830,58 @@ function blkAutoSkip(t){ if(!condOK(blkHdrCond(t))) return 'class'; const ls=blk
   const xr=ls.find(l=>/^#xprate\b/i.test(l)); if(xr&&!xrOK(xr.replace(/^#xprate\s*/i,'').split('<<')[0])) return 'xprate';
   const dg=ls.filter(l=>/^\.dungeon\b/i.test(l)); if(dg.length&&!dungeonOK({dg:dg.filter(l=>!/!/.test(l)).map(l=>dgTag(l.split(/\s+/)[1])),dgs:dg.filter(l=>/!/.test(l)).map(l=>dgTag(l.replace(/.*!/,'').trim()))}).ok) return 'dungeon';
   return ''; }
+/* ---------- RestedXP text for steps the route has but didn't take from a guide, and the guides' note-only steps ---------- */
+/* library of guide texts to look in: the guides this route uses (plus window.RAW_LIB, a list of {name,group,blocks} when the build provides more guides) */
+let RXL={key:null,idx:null};
+function rawLibIndex(){ const lib=[]; const seen=new Set(); for(const g of route.guides||[]){ const b=rawCache.get(g.id); if(b&&!seen.has(g.name+'|'+g.group)){ seen.add(g.name+'|'+g.group); lib.push({name:g.name,group:g.group||'',blocks:b}); } }
+  for(const p of (window.RAW_LIB||[])) if(!seen.has(p.name+'|'+(p.group||''))){ seen.add(p.name+'|'+(p.group||'')); lib.push({name:p.name,group:p.group||'',blocks:p.blocks}); }
+  const key=lib.map(p=>p.name+':'+p.blocks.length).join('|'); if(RXL.key===key) return RXL.idx;
+  const idx=new Map(); lib.forEach((p,pi)=>p.blocks.forEach((t,k)=>{ if(!t) return; for(const m of t.matchAll(/^\s*\.(accept|turnin|complete)\s+(\d+)/gim)){ const a=m[1].toLowerCase()+':'+m[2]; if(!idx.has(a)) idx.set(a,[]); const L=idx.get(a); if(!L.some(x=>x.pi===pi&&x.k===k)) L.push({pi,k,g:p.name,rxp:/RestedXP/i.test(p.group),t}); } }));
+  const nrm=t=>t.split('\n').map(l=>l.replace(/\s--.*$/,'').trim()).filter(Boolean).join('\n'); const rx=new Set(); lib.forEach(p=>{ if(/RestedXP/i.test(p.group)) p.blocks.forEach(t=>{ if(t) rx.add(nrm(t)); }); }); idx.isRXP=t=>rx.has(nrm(t));
+  RXL={key,idx}; return idx; }
+const blkActsOf=t=>[...t.matchAll(/^\s*\.(accept|turnin|complete)\s+(\d+)/gim)].map(m=>m[1].toLowerCase()+':'+m[2]);
+/* pick a guide step for each quest step that has no guide text: the block that best fits the quest steps around it */
+function fallbackBlocks(skip){ const idx=rawLibIndex(); const FB=new Map(); const S=route.steps; let lastG=null;
+  /* a step taken from a guide that isn't a RestedXP guide (your own exported guides), whose text isn't RestedXP's own and isn't a group pick-up, also gets RestedXP's wording */
+  const own=s=>{ if(!(s.src&&!s.src.auto)) return true; const g=G(s.src.g); if(!g||/RestedXP/i.test(g.group||'')) return false; const b=rawCache.get(g.id)?.[(g.steps[s.src.i]?.rx||0)-1]; return !b||(!idx.isRXP(b)&&!/split up: all are targeted|^\s*\.target\s+\+/m.test(b)); };
+  const ok=i=>{ const s=S[i]; return s&&own(s)&&s.q&&(s.t==='accept'||s.t==='turnin'||s.t==='complete')&&!s.shared&&!(s.cl&&s.cl.length)&&!skip(i)&&!SIM.res[i]?.inactive; };
+  for(let i=0;i<S.length;i++){ if(!ok(i)) continue; const s=S[i]; const C=idx.get(s.t+':'+s.q); if(!C) continue;
+    const near=new Set(); for(let j=Math.max(0,i-4);j<=Math.min(S.length-1,i+4);j++) if(ok(j)) near.add(S[j].t+':'+S[j].q);
+    const prev=FB.get(i-1); let best=null, bs=-1e9;
+    for(const c of C){ const acts=blkActsOf(c.t); const extra=acts.filter(a=>!near.has(a)).length; const hc=condOK(blkHdrCond(c.t)); let sc=(c.rxp?20:0)-extra*3+(hc?4:0)+(c.g===lastG?2:0)+(prev&&prev.pi===c.pi&&prev.k===c.k?10:0); if(sc>bs){ bs=sc; best=c; } }
+    FB.set(i,best); lastG=best.g; }
+  return FB; }
+/* the guide block cut down to what this run of steps does */
+function fallbackText(c,run){ const acts=new Set(run.map(s=>s.t+':'+s.q)); const qs=new Set(run.map(s=>s.q)); const L=c.t.split('\n'); const out=[];
+  const all=blkActsOf(c.t); const keptC=all.some(a=>a.startsWith('complete:')&&acts.has(a)), hadC=all.some(a=>a.startsWith('complete:')); const dropped=all.some(a=>!acts.has(a));
+  out.push(condOK(blkHdrCond(c.t))?L[0].replace(/\s+$/,''):'step');
+  if(run.some(s=>s.opt||s.gopt)) out.push('    #optional');
+  for(const ln of L.slice(1)){ const x=ln.replace(/\s--.*$/,'').trim();
+    if(/^#/.test(x)&&!/^#loop\b/i.test(x)) continue;
+    if(/^\.(xp\s*[<>]|maxlevel|itemcount|isQuestTurnedIn|isOnQuest|isQuestComplete|isQuestAvailable|money|level)\b/i.test(x)) continue; /* the guide's own show/skip conditions: the route decides when this step happens */
+    const am=x.match(/^\.(accept|turnin|complete)\s+(\d+)/i); if(am){ if(acts.has(am[1].toLowerCase()+':'+am[2])) out.push(ln); continue; }
+    const cm=x.match(/^\.collect\s+\d+\s*,\s*\d+\s*,\s*(\d+)/i); if(cm){ if(qs.has(+cm[1])) out.push(ln); continue; } if(/^\.collect\b/i.test(x)&&dropped) continue;
+    if(hadC&&!keptC&&(/^\.(mob|unitscan|use|collect)\b/i.test(x)||(/^(>>|\+)/.test(x)&&/cRXP_ENEMY_|cRXP_LOOT_|\bKill\b|\bLoot\b/.test(x)))) continue;
+    out.push(ln); }
+  return out.join('\n'); }
+/* note-only steps of a guide (no quest, grind, flight or other action of their own) next to the guide steps this route uses: placed before the step they lead to, or after the one they follow */
+const NOTE_REAL=/^\s*(\.(accept|turnin|complete|collect|xp\b|fly|fp|hs|home|train|trainer|vendor|deathskip|zone\b|abandon|skill|bankdeposit|bankwithdraw|money|reputation|craft|buy|stable|tame|cooldown|blastedLands)|#ah\b|>>\s*Kill\b)|\bgrind\b/im; /* a step that does something (or an auction-house or timed-grind step) is not a note */
+function guideNotes(){ const used=new Map(); const qs=new Set(route.steps.map(s=>s.q).filter(Boolean));
+  const firstUse=new Map(), lastUse=new Map();
+  route.steps.forEach((s,i)=>{ const gg=s.src&&!s.src.auto?G(s.src.g):null; const gx=gg?.steps[s.src.i]; if(gg&&gx?.rx&&!SIM.res[i]?.inactive){ if(!used.has(gg.id)) used.set(gg.id,new Set()); used.get(gg.id).add(gx.rx); const u=gg.id+'#'+gx.rx; if(!firstUse.has(u)) firstUse.set(u,i); lastUse.set(u,i); } });
+  const before=new Map(), after=new Map(); const put=(M,k,v)=>{ if(!M.has(k)) M.set(k,[]); M.get(k).push(v); };
+  for(const [gid,U] of used){ const raw=rawCache.get(gid); if(!raw||!/RestedXP/i.test(G(gid)?.group||'')) continue; const vis=k=>{ const t=raw[k-1]; return t&&condOK(blkHdrCond(t))&&!blkAutoSkip(t); }; const real=k=>vis(k)&&NOTE_REAL.test(raw[k-1].split('\n').slice(1).map(l=>l.replace(/\s--.*$/,'')).join('\n'));
+    const labelAt=new Map(); raw.forEach((t,ix)=>{ if(t&&vis(ix+1)) for(const l of blkLabels(t)) labelAt.set(l,ix+1); });
+    const xs=[...U].sort((a,b)=>a-b);
+    for(let k=xs[0];k<=xs[xs.length-1];k++){ if(U.has(k)||!vis(k)||real(k)) continue; const t=raw[k-1]; const body=blkLines(t).slice(1);
+      if(body.every(l=>/^\s*(#|--)/.test(l)||!l.trim())) continue; /* label-only anchors are handled separately */
+      const refs=[...t.matchAll(/^\s*\.(?:isOnQuest|isQuestComplete|isQuestTurnedIn|isQuestAvailable)\s+([\d,\s]+)/gim)].flatMap(m=>m[1].split(',').map(x=>+x).filter(Boolean)); if(refs.length&&!refs.some(q=>qs.has(q))) continue;
+      let pv=k-1; while(pv>=1&&!real(pv)) pv--; let nx=k+1; while(nx<=raw.length&&!real(nx)) nx++;
+      const cw=blkRefs(t).find(r=>r.k==='completewith'); const key=gid+'#'+k;
+      /* the step it leads to: the route step using that guide step, or else the route step doing that guide step's quest (after the step it follows) */
+      let at=U.has(nx)?firstUse.get(gid+'#'+nx):-1; if(at<0&&nx<=raw.length){ const A=new Set(blkActsOf(raw[nx-1])); const from=U.has(pv)?lastUse.get(gid+'#'+pv):-1; if(A.size) at=route.steps.findIndex((s,i)=>i>from&&A.has(s.t+':'+s.q)&&!SIM.res[i]?.inactive); if(at>=0&&from<0&&!(cw&&cw.v==='next')) at=-1; }
+      if(at>=0) put(before,at,{key,t}); else if(!(cw&&cw.v==='next')&&U.has(pv)) put(after,gid+'#'+pv,{key,t}); } }
+  return {before,after}; }
 let LAST_SEGS=null;
 function buildRXP(){
   const g=route.guide; const fac=charInfo(route).fac==='H'?'Horde':'Alliance';
@@ -1839,6 +1891,9 @@ function buildRXP(){
   const pendFin=[]; const flushFin=q=>{ if(!seg) return; for(let k=0;k<pendFin.length;k++){ const f=pendFin[k]; if(q!=null&&f.q!==q) continue; seg.items.push({rx:null,step:null,text:f.text,fin:true}); seg.prevKey=null; pendFin.splice(k--,1); } };
   let CK=null; const newSeg=gid=>{ flushFin(null); seg={gid,cut:CK,items:[],lastBlk:null,prevKey:null,text(){ return this.items.map(x=>x.text).filter(Boolean); }}; segs.push(seg); };
   const cutOf=s=>s.sec&&route.sections?.[s.sec]?.cut?s.sec:null; const ACR=accRuns();
+  const GN=guideNotes(), notesDone=new Set(); const pushNotes=(M,key)=>{ for(const n of M.get(key)||[]){ if(notesDone.has(n.key)) continue; notesDone.add(n.key); if(seg.items.slice(-4).some(x=>x.text===n.t)) continue; let p=seg.items.length; if(typeof M.keys().next().value==='number') while(p>0&&/^\s*#completewith\s+next\b/m.test(seg.items[p-1].text||'')&&!seg.items[p-1].note) p--; /* keep a guide's "#completewith next" step next to the step it belongs to */ seg.items.splice(p,0,{rx:null,text:n.t,step:null,note:true}); } };
+  const FB=fallbackBlocks(i=>GRP.lead.has(i)||GRP.mem.has(i)||!!route.steps[i].stk||(route.steps[i].path&&route.steps[i].path.length>=2));
+  for(const [l,run] of [...ACR.lead]) if([l,...run].some(k=>FB.has(k))){ ACR.lead.delete(l); run.forEach(k=>ACR.mem.delete(k)); }
   const blockSteps=(g,rx)=>g.steps.filter(x=>x.rx===rx);
   const actKey=(t,q)=>t+':'+q;
   route.steps.forEach((s,i)=>{
@@ -1846,9 +1901,9 @@ function buildRXP(){
     CK=cutOf(s); if(seg&&seg.cut!==CK) newSeg(gg?gg.id:null); /* a cut section (or the steps after one) starts a new guide */
     if(gg){ if(!seg) newSeg(gg.id); else if(seg.gid!==gg.id){ if(seg.gid==null) seg.gid=gg.id; else newSeg(gg.id); } } else if(!seg) newSeg(null);
     const L=[];
-    if(raw&&gsx&&gsx.rx&&raw[gsx.rx-1]!=null){
+    if(raw&&gsx&&gsx.rx&&raw[gsx.rx-1]!=null&&!FB.has(i)){
       if(done.has(i)) return;
-      let j=i; const run=[]; while(j<route.steps.length){ const t=route.steps[j]; const tg=t.src&&!t.src.auto?G(t.src.g):null; const tx=tg?.steps[t.src.i]; if(!tx||tg.id!==gg.id||tx.rx!==gsx.rx) break; run.push(t); done.add(j); j++; }
+      let j=i; const run=[]; while(j<route.steps.length){ const t=route.steps[j]; const tg=t.src&&!t.src.auto?G(t.src.g):null; const tx=tg?.steps[t.src.i]; if(!tx||tg.id!==gg.id||tx.rx!==gsx.rx||FB.has(j)) break; run.push(t); done.add(j); j++; }
       if(seg.lastBlk&&seg.lastBlk.g===gg.id) for(let k=seg.lastBlk.rx+1;k<gsx.rx;k++){ const t=raw[k-1]; if(!t) continue; if(blkLines(t).slice(1).every(l=>/^\s*(#|--)/.test(l)) && condOK(blkHdrCond(t))) seg.items.push({rx:k,text:t,step:null}); } // label-only anchors
       const runActs=new Set(run.filter(x=>x.q).map(x=>actKey(x.t,x.q))); const rm=new Set(gg.removed||[]); const blkActs=new Set(gg.steps.map((x,k)=>[x,k]).filter(([x,k])=>x.rx===gsx.rx&&x.cond&&x.q&&rm.has(k)).map(([x])=>actKey(x.t,x.q)));
       const out=[]; let cut=0; for(const ln of raw[gsx.rx-1].split('\n')){ const am=ln.match(/^\s*\.(accept|turnin|complete)\s+-?(\d+)/i); if(am){ const k=actKey(am[1].toLowerCase(),+am[2]); if(blkActs.has(k)&&!runActs.has(k)){ cut++; continue; } } out.push(ln); }
@@ -1859,8 +1914,14 @@ function buildRXP(){
       const ep=run.find(x=>x.path!==undefined); if(ep){ for(let k=out.length-1;k>0;k--) if(/^\s*(#loop\b|\.goto\b)/i.test(out[k])) out.splice(k,1); if(ep.path&&ep.path.length>=2){ let h=1; while(h<out.length&&/^\s*#/.test(out[h])) h++; out.splice(h,0,'    #loop',gotoLine(ep.path[0])+',0',...ep.path.map(w=>gotoLine(w)+',30,0')); } }
       const un=run.map(x=>x.unote).filter(Boolean); if(un.length){ let e=out.length; while(e>1&&!out[e-1].trim()) e--; out.splice(e,0,...un.flatMap(n=>n.split('\n')).filter(l=>l.trim()).map(l=>'    >>'+l.trim())); }
       for(const m of out.join('\n').matchAll(/^\s*\.turnin\s+-?(\d+)/gm)) flushFin(+m[1]);
-      const txt=out.join('\n'); seg.items.push({rx:gsx.rx,text:txt,step:i,cut}); seg.lastBlk={g:gg.id,rx:gsx.rx}; seg.prevKey=null; return;
+      const txt=out.join('\n'); for(let k=i;k<j;k++) pushNotes(GN.before,k); seg.items.push({rx:gsx.rx,text:txt,step:i,cut}); pushNotes(GN.after,gg.id+'#'+gsx.rx); seg.lastBlk={g:gg.id,rx:gsx.rx}; seg.prevKey=null; return;
     }
+    if(!done.has(i)) pushNotes(GN.before,i);
+    if(FB.has(i)){ if(done.has(i)) return; const c=FB.get(i); const run=[]; let j=i; while(j<route.steps.length&&FB.get(j)===c){ run.push(route.steps[j]); done.add(j); j++; } for(let k=i+1;k<j;k++) pushNotes(GN.before,k); /* a quest step the route has without guide text: written the way the guide that has it writes it */
+      let txt=fallbackText(c,run); const un=run.map(x=>x.unote).filter(Boolean); if(un.length) txt+='\n'+un.flatMap(n=>n.split('\n')).filter(l=>l.trim()).map(l=>'    >>'+l.trim()).join('\n');
+      if(run.some(x=>x.t==='accept'&&ESCORT.has(x.q))&&!txt.includes('Forever bug')) txt+=`\n    >>|cRXP_WARN_${ESC_NOTE}|r`;
+      for(const x of run) if(x.t==='turnin') flushFin(x.q);
+      seg.items.push({rx:null,step:i,text:txt,fb:c.g}); seg.prevKey=null; return; }
     const r=SIM.res[i]; if(GRP.mem.has(i)&&!r.inactive) return; if(ACR.mem.has(i)) return; /* picked up in its group's first step */ /* done together with its group's first step */ const p=r.pt; const q=s.q?(Q(s.q)||{n:s.qn||('Quest '+s.q)}):null; const lines=[];
     const gs=s.src?G(s.src.g)?.steps[s.src.i]:null; const dgl=gs?[...(gs.dg||[]).map(t=>'    .dungeon '+t),...(gs.dgs||[]).map(t=>'    .dungeon !'+t)]:[]; const xrl=gs&&gs.xr?'    #xprate '+gs.xr:null; const optl=(s.opt||s.gopt)?'    #optional':null;
     if(s.t==='turnin'&&pendFin.some(f=>f.q===s.q)){ flushFin(s.q); }
@@ -1946,7 +2007,7 @@ function buildRXP(){
   EXPORT_WARN=warns;
   const cutPart=k=>{ const c=segs[k].cut; const all=segs.map((x,j)=>j).filter(j=>segs[j].cut===c); const sib=all.filter(j=>Math.abs(j-k)<=all.length); return all.length>1?` (${all.indexOf(k)+1}/${all.length})`:''; };
   const VT=routeIsGroupPart()?'':routeVerTag(route); const nm=k=>(segs.length===1&&!segs[0].cut?name:`${name} ${k+1}${segs[k].cut?' - '+route.sections[segs[k].cut].name+cutPart(k):segs[k].gid?' - '+G(segs[k].gid).name:''}`)+VT;
-  LAST_SEGS=segs.map((sg,k)=>{ const blocks=[], meta=[]; for(const x of sg.items){ if(!x.text) continue; const r=x.step!=null?SIM.res[x.step]:null; const sid=x.step!=null?route.steps[x.step]?.id:null; const mt0=r&&!r.inactive?{lv:r.before?.level,z:META.zones[(r.pt||r.after||{}).z]?.n||null}:{}; x.text.split(/\n(?=step\b)/).forEach((t,j)=>{ blocks.push(t); meta.push({...mt0,sid:sid!=null?sid+'#'+j:null}); }); } return {key:nm(k).slice(name.length).replace(/^ \d+( - )?/,''),blocks,meta}; });
+  LAST_SEGS=segs.map((sg,k)=>{ const blocks=[], meta=[]; for(const x of sg.items){ if(!x.text) continue; const r=x.step!=null?SIM.res[x.step]:null; const sid=x.step!=null?route.steps[x.step]?.id:null; const mt0=r&&!r.inactive?{lv:r.before?.level,z:META.zones[(r.pt||r.after||{}).z]?.n||null}:{}; x.text.split(/\n(?=step\b)/).forEach((t,j)=>{ blocks.push(t); meta.push({...mt0,sid:sid!=null?sid+'#'+j:null,src:x.note?'note':x.fb?'fb:'+x.fb:x.rx!=null?'raw':x.fin?'fin':'gen'}); }); } return {key:nm(k).slice(name.length).replace(/^ \d+( - )?/,''),blocks,meta}; });
   const outL=[]; if(segs.some(sg=>sg.items.some(x=>x.rx!=null))) outL.push('-- Contains text from RestedXP guides (https://github.com/RestedXP/RXPGuides), licensed CC BY-NC-SA 4.0.','-- If you share this file: credit RestedXP, keep it non-commercial and share it under the same licence.','-- Made with the Forever Route Planner (GPL-3.0). Not affiliated with RestedXP, Blizzard or WoW: Forever.','');
   segs.forEach((sg,k)=>{ const H=[`RXPGuides.RegisterGuide(${JSON.stringify(group)},[[`]; const ex=extra?extra.split(/\s*;\s*|\n/).filter(Boolean):[]; if(!ex.some(l=>/^#forever\b/i.test(l))) H.push('#forever'); H.push(...ex); H.push(`<< ${fac}`); H.push(`#name ${nm(k)}`); const nx=k<segs.length-1?nm(k+1):next; if(nx) H.push(`#next ${nx}`);
     outL.push(...H, ...sg.text(), ']])'); if(k<segs.length-1) outL.push(''); });
