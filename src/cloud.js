@@ -53,9 +53,14 @@ async function clApply(meta){ const id=meta.id; if(id&&meta.n) CLOUD.n[id]=Math.
   const i=store.routes.findIndex(x=>x.id===id); if(i>=0) store.routes[i]=r; else store.routes.push(r); if(route?.id===id){ route=r; cursor=Math.min(cursor,r.steps.length-1); } return true; }
 async function clRetryFailed(){ const ids=Object.keys(CLOUD.why); if(!ids.length) return; let ch=false; for(const id of ids){ try{ const d=await clRetry(()=>CLOUD.db.doc('routes/'+id).get()); if(d.exists&&await clApply(d.data())) ch=true; }catch(e){} }
   if(ch){ store.cur=route.id; saveNow(); refresh(); toast('Loaded the shared routes',2500); } clPushAll(); if(Object.keys(CLOUD.why).length) setTimeout(clRetryFailed,30000); }
+/* the automatic "(your edits HH:MM)" copies made before the save fix were almost all view changes, not edits: remove them once (from this browser and, through store.deleted, from the online copy with their parts) */
+function clPurgeEditCopies(){ if(store.editsPurged>=1) return; const junk=store.routes.filter(r=>/\(your edits \d{1,2}:\d{2}\)/.test(r.name||''));
+  if(junk.length&&junk.length<store.routes.length){ const ids=new Set(junk.map(r=>r.id)); for(const id of ids) if(typeof kvDel==='function') kvDel('route:'+id); store.routes=store.routes.filter(r=>!ids.has(r.id)); store.deleted=[...new Set([...(store.deleted||[]),...ids])]; if(!route||ids.has(route.id)){ route=store.routes.find(r=>r.id==='kftccfv')||store.routes[0]; cursor=route.steps.length-1; store.cur=route.id; } toast('Removed '+junk.length+' automatic “your edits” copies',4000); }
+  store.editsPurged=1; saveNow(); refresh(); }
 async function cloudInit(){ let db=null; try{ db=typeof claude!=='undefined'&&claude.use?await claude.use('db'):null; }catch(e){ db=null; } if(!db) return; CLOUD.db=db; CLOUD.on=true; clBadge('☁ Connecting…');
   try{ const snap=await clRetry(()=>db.collection('routes').get()); let changed=false; for(const d of snap.docs) if(await clApply(d.data())) changed=true;
     if(changed){ store.cur=route.id; saveNow(); refresh(); toast('Loaded the shared routes',2500); }
+    clPurgeEditCopies(); /* old automatic "(your edits)" copies: removed once, here and online */
     await clRouteFiles(); /* route versions Claude published with the page */
     await clPushAll(); /* anything only in this browser goes up */
     if(Object.keys(CLOUD.why).length) setTimeout(clRetryFailed,8000);
