@@ -208,7 +208,7 @@ function whyUnavailable(qid,st,route){
   if(q.ra){ if(ci.rb){ if(!(q.ra&ci.rb)&&!(ci.sky&&(q.ra&FMASK[ci.fac])===FMASK[ci.fac])) return {hard:true,why:'Not available to your race'}; } /* Skyborne can take their faction's all-race quests */ else if((q.ra&FMASK[ci.fac])!==FMASK[ci.fac]) return {hard:true,why:'Restricted to specific races'}; }
   if(q.cl && !(q.cl&ci.cb)) return {hard:true,why:'Class quest for another class'};
   if(q.z<0 && CLASS_SORT_NAME[q.z] && CLASS_SORT_NAME[q.z]!==route.char.cls) return {hard:true,why:'Class quest for another class'};
-  for(const nid of q.s.n){ const fr=DB.n[nid]?.fr; if(fr && !fr.includes(ci.fac)) return {hard:true,why:'Quest giver is hostile to your faction'}; }
+  if(q.s.n.length&&q.s.n.every(nid=>{ const fr=DB.n[nid]?.fr; return fr && !fr.includes(ci.fac); })&&!(q.s.o||[]).length&&!(q.s.i||[]).length) return {hard:true,why:'Quest giver is hostile to your faction'}; /* hostile only if every giver is */
   if(q.l===1&&!(q.z>0)&&!q.s.i.length&&!starterPts(qid).length) return {hard:true,filter:true,why:'Questie has no level or start point for it yet'};
   if(/^<NYI>|<TXT>/.test(q.n||'')) return {hard:true,filter:true,why:'Not in the game (Questie marks it not yet implemented)'};
   if(q.sk && !ci.opts.prof && !q.fv) return {hard:true,filter:true,why:'Profession quest (enable in Settings)'};
@@ -447,7 +447,7 @@ function foreverQuests(){ const key=route.id+':'+(route.guides||[]).map(g=>g.id+
 function fqBlocked(e,ci){ ci=ci||charInfo(route);
   if(e.ra){ if(e.ra===-1) return 'not for the classic races (Skyborne)'; if(ci.rb&&!(e.ra&ci.rb)&&!(ci.sky&&e.ra>0&&(e.ra&FMASK[ci.fac])===FMASK[ci.fac])) return 'not available to your race'; if(!ci.rb&&(e.ra&FMASK[ci.fac])!==FMASK[ci.fac]) return 'restricted to specific races'; }
   if(e.cls&&!(e.cls&ci.cb)) return 'class quest for another class'; if(e.sort<0&&CLASS_SORT_NAME[e.sort]&&CLASS_SORT_NAME[e.sort]!==route.char.cls) return 'class quest for another class';
-  if(e.qb){ for(const n of e.qb[5]){ const fr=DB.n[n]?.fr; if(fr&&!fr.includes(ci.fac)) return 'quest giver is hostile to your faction'; } if(e.sort<0&&PROF_SORTS.has(e.sort)&&!ci.opts.prof) return 'profession quest (enable in Settings)'; if(e.sort<0&&EVENT_SORTS.has(e.sort)&&!ci.opts.event) return 'event quest (enable in Settings)'; }
+  if(e.qb){ if(e.qb[5].length&&e.qb[5].every(n=>{ const fr=DB.n[n]?.fr; return fr&&!fr.includes(ci.fac); })) return 'quest giver is hostile to your faction'; if(e.sort<0&&PROF_SORTS.has(e.sort)&&!ci.opts.prof) return 'profession quest (enable in Settings)'; if(e.sort<0&&EVENT_SORTS.has(e.sort)&&!ci.opts.event) return 'event quest (enable in Settings)'; }
   return null; }
 let xpMed=null; function fqXpEst(q){ const e=foreverQuests().get(q)||{}; if(!e.lv) return 0; if(!xpMed){ xpMed={}; const by={}; for(const k in DB.q){ const x=DB.q[k].xp; if(x&&x[1]) (by[x[0]]=by[x[0]]||[]).push(x[1]); } for(const L in by){ const a=by[L].sort((a,b)=>a-b); xpMed[L]=a[a.length>>1]; } } return xpMed[e.lv]||0; }
 function fqPrevMissing(e,st){ const miss=[]; for(const p of e.prev||[]){ if(Q(p)){ if(!st.turned.has(p)) miss.push(Q(p).n); } else if(foreverQuests().has(p)||META.fqb?.[p]){ if(fqStatus(p,st)!=='done') miss.push(foreverQuests().get(p)?.n||META.fqb?.[p]?.[4]||('Quest '+p)); } } return miss; }
