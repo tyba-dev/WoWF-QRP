@@ -1342,16 +1342,30 @@ async function exportGroupGuide(){ const set=isGrp()?memberRoutes():pathSet(); c
   finally{ route=R0; cursor=C0; SIM=S0; $('#expName').value=nm0; }
   const mem=set.map(r=>({name:r.name,race:r.char.race,cls:r.char.cls,fac:charInfo(r).fac})); const U=new Set(mem.map((x,i)=>i)); const conf=new Set();
   const fac=new Set(mem.map(m=>m.fac)).size>1?null:(mem[0].fac==='H'?'Horde':'Alliance');
-  const segs=mergeSeqs(per,s=>s.key); const VT=routeVerTag(R0); const nmS=k=>(segs.length===1&&!segs[0].k?name:`${name} ${k+1}${segs[k].k?' - '+segs[k].k:''}`)+VT;
-  const group=route.guide?.group||'Forever Routes', extra=route.guide?.extra||'', next=route.guide?.next||''; let tagged=0;
+  /* one guide chain for the whole group: a section that a member's own export splits by source guide ("Trio (3/85)") is joined back into one piece per member first, so the members' pieces line up; the merged steps are then cut into parts where the source guide changes (at least GRP_MIN steps each), named after that guide and numbered with zero padding so RestedXP lists them in order */
+  const norm=b=>b.replace(/[ \t]+$/gm,'');
+  /* every member's export as one list of steps, each carrying the level and zone the planner has for it; merged into one chain for the group, then cut into parts of at least GRP_MIN steps at a change of zone (at most GRP_MAX steps), each named after its levels and main zones */
+  const flat=per.map(L=>L.flatMap(sg=>sg.blocks.map((t,j)=>({t,mt:sg.meta?.[j]||null}))));
+  const VT=routeVerTag(R0); const GRP_MIN=60, GRP_MAX=160; const ord=set.map((x,i)=>i); const allM=new Set(ord);
+  /* the same route step lines up for every member even if its text differs a little between them (then each member's version is written, tagged for them) */
+  const merged=mergeSeqs(flat,o=>o.mt?.sid?'s:'+o.mt.sid:'t:'+norm(o.t)); const parts=[]; let cur=null, lastZ=null;
+  for(const bl of merged){ const mt=[...bl.per.values()].map(o=>o.mt).find(m=>m&&m.lv)||bl.v.mt||null; const isStep=/^step\b/.test(bl.v.t); const z=mt?.z||lastZ;
+    const sm=new Set([...bl.m].map(x=>ord[x])); const disj=cur&&cur.n>0&&[...sm].every(i=>!cur.m.has(i)); const join=cur&&cur.n>=20&&sm.size===ord.length&&cur.m.size<ord.length;
+    if(!cur||(isStep&&(disj||join||(cur.n>=GRP_MIN&&z&&z!==lastZ)||cur.n>=GRP_MAX))){ cur={m:new Set(),ord,blocks:[],n:0,lv:[],zc:new Map()}; parts.push(cur); }
+    cur.blocks.push({...bl,v:bl.v.t}); bl.m.forEach(x=>cur.m.add(ord[x])); if(isStep){ cur.n++; if(mt?.lv) cur.lv.push(mt.lv); if(z) cur.zc.set(z,(cur.zc.get(z)||0)+1); } if(mt?.z) lastZ=mt.z; }
+  for(const pt of parts){ const sl=[...pt.lv].sort((a,b)=>a-b), q=f=>sl[Math.min(sl.length-1,Math.floor(f*(sl.length-1)+.5))]; const lo=sl.length?q(.05):null, hi=sl.length?Math.max(lo,q(.95)):null; const zs=[...pt.zc].sort((a,b)=>b[1]-a[1]).filter(([z,c],i)=>i===0||c>=pt.n*0.25).slice(0,2).map(([z])=>z); pt.lo=lo; pt.label=[lo!=null?(lo===hi?`${lo}`:`${lo}-${hi}`):'',zs.join('/')].filter(Boolean).join(' '); }
+  /* RestedXP-style menu: the route is the group, 10-level brackets are subgroups, each part is named by its levels and zones (plus the route version); repeated names get (2), (3) */
+  const seenN=new Map(); parts.forEach(pt=>{ const b=pt.label||name; const n=(seenN.get(b)||0)+1; seenN.set(b,n); pt.nm=(n>1?`${b} (${n})`:b)+VT; const lo=pt.lo||1; const t=Math.min(50,Math.floor(lo/10)*10); pt.sub=t===0?'Levels 1-10':`Levels ${t}-${t+10}`; });
+  const nmS=k=>parts[k].nm;
+  const group=name+VT, extra=route.guide?.extra||'', next=route.guide?.next||''; let tagged=0;
   const outL=[...(isGrp()?[memHeader()]:[]),'-- Contains text from RestedXP guides (https://github.com/RestedXP/RXPGuides), licensed CC BY-NC-SA 4.0.','-- If you share this file: credit RestedXP, keep it non-commercial and share it under the same licence.','-- Made with the Forever Route Planner (GPL-3.0). Not affiliated with RestedXP, Blizzard or WoW: Forever.',`-- Group guide for ${mem.map(m=>`${m.name} (${m.race} ${m.cls})`).join(', ')}: steps only some of you do are tagged with << race/class.`,''];
-  segs.forEach((sg,k)=>{ const H=[`RXPGuides.RegisterGuide(${JSON.stringify(group)},[[`]; const ex=extra?extra.split(/\s*;\s*|\n/).filter(Boolean):[]; if(!ex.some(l=>/^#forever\b/i.test(l))) H.push('#forever'); H.push(...ex);
-    const gt=grpTag(sg.m,U,mem,conf); const facT=fac||[...new Set([...sg.m].map(i=>mem[i].fac==='H'?'Horde':'Alliance'))].join('/'); H.push(gt?`<< ${facT} (${gt})`:`<< ${facT}`); H.push(`#name ${nmS(k)}`);
-    const nx=new Map(); for(const i of sg.m){ let t=next; for(let j=k+1;j<segs.length;j++) if(segs[j].m.has(i)){ t=nmS(j); break; } if(t){ if(!nx.has(t)) nx.set(t,new Set()); nx.get(t).add(i); } }
+  parts.forEach((sg,k)=>{ const H=[`RXPGuides.RegisterGuide(${JSON.stringify(group)},[[`]; const ex=extra?extra.split(/\s*;\s*|\n/).filter(Boolean):[]; if(!ex.some(l=>/^#forever\b/i.test(l))) H.push('#forever'); H.push(...ex);
+    const gt=grpTag(sg.m,U,mem,conf); const facT=fac||[...new Set([...sg.m].map(i=>mem[i].fac==='H'?'Horde':'Alliance'))].join('/'); H.push(`#group ${group}`,`#subgroup ${sg.sub}`); H.push(gt?`<< ${facT} (${gt})`:`<< ${facT}`); H.push(`#name ${nmS(k)}`);
+    const nx=new Map(); for(const i of sg.m){ let t=next; for(let j=k+1;j<parts.length;j++) if(parts[j].m.has(i)){ t=nmS(j); break; } if(t){ if(!nx.has(t)) nx.set(t,new Set()); nx.get(t).add(i); } }
     if(nx.size===1&&[...nx.values()][0].size===sg.m.size) H.push(`#next ${[...nx.keys()][0]}`); else for(const [t,S] of nx) H.push(`#next ${t} << ${grpTag(S,sg.m,mem,conf)||(fac||'Horde/Alliance')}`);
-    const blocks=mergeSeqs([...sg.m].sort((a,b)=>a-b).map(i=>sg.per.get(i).blocks),b=>b.replace(/[ \t]+$/gm,''));
-    /* mergeSeqs numbers members by position in this list: map back to member idx */ const ord=[...sg.m].sort((a,b)=>a-b);
-    const body=blocks.map(b=>{ const S=new Set([...b.m].map(x=>ord[x])); const X=stepCond(b.v).trim(); const sees=new Set([...sg.m].filter(i=>S.has(i)||!X||condFor(X,set[i]))); /* members the step's own tag already hides need no extra tag */ const t=grpTag(S,sees,mem,conf); if(t) tagged++; return tagStep(b.v,t); });
+    const ord=sg.ord;
+    const body=sg.blocks.flatMap(b=>{ const vars=new Map(); for(const [x,o] of b.per){ const k=norm(o.t); if(!vars.has(k)) vars.set(k,{v:o.t,m:new Set()}); vars.get(k).m.add(ord[x]); }
+      return [...vars.values()].map(({v,m:S})=>{ const X=stepCond(v).trim(); const sees=new Set([...sg.m].filter(i=>S.has(i)||!X||condFor(X,set[i]))); /* members the step's own tag already hides need no extra tag */ const t=grpTag(S,sees,mem,conf); if(t) tagged++; return tagStep(v,t); }); });
     outL.push(...H,...body,']])',''); });
   const msgs=[`One guide for ${set.length} members: ${mem.map(m=>esc(m.name)+' ('+esc(m.race+' '+m.cls)+')').join(', ')}. ${tagged} step${tagged===1?' is':'s are'} tagged so only the members who do ${tagged===1?'it':'them'} see ${tagged===1?'it':'them'}; everything else is shared.`];
   if(conf.size) msgs.push(`⚠ ${[...conf].map(esc).join(', ')} share${conf.size===1?'s':''} a race and class with another member, so RestedXP can't tell them apart: they will also see each other's own steps. Export separate guides instead if that matters.`);
@@ -1929,7 +1943,7 @@ function buildRXP(){
   EXPORT_WARN=warns;
   const cutPart=k=>{ const c=segs[k].cut; const all=segs.map((x,j)=>j).filter(j=>segs[j].cut===c); const sib=all.filter(j=>Math.abs(j-k)<=all.length); return all.length>1?` (${all.indexOf(k)+1}/${all.length})`:''; };
   const VT=routeIsGroupPart()?'':routeVerTag(route); const nm=k=>(segs.length===1&&!segs[0].cut?name:`${name} ${k+1}${segs[k].cut?' - '+route.sections[segs[k].cut].name+cutPart(k):segs[k].gid?' - '+G(segs[k].gid).name:''}`)+VT;
-  LAST_SEGS=segs.map((sg,k)=>({key:nm(k).slice(name.length).replace(/^ \d+( - )?/,''),blocks:sg.text().flatMap(t=>t.split(/\n(?=step\b)/))}));
+  LAST_SEGS=segs.map((sg,k)=>{ const blocks=[], meta=[]; for(const x of sg.items){ if(!x.text) continue; const r=x.step!=null?SIM.res[x.step]:null; const sid=x.step!=null?route.steps[x.step]?.id:null; const mt0=r&&!r.inactive?{lv:r.before?.level,z:META.zones[(r.pt||r.after||{}).z]?.n||null}:{}; x.text.split(/\n(?=step\b)/).forEach((t,j)=>{ blocks.push(t); meta.push({...mt0,sid:sid!=null?sid+'#'+j:null}); }); } return {key:nm(k).slice(name.length).replace(/^ \d+( - )?/,''),blocks,meta}; });
   const outL=[]; if(segs.some(sg=>sg.items.some(x=>x.rx!=null))) outL.push('-- Contains text from RestedXP guides (https://github.com/RestedXP/RXPGuides), licensed CC BY-NC-SA 4.0.','-- If you share this file: credit RestedXP, keep it non-commercial and share it under the same licence.','-- Made with the Forever Route Planner (GPL-3.0). Not affiliated with RestedXP, Blizzard or WoW: Forever.','');
   segs.forEach((sg,k)=>{ const H=[`RXPGuides.RegisterGuide(${JSON.stringify(group)},[[`]; const ex=extra?extra.split(/\s*;\s*|\n/).filter(Boolean):[]; if(!ex.some(l=>/^#forever\b/i.test(l))) H.push('#forever'); H.push(...ex); H.push(`<< ${fac}`); H.push(`#name ${nm(k)}`); const nx=k<segs.length-1?nm(k+1):next; if(nx) H.push(`#next ${nx}`);
     outL.push(...H, ...sg.text(), ']])'); if(k<segs.length-1) outL.push(''); });
