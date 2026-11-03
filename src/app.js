@@ -1052,7 +1052,7 @@ function stepText(s){
       if(s.kind==='fp'&&r?.node) return {ic:'✈',cls:'travel',t:'Get flight path: '+taxiShort(r.node),sub:r.pt?.label||''};
       if(s.kind==='ride'&&r?.ride) return {ic:r.ride.kind==='boat'?'⛵':r.ride.kind==='Zeppelin'?'◉':'⇆',cls:'travel',t:r.ride.text,sub:'from '+r.ride.dock};
       if(s.kind==='hs') return {ic:'⌂',cls:'travel',t:'Hearth to '+(r?.pt?.label||rxpPlain(s.text||'')),sub:''};
-      return {ic:'➤',cls:'travel',t:(s.src&&!s.src.auto&&(s.kind==='goto'||s.kind==='note')?'':({fly:'Fly to ',fp:'Get flight path: ',home:'Set hearthstone: ',hs:'Hearth to ',goto:'Go to ',note:''})[s.kind])+(s.text||''),sub:s.loc?zoneName(s.loc.z)+' '+s.loc.px+', '+s.loc.py:''}; }
+      return {ic:'➤',cls:'travel',t:(s.src&&!s.src.auto&&(s.kind==='goto'||s.kind==='note')?'':(({fly:'Fly to ',fp:'Get flight path: ',home:'Set hearthstone: ',hs:'Hearth to ',goto:'Go to ',note:''})[s.kind]||''))+(s.text||''),sub:s.loc?zoneName(s.loc.z)+' '+s.loc.px+', '+s.loc.py:''}; }
   }
   return {ic:'·',cls:'',t:'Step',sub:''};
 }
@@ -1965,7 +1965,7 @@ function buildRXP(){
     else if(s.t==='travel'&&s.kind==='fp'&&r.node){ const t=taxiShort(r.node); lines.push(`    .fp ${t} >>Get the ${t} flight path`); if(r.pt?.label&&r.pt.node) lines.push(`    .target ${r.pt.label}`); }
     else if(s.t==='travel'&&s.kind==='ride'&&r.ride){ const rd=r.ride, z=rxpZone(rd.zone); if(!cont&&r.dep) lines.push(gotoLine(r.dep)+',40'+(rd.kind==='Zeppelin'?' >>Go up the Zeppelin Tower':'')); lines.push(`    .zone ${z} >>${rd.text}`); lines.push(`    .zoneskip ${z}`); }
     else if(s.t==='travel'&&s.kind==='hs'){ lines.push(`    .hs >>Hearth to ${r.pt?.label||rxpPlain(s.text||'')}`); lines.push('    .use 6948'); }
-    else if(s.t==='travel'){ const t=s.text||''; lines.push(({fly:`    .fly ${t} >>Fly to ${t}`,fp:`    .fp ${t} >>Get the ${t} flight path`,home:`    .home >>Set your Hearthstone to ${t}`,hs:`    .hs >>Hearth to ${t}`,goto:`    >>Go to ${t}`,note:`    >>${t}`})[s.kind]); }
+    else if(s.t==='travel'){ const t=s.text||''; lines.push(({fly:`    .fly ${t} >>Fly to ${t}`,fp:`    .fp ${t} >>Get the ${t} flight path`,home:`    .home >>Set your Hearthstone to ${t}`,hs:`    .hs >>Hearth to ${t}`,goto:`    >>Go to ${t}`,note:`    >>${t}`,ride:`    >>${t}`})[s.kind]||`    >>${t}`); }
     if(s.unote) lines.push(...s.unote.split('\n').filter(l=>l.trim()).map(l=>'    >>'+l.trim()));
     if(!cont){ /* RestedXP auto-completes (skips) a step made only of text: give it a manual checkbox (+line) so notes always stay until ticked */
       const st0=L.lastIndexOf('step'); const all=[...L.slice(st0+1),...lines];
