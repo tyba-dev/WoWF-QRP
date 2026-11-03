@@ -1902,7 +1902,7 @@ function guideNotes(){ const used=new Map(); const qs=new Set(route.steps.flatMa
       const tt=ah&&!/^\s*#optional\b/im.test(t)?t.replace(/^([^\n]*)\n/,'$1\n    #optional\n'):t; /* auction-house steps are optional: only if the item is up */
       /* a note that only shows while you're on (or have finished) a quest goes after the route picks that quest up, and is dropped if the route has already handed it in there */
       const qr=[...t.matchAll(/^\s*\.(isOnQuest|isQuestComplete|isQuestTurnedIn)\s+([\d,\s]+)/gim)].flatMap(m=>m[2].split(',').map(x=>({k:m[1].toLowerCase(),q:+x})).filter(x=>x.q&&qs.has(x.q))).concat([...t.matchAll(/^\s*\.collect\s+\d+\s*,\s*\d+\s*,\s*(\d+)/gim)].map(m=>({k:'isonquest',q:+m[1]})).filter(x=>qs.has(x.q)));
-      if(qr.length){ let ref=at>=0?at:(U.has(pv)?lastUse.get(gid+'#'+pv)+1:-1); if(ref>=0){ const idxOf=(tt0,q)=>route.steps.findIndex((s,i)=>s.t===tt0&&s.q===q&&!SIM.res[i]?.inactive);
+      if(qr.length){ if(at<0&&cw&&cw.v==='next') continue; /* it leads to a step the route doesn't have */ let ref=at>=0?at:(U.has(pv)?lastUse.get(gid+'#'+pv)+1:-1); if(ref>=0){ const idxOf=(tt0,q)=>route.steps.findIndex((s,i)=>s.t===tt0&&s.q===q&&!SIM.res[i]?.inactive);
           const mins=qr.map(x=>{ const a=idxOf(x.k==='isquestturnedin'?'turnin':'accept',x.q); return a>=0?a+1:-1; }).filter(x=>x>=0); const mn=mins.length?Math.min(...mins):-1;
           const ends=qr.filter(x=>x.k==='isonquest').map(x=>idxOf('turnin',x.q)).filter(x=>x>=0); if(mn>=0&&ref<mn){ ref=mn; } if(ends.length&&ref>Math.max(...ends)) continue; if(mn>=0&&route.steps[ref]){ put(before,ref,{key,t:tt}); continue; } } }
       if(at>=0) put(before,at,{key,t:tt}); else if(!(cw&&cw.v==='next')&&U.has(pv)) put(after,lastUse.get(gid+'#'+pv),{key,t:tt}); } }
