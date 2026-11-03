@@ -1043,7 +1043,7 @@ function stepText(s){
     case 'collect': { const src=[...new Set(itemSourcePts(s.item,'loot').map(p=>p.label))].slice(0,2).join(', '); return {ic:'✚',cls:'complete',t:`Loot ${DB.i[s.item]?.n||'item'}${s.c>1?' ×'+s.c:''}`,sub:(src?'from '+src+' · ':'')+'needed for '+(Q(s.q)?.n||'quest')}; }
     case 'train': { const t=trainerOf(s.npc); return {ic:'✦',cls:'travel',t:'Train class spells',sub:(t?.name||s.npcName||'class trainer')+(t?' · '+zoneName(t.sp[0][0]):'')}; }
     case 'buy': { const v=vendorOf(s.npc); return {ic:'¤',cls:'travel',t:'Buy from '+(v?.name||s.npcName||'vendor'),sub:(s.items||[]).map(it=>`${it.c}× ${it.n||itemName(it.id)}`).join(', ')+(v?.sub?' · '+v.sub:'')}; }
-    case 'grind': if(s.mode==='run'){ const r=SIM?.res[route.steps.indexOf(s)]; return {ic:'⚔',cls:'grind',t:runLabel(s),sub:'Dungeon run'+(r?.gained?' · about +'+fmt(r.gained)+' XP (estimate, not a target)':'')}; }
+    case 'grind': if(s.mode==='run'){ const k=route.steps.indexOf(s), r=SIM?.res[k]; const cov=runCovered(k); return {ic:'⚔',cls:'grind',t:cov?runLabel(s).replace(/^Run (.*?)( \(about (.*)\))?$/,(m0,n,x,t)=>`${n} run time${t?' · '+t:''}`):runLabel(s),sub:(cov?'Planner timing only, not a step in the guide: you follow RestedXP\'s dungeon steps below':'Dungeon run')+(r?.gained?' · about +'+fmt(r.gained)+' XP (estimate, not a target)':'')}; }
       if(s.mode==='by'){ const j=route.steps.findIndex(x=>x.id===s.at); const t=s._tgt?fromTotal(s._tgt):null; return {ic:'⚔',cls:'grind',t:`Grind to level ${t?t.level+' + '+fmt(t.xp)+' XP':'?'} (level ${s.level}${s.xp?' + '+fmt(s.xp)+' XP':''} after step ${j+1})`,sub:[s.note,j>=0?'ding at: '+rxpPlain(stepText(route.steps[j]).t):''].filter(Boolean).join(' · ')}; }
       return {ic:'⚔',cls:'grind',t:s.mode==='to'?`Grind to level ${s.level}${s.xp?' + '+fmt(s.xp)+' XP':''}`:`Grind ${fmt(s.amount||0)} XP`,sub:[s.note,{mobs:'Mob kills',explore:'Exploration',both:'Mobs and exploration',other:''}[s.src]||''].filter(Boolean).join(' · ')};
     case 'party': return {ic:s.size>1?String(s.size):'1',cls:'party',t:s.size>1?`Group up: ${s.size} players`:'Go solo',sub:'Affects mob-kill XP estimates from here on'};
@@ -1975,6 +1975,7 @@ function buildRXP(){
       if(run.some(x=>x.t==='accept'&&ESCORT.has(x.q))&&!txt.includes('Forever bug')) txt+=`\n    >>|cRXP_WARN_${ESC_NOTE}|r`;
       for(const x of run) if(x.t==='turnin') flushFin(x.q);
       seg.items.push({rx:null,step:i,text:txt,fb:run[0].rxg||'rxp'}); seg.prevKey=null; return; }
+    if(s.t==='grind'&&s.mode==='run'&&runCovered(i)) return; /* planner timing only: RestedXP's dungeon steps are the guide */
     const r=SIM.res[i]; if(GRP.mem.has(i)&&!r.inactive) return; if(ACR.mem.has(i)) return; /* picked up in its group's first step */ /* done together with its group's first step */ const p=r.pt; const q=s.q?(Q(s.q)||{n:s.qn||('Quest '+s.q)}):null; const lines=[];
     const gs=s.src?G(s.src.g)?.steps[s.src.i]:null; const dgl=gs?[...(gs.dg||[]).map(t=>'    .dungeon '+t),...(gs.dgs||[]).map(t=>'    .dungeon !'+t)]:[]; const xrl=gs&&gs.xr?'    #xprate '+gs.xr:null; const optl=(s.opt||s.gopt)?'    #optional':null;
     if(s.t==='turnin'&&pendFin.some(f=>f.q===s.q)){ flushFin(s.q); }
@@ -2601,6 +2602,11 @@ $('#impGo').addEventListener('click',()=>{
 const DUNGEONS=[['RFC','Ragefire Chasm'],['DM','The Deadmines'],['WC','Wailing Caverns'],['HOT','The Hall of Thanes'],['ROL','Ruins of Lordaeron'],['SFK','Shadowfang Keep'],['BFD','Blackfathom Deeps'],['EXC','Excavation Site: Wetlands'],['STOCKS','The Stockade'],['GNOMER','Gnomeregan'],['DALARAN','City of Dalaran'],['DROWNED','The Drowned City'],['KROLDOK',"Krol'dok Stronghold"],['ALCAZ','Alcaz Prison'],['BLACKMAW','Blackmaw Hold'],['SHAPERS',"Shaper's Terrace"],['RFK','Razorfen Kraul'],['SM','Scarlet Monastery'],['RFD','Razorfen Downs'],['ULDA','Uldaman'],['ZF',"Zul'Farrak"],['MARA','Maraudon'],['ST','Sunken Temple'],['BRD','Blackrock Depths'],['DME','Dire Maul'],['SCHOLO','Scholomance'],['STRAT','Stratholme'],['LBRS','Lower Blackrock Spire']];
 const DG_ALT={'BLACKROCK SPIRE':'LBRS','MOLTEN CORE':'MC',HOTHANES:'HOT','HALL OF THANES':'HOT',THANES:'HOT',LORDAERON:'ROL',RUINS:'ROL',EXCAVATION:'EXC',DEADMINES:'DM',VC:'DM',STOCKADES:'STOCKS',STOCKADE:'STOCKS',"TEMPLE OF ATAL'HAKKAR":'ST',DMW:'DME',DMN:'DME',GNOMEREGAN:'GNOMER',ULDAMAN:'ULDA',MARAUDON:'MARA',STRATHOLME:'STRAT',SCHOLOMANCE:'SCHOLO',"ZUL'FARRAK":'ZF'};
 function dgTag(x){ const u=String(x).trim().toUpperCase(); return DG_ALT[u]||u; }
+/* a dungeon run whose dungeon steps come from RestedXP (linked or in RestedXP wording): the run is only the planner's timing for it, the guide follows RestedXP's own steps */
+function runCovered(i,R){ R=R||route; const s=R.steps[i]; if(!s||s.mode!=='run') return false; const tag=s.dgrun||s.dg;
+  for(let j=i+1;j<R.steps.length&&j<=i+20;j++){ const x=R.steps[j]; if(x.t==='grind'&&x.mode==='run') break; const g=x.src&&!x.src.auto?G(x.src.g):null; const gs=g?.steps[x.src.i];
+    if(gs&&(gs.dg||[]).includes(tag)&&/RestedXP/i.test(g.group||'')) return true; if(x.inrun&&(x.rxt||(gs&&/RestedXP/i.test(g.group||'')))) return true; }
+  return false; }
 function runLabel(s){ const nm=(s.note||'').replace(/\s*run\b(.*)$/i,'$1').trim()||dgName(s.dgrun||s.dg)||'Dungeon'; return `Run ${nm}${s.mins?` (about ${fmtT(s.mins*60).replace(/ /g,'')})`:''}`; }
 function dgName(t){ return (DUNGEONS.find(d=>d[0]===t)||[t,t])[1]; }
 function dgOn(t){ return !!route.char.dungeons?.[t]; }
