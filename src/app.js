@@ -1865,21 +1865,36 @@ function fallbackText(c,run){ const acts=new Set(run.map(s=>s.t+':'+s.q)); const
     out.push(ln); }
   return out.join('\n'); }
 /* note-only steps of a guide (no quest, grind, flight or other action of their own) next to the guide steps this route uses: placed before the step they lead to, or after the one they follow */
-const NOTE_REAL=/^\s*(\.(accept|turnin|complete|collect|xp\b|fly|fp|hs|home|train|trainer|vendor|deathskip|zone\b|abandon|skill|bankdeposit|bankwithdraw|money|reputation|craft|buy|stable|tame|cooldown|blastedLands)|#ah\b|>>\s*Kill\b)|\bgrind\b/im; /* a step that does something (or an auction-house or timed-grind step) is not a note */
-function guideNotes(){ const used=new Map(); const qs=new Set(route.steps.map(s=>s.q).filter(Boolean));
+/* a guide's extra steps next to the ones the route uses: notes (travel hints, warnings) and class/zone extras (buy arrows, train, stable or feed your pet, equip, use an item). Never quests, flights, hearths, grinds or auction-house steps: the route decides those */
+const GN_ANCHOR=/^\s*\.(accept|turnin|complete|fly|fp|hs|home|zone\b|deathskip|xp\s+\d)/im;
+const GN_NEVER=/^\s*(\.(accept|turnin|complete|fly|fp|hs|home|zone\b|deathskip|xp\s+\d|abandon|cooldown|blastedLands|skill|craft|cast|bankdeposit|bankwithdraw)|#ah\b|>>\s*Kill\b)|\bgrind\b/im;
+const GN_EXTRA=/^\s*\.(vendor|buy|collect|train\b|trainer|stable|tame|equip|use|money)\b/im;
+function guideNotes(){ const used=new Map(); const qs=new Set(route.steps.flatMap(s=>[s.q,s.qid]).filter(Boolean));
   const firstUse=new Map(), lastUse=new Map();
   route.steps.forEach((s,i)=>{ const gg=s.src&&!s.src.auto?G(s.src.g):null; const gx=gg?.steps[s.src.i]; if(gg&&gx?.rx&&!SIM.res[i]?.inactive){ if(!used.has(gg.id)) used.set(gg.id,new Set()); used.get(gg.id).add(gx.rx); const u=gg.id+'#'+gx.rx; if(!firstUse.has(u)) firstUse.set(u,i); lastUse.set(u,i); } });
+  const near8=(i,f)=>{ if(i==null||i<0) return false; for(let j=Math.max(0,i-25);j<=Math.min(route.steps.length-1,i+25);j++) if(f(route.steps[j])) return true; return false; };
+  const near=(i,f)=>{ for(let j=Math.max(0,i-4);j<=Math.min(route.steps.length-1,i+3);j++) if(f(route.steps[j])) return true; return false; };
   const before=new Map(), after=new Map(); const put=(M,k,v)=>{ if(!M.has(k)) M.set(k,[]); M.get(k).push(v); };
-  for(const [gid,U] of used){ const raw=rawCache.get(gid); if(!raw||!/RestedXP/i.test(G(gid)?.group||'')) continue; const vis=k=>{ const t=raw[k-1]; return t&&condOK(blkHdrCond(t))&&!blkAutoSkip(t); }; const real=k=>vis(k)&&NOTE_REAL.test(raw[k-1].split('\n').slice(1).map(l=>l.replace(/\s--.*$/,'')).join('\n'));
+  for(const [gid,U] of used){ const raw=rawCache.get(gid); if(!raw||!/RestedXP/i.test(G(gid)?.group||'')) continue; const vis=k=>{ const t=raw[k-1]; return t&&condOK(blkHdrCond(t))&&!blkAutoSkip(t); };
+    const body=k=>raw[k-1].split('\n').slice(1).map(l=>l.replace(/\s--.*$/,'')).join('\n'); const anchor=k=>vis(k)&&GN_ANCHOR.test(body(k));
     const labelAt=new Map(); raw.forEach((t,ix)=>{ if(t&&vis(ix+1)) for(const l of blkLabels(t)) labelAt.set(l,ix+1); });
     const xs=[...U].sort((a,b)=>a-b);
-    for(let k=xs[0];k<=xs[xs.length-1];k++){ if(U.has(k)||!vis(k)||real(k)) continue; const t=raw[k-1]; const body=blkLines(t).slice(1);
-      if(body.every(l=>/^\s*(#|--)/.test(l)||!l.trim())) continue; /* label-only anchors are handled separately */
+    for(let k=xs[0];k<=xs[xs.length-1];k++){ if(U.has(k)||!vis(k)) continue; const t=raw[k-1]; const b=body(k); if(GN_NEVER.test(b)) continue;
+      if(blkLines(t).slice(1).every(l=>/^\s*(#|--)/.test(l)||!l.trim())) continue; /* label-only anchors are handled separately */
       const refs=[...t.matchAll(/^\s*\.(?:isOnQuest|isQuestComplete|isQuestTurnedIn|isQuestAvailable)\s+([\d,\s]+)/gim)].flatMap(m=>m[1].split(',').map(x=>+x).filter(Boolean)); if(refs.length&&!refs.some(q=>qs.has(q))) continue;
-      let pv=k-1; while(pv>=1&&!real(pv)) pv--; let nx=k+1; while(nx<=raw.length&&!real(nx)) nx++;
+      const cq=[...t.matchAll(/^\s*\.collect\s+\d+\s*,\s*\d+\s*,\s*(\d+)/gim)].map(m=>+m[1]); if(cq.length&&!cq.some(q=>qs.has(q))) continue; /* items for a quest the route doesn't do */
+      if(/^\s*\.collect\s+\d+\s*,\s*([2-9]|\d\d+)\s*,\s*\d+/im.test(b)&&!/^\s*\.(vendor|buy)\b/im.test(b)) continue; /* gathering quest items is quest work: the route decides it */
+      const extra=GN_EXTRA.test(b);
+      let pv=k-1; while(pv>=1&&!anchor(pv)) pv--; let nx=k+1; while(nx<=raw.length&&!anchor(nx)) nx++;
       const cw=blkRefs(t).find(r=>r.k==='completewith'); const key=gid+'#'+k;
       /* the step it leads to: the route step using that guide step, or else the route step doing that guide step's quest (after the step it follows) */
       let at=U.has(nx)?firstUse.get(gid+'#'+nx):-1; if(at<0&&nx<=raw.length){ const A=new Set(blkActsOf(raw[nx-1])); const from=U.has(pv)?lastUse.get(gid+'#'+pv):-1; if(A.size) at=route.steps.findIndex((s,i)=>i>from&&A.has(s.t+':'+s.q)&&!SIM.res[i]?.inactive); if(at>=0&&from<0&&!(cw&&cw.v==='next')) at=-1; }
+      if(extra){ /* only where the route is at that place in the guide (a step either side of it is used), and not twice: the route's own trainer or vendor stop next to it covers it */
+        if(!(U.has(pv)||U.has(nx))) continue; const ref=at>=0?at:lastUse.get(gid+'#'+pv);
+        const nms=[...new Set([...b.matchAll(/\|cRXP_(?:FRIENDLY|ENEMY)_([^|]+)\|r/g)].map(m=>m[1]).concat([...b.matchAll(/^\s*\.target\s+(.+)$/gim)].flatMap(m=>m[1].split(',')).map(x=>x.replace(/^\+|::\d+$/g,'').trim())).filter(x=>x.length>3).map(x=>x.toLowerCase().replace(/s$/,'')))];
+        if(/^\s*\.stable\b|Tame Beast/im.test(b)){ const mobs=[...b.matchAll(/\|cRXP_ENEMY_([^|]+)\|r/g)].map(m=>m[1].toLowerCase()); if(mobs.length&&route.steps.some(x=>{ const tx=rxpPlain(stepText(x).t+' '+(x.text||'')+' '+(x.unote||'')).toLowerCase(); return mobs.some(n=>tx.includes(n)); })) continue; } /* that pet is already tamed somewhere in the route */
+        if(nms.length&&near8(ref,x=>{ const tx=(rxpPlain(stepText(x).t+' '+(x.text||'')+' '+(x.unote||''))).toLowerCase(); return nms.some(n=>tx.includes(n)); })) continue; /* the route already has this (its own trainer, vendor, stable or tame step) */
+        if(/^\s*\.(train\b|trainer)/im.test(b)&&near(ref,x=>x.t==='train')) continue; if(/^\s*\.(vendor|buy)/im.test(b)&&!/arrow|bullet|ammo|shot|quiver|pouch/i.test(b)&&near(ref,x=>x.t==='buy')) continue; }
       if(at>=0) put(before,at,{key,t}); else if(!(cw&&cw.v==='next')&&U.has(pv)) put(after,gid+'#'+pv,{key,t}); } }
   return {before,after}; }
 let LAST_SEGS=null;
