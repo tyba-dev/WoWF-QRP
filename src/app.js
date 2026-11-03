@@ -1890,7 +1890,7 @@ function buildRXP(){
   EXPORT_ADDED=[]; const warns=[]; const segs=[]; let seg=null; const done=new Set();
   const pendFin=[]; const flushFin=q=>{ if(!seg) return; for(let k=0;k<pendFin.length;k++){ const f=pendFin[k]; if(q!=null&&f.q!==q) continue; seg.items.push({rx:null,step:null,text:f.text,fin:true}); seg.prevKey=null; pendFin.splice(k--,1); } };
   let CK=null; const newSeg=gid=>{ flushFin(null); seg={gid,cut:CK,items:[],lastBlk:null,prevKey:null,text(){ return this.items.map(x=>x.text).filter(Boolean); }}; segs.push(seg); };
-  const cutOf=s=>s.sec&&route.sections?.[s.sec]?.cut?s.sec:null; const ACR=accRuns();
+  const cutOf=s=>s.sec&&route.sections?.[s.sec]?.cut?s.sec:null; const ACR=accRuns(); const RQ=new Set(route.steps.flatMap(x=>[x.q,x.qid]).filter(Boolean));
   const GN=guideNotes(), notesDone=new Set(); const pushNotes=(M,key)=>{ for(const n of M.get(key)||[]){ if(notesDone.has(n.key)) continue; notesDone.add(n.key); if(seg.items.slice(-4).some(x=>x.text===n.t)) continue; let p=seg.items.length; if(typeof M.keys().next().value==='number') while(p>0&&/^\s*#completewith\s+next\b/m.test(seg.items[p-1].text||'')&&!seg.items[p-1].note) p--; /* keep a guide's "#completewith next" step next to the step it belongs to */ seg.items.splice(p,0,{rx:null,text:n.t,step:null,note:true}); } };
   const FB=fallbackBlocks(i=>GRP.lead.has(i)||GRP.mem.has(i)||!!route.steps[i].stk||(route.steps[i].path&&route.steps[i].path.length>=2));
   for(const [l,run] of [...ACR.lead]) if([l,...run].some(k=>FB.has(k))){ ACR.lead.delete(l); run.forEach(k=>ACR.mem.delete(k)); }
@@ -1906,7 +1906,7 @@ function buildRXP(){
       let j=i; const run=[]; while(j<route.steps.length){ const t=route.steps[j]; const tg=t.src&&!t.src.auto?G(t.src.g):null; const tx=tg?.steps[t.src.i]; if(!tx||tg.id!==gg.id||tx.rx!==gsx.rx||FB.has(j)) break; run.push(t); done.add(j); j++; }
       if(seg.lastBlk&&seg.lastBlk.g===gg.id) for(let k=seg.lastBlk.rx+1;k<gsx.rx;k++){ const t=raw[k-1]; if(!t) continue; if(blkLines(t).slice(1).every(l=>/^\s*(#|--)/.test(l)) && condOK(blkHdrCond(t))) seg.items.push({rx:k,text:t,step:null}); } // label-only anchors
       const runActs=new Set(run.filter(x=>x.q).map(x=>actKey(x.t,x.q))); const rm=new Set(gg.removed||[]); const blkActs=new Set(gg.steps.map((x,k)=>[x,k]).filter(([x,k])=>x.rx===gsx.rx&&x.cond&&x.q&&rm.has(k)).map(([x])=>actKey(x.t,x.q)));
-      const out=[]; let cut=0; for(const ln of raw[gsx.rx-1].split('\n')){ const am=ln.match(/^\s*\.(accept|turnin|complete)\s+-?(\d+)/i); if(am){ const k=actKey(am[1].toLowerCase(),+am[2]); if(blkActs.has(k)&&!runActs.has(k)){ cut++; continue; } } out.push(ln); }
+      const out=[]; let cut=0; for(const ln of raw[gsx.rx-1].split('\n')){ const am=ln.match(/^\s*\.(accept|turnin|complete)\s+-?(\d+)/i); if(am){ const k=actKey(am[1].toLowerCase(),+am[2]); if(blkActs.has(k)&&!runActs.has(k)){ cut++; continue; } if(!runActs.has(k)&&!RQ.has(+am[2])) continue; /* a quest this route never has (its lead-in was left out): drop its line */ } out.push(ln); }
       for(let k=out.length-1;k>=0;k--){ const am=out[k].match(/^\s*\.accept\s+(\d+)/i); if(am&&ESCORT.has(+am[1])&&!out.some(l=>l.includes('Forever bug'))) out.splice(k+1,0,`    >>|cRXP_WARN_${ESC_NOTE}|r`); }
       if(run.some(x=>x.allc)&&/^step\b/.test(out[0]||'')) out[0]='step'; /* "for everyone": drop the guide's own class/race filter (RestedXP's solo skips) */
       if(run.some(x=>x.opt)&&!out.some(l=>/^\s*#optional\b/i.test(l))) out.splice(1,0,'    #optional');
