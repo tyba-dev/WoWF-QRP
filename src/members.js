@@ -9,7 +9,7 @@ function curMem(r){ r=r||route; return isGrp(r)?(r.members.find(m=>m.id===r.view
 /* route.char holds the viewed member's own fields; copy them back before saving or switching */
 function memSync(r){ r=r||route; const m=curMem(r); if(!m) return; for(const k of memFields()){ if(r.char[k]===undefined) delete m[k]; else m[k]=JSON.parse(JSON.stringify(r.char[k])); } }
 function memApply(r,m){ for(const k of memFields()){ if(m[k]===undefined) delete r.char[k]; else r.char[k]=JSON.parse(JSON.stringify(m[k])); }
-  /* guide text is parsed for one character: a shared step points at each member's own copy of the guide */ for(const s of r.steps||[]) if(s.srcs&&s.src&&s.srcs[m.id]) s.src.g=s.srcs[m.id]; }
+  /* guide text is parsed for one character: a shared step points at each member's own copy of the guide */ for(const s of r.steps||[]){ if(s.srcs&&s.src&&s.srcs[m.id]) s.src.g=s.srcs[m.id]; if(s.rxtm){ const w=s.rxtm[m.id]; if(w){ s.rxt=w.t; s.rxg=w.g; } else { delete s.rxt; delete s.rxg; } } } }
 function memFix(r){ if(!isGrp(r)) return; if(!r.members.some(m=>m.id===r.view)) r.view=r.members[0].id; memApply(r,curMem(r)); const ids=new Set(r.members.map(m=>m.id));
   for(const s of r.steps||[]) if(s.who){ s.who=s.who.filter(x=>ids.has(x)); if(!s.who.length||s.who.length===ids.size) delete s.who; } }
 function viewMember(id){ if(!isGrp()||route.view===id) return; memSync(route); route.view=id; memApply(route,curMem()); FQ.key=null; save(); refresh(); }
