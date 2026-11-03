@@ -1930,7 +1930,7 @@ function rxpRelink(){ const R0=route,C0=cursor,S0=SIM; const grp=isGrp(R0); cons
     if(!copyFor(name,mems[0].id)&&!addGuide(name)) continue;
     let near=null; for(let j=i-1;j>=0&&j>i-15;j--){ const r=rxOf(S[j]); if(r&&r.n===name&&r.rx){ near=r.rx; break; } }
     const mids=grp?(s.who||R0.members.map(m=>m.id)):['_']; const g0=copyFor(name,mids[0]); const gi=pick(g0,s,near); if(gi<0) continue;
-    s.src={g:g0.id,i:gi}; if(grp){ s.srcs={}; for(const mid of mids){ const gm=copyFor(name,mid); if(gm&&gm.steps[gi]&&gm.steps[gi].t===s.t&&gm.steps[gi].q===s.q) s.srcs[mid]=gm.id; } }
+    s.src={g:g0.id,i:gi}; if(grp){ s.srcs={}; for(const mid of mids){ const gm=copyFor(name,mid); const b0=gm?.steps[gi]; if(b0&&b0.t===s.t&&b0.q===s.q&&b0.rx===g0.steps[gi].rx) s.srcs[mid]=gm.id; } }
     const gs=g0.steps[gi]; if(gs.rx) s.rx=gs.rx; s.allc=true; s.lvok=true; /* the route already does it at this point: the guide's level window doesn't skip it */ delete s.rxt; delete s.rxtm; delete s.rxg; linked++; }
   if(grp) memFix(R0); return {linked,guides:added}; }
 /* second pass: steps linked to a guide that isn't RestedXP's (your own exported guides) and steps added in the planner (travel, notes, trainers) get the RestedXP guide step they were made from: the same text, or the same flight/hearth/trainer near the RestedXP steps around them */
@@ -1954,8 +1954,10 @@ function rxpRelink2(){ const R0=route,C0=cursor,S0=SIM; const grp=isGrp(R0); con
     for(const n of names){ const lo=Math.min(...[a,b].filter(x=>x&&x.n===n).map(x=>x.rx))-30, hi=Math.max(...[a,b].filter(x=>x&&x.n===n).map(x=>x.rx))+30; tryGuide(n,lo,hi); }
     if(!best&&(s.q||(s.t==='travel'&&(s.kind==='goto'||s.kind==='note')&&txt.length>12))) for(const n of lib.keys()) tryGuide(n,null,null); /* anywhere in the library: a quest, or a note with its exact text */
     if(!best){ const c=travelKey(s); why[c]=(why[c]||0)+1; continue; }
-    if(!ensure(best.name)) continue; const mids=grp?(s.who||R0.members.map(m=>m.id)):['_']; const g0=copyFor(best.name,mids[0]); if(!g0||!g0.steps[best.k]) continue;
-    s.src={g:g0.id,i:best.k}; if(grp){ s.srcs={}; for(const mid of mids){ const gm=copyFor(best.name,mid); if(gm&&gm.steps[best.k]&&gm.steps[best.k].t===g0.steps[best.k].t) s.srcs[mid]=gm.id; } } const gs=g0.steps[best.k]; if(gs.rx) s.rx=gs.rx; if(!gs.loc&&s.loc&&pinnable(s)&&!s.pin) s.pin=s.loc; /* keep the place it was planned at when the guide step has none */ s.allc=true; s.lvok=true; delete s.rxt; delete s.rxtm; delete s.rxg; linked++; }
+    if(!ensure(best.name)) continue; const mids=grp?(s.who||R0.members.map(m=>m.id)):['_']; const g0=copyFor(best.name,mids[0]); if(!g0) continue;
+    { const ps=parseLib(best.name,pm)[best.k]; const sameStep=x=>x&&x.rx===ps.rx&&x.t===ps.t&&(x.q||0)===(ps.q||0)&&(x.t!=='travel'||x.kind===ps.kind||(['goto','note'].includes(x.kind)&&['goto','note'].includes(ps.kind)));
+      const k2=sameStep(g0.steps[best.k])?best.k:g0.steps.findIndex(sameStep); if(k2<0){ const c=travelKey(s); why[c]=(why[c]||0)+1; continue; } best.k=k2; } /* the route's copy of the guide can be parsed a little differently: find the same guide step in it */
+    s.src={g:g0.id,i:best.k}; if(grp){ s.srcs={}; for(const mid of mids){ const gm=copyFor(best.name,mid); const a0=g0.steps[best.k], b0=gm?.steps[best.k]; if(b0&&b0.t===a0.t&&b0.rx===a0.rx&&(b0.q||0)===(a0.q||0)) s.srcs[mid]=gm.id; } } const gs=g0.steps[best.k]; if(gs.rx) s.rx=gs.rx; /* its own loc stays for the planner's timing only; no pin, so the guide's arrow is RestedXP's */ s.allc=true; s.lvok=true; delete s.rxt; delete s.rxtm; delete s.rxg; linked++; }
   if(grp) memFix(R0); return {linked,left:why}; }
 /* WYSIWYG: put into the route what an export would otherwise have to work out on its own, so the planner shows everything the guide will have in game.
    1) quest steps without RestedXP text get the wording of the RestedXP step that has them, stored on the step (per member in a group);
