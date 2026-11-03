@@ -2014,7 +2014,7 @@ function buildRXP(){
   let CK=null; const newSeg=gid=>{ flushFin(null); seg={gid,cut:CK,items:[],lastBlk:null,prevKey:null,text(){ return this.items.map(x=>x.text).filter(Boolean); }}; segs.push(seg); };
   const cutOf=s=>s.sec&&route.sections?.[s.sec]?.cut?s.sec:null; const ACR=accRuns(); const RQ=new Set(route.steps.flatMap(x=>[x.q,x.qid]).filter(Boolean));
   /* what the export writes is what the route holds: a step with RestedXP wording stored on it (s.rxt) is written exactly so */
-  const RXT=new Map(); route.steps.forEach((s,k)=>{ if(s.rxt&&!SIM.res[k]?.inactive) RXT.set(k,s.rxt); });
+  const RXT=new Map(); route.steps.forEach((s,k)=>{ if(s.rxt) RXT.set(k,s.rxt); }); /* crossed-out steps too: the planner's view of what applies is one guess, RestedXP decides in game */
   for(const [l,run] of [...ACR.lead]) if([l,...run].some(k=>RXT.has(k))){ ACR.lead.delete(l); run.forEach(k=>ACR.mem.delete(k)); }
   const blockSteps=(g,rx)=>g.steps.filter(x=>x.rx===rx);
   const actKey=(t,q)=>t+':'+q;
