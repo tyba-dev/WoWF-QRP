@@ -1910,15 +1910,31 @@ function guideNotes(){ const used=new Map(); const qs=new Set(route.steps.flatMa
 /* WYSIWYG: put into the route what an export would otherwise have to work out on its own, so the planner shows everything the guide will have in game.
    1) quest steps without RestedXP text get the wording of the RestedXP step that has them, stored on the step (per member in a group);
    2) the guides' notes and class/zone extras next to the steps you use become steps of their own (linked to their guide step, so they're timed like any other) */
+/* the steps of a dungeon run go in the order the RestedXP guide does them: when the dungeon happens is the route's choice, the order inside it is RestedXP's */
+function rxpDungeonOrder(){ const R0=route; const byName=new Map(); for(const g of R0.guides||[]){ const b=rawCache.get(g.id); if(b&&!byName.has(g.name)&&/RestedXP/i.test(g.group||'')) byName.set(g.name,b); } for(const p of (window.RAW_LIB||[])) if(!byName.has(p.name)&&/RestedXP/i.test(p.group||'')) byName.set(p.name,p.blocks);
+  const S=R0.steps; let moved=0; const rep=[];
+  const srcOf=x=>{ const g=x.src&&!x.src.auto?G(x.src.g):null; const gs=g?.steps[x.src.i]; return g&&/RestedXP/i.test(g.group||'')&&gs?.rx?{n:g.name,k:gs.rx,dg:gs.dg||[]}:null; };
+  const rxgOf=x=>x.rxg||(x.rxtm?Object.values(x.rxtm)[0]?.g:null);
+  for(let i=0;i<S.length;i++){ const run=S[i]; if(run.t!=='grind'||run.mode!=='run') continue; const tag=run.dgrun||run.dg;
+    let last=-1; for(let j=i+1;j<S.length&&j<=i+40;j++){ const x=S[j]; if(x.t==='grind'&&x.mode==='run') break; const so=srcOf(x); if(x.inrun||(so&&so.dg.includes(tag))) last=j; }
+    if(last<0) continue; const seg=S.slice(i+1,last+1);
+    const cnt=new Map(); for(const x of seg){ const n=srcOf(x)?.n||rxgOf(x); if(n&&byName.has(n)) cnt.set(n,(cnt.get(n)||0)+1); } if(!cnt.size) continue; const main=[...cnt].sort((a,b)=>b[1]-a[1])[0][0]; const blocks=byName.get(main);
+    const posOf=x=>{ const so=srcOf(x); if(so&&so.n===main) return so.k; if(!x.q||!['accept','turnin','complete'].includes(x.t)) return null; const re=new RegExp('^\\s*\\.'+x.t+'\\s+'+x.q+'\\b','m'); const k=blocks.findIndex(b=>b&&re.test(b)); return k>=0?k+1:null; };
+    const groups=[]; let cur={k:-1,xs:[]}; groups.push(cur); for(const x of seg){ const k=posOf(x); if(k==null){ cur.xs.push(x); continue; } cur={k,xs:[x]}; groups.push(cur); }
+    const sorted=[groups[0],...groups.slice(1).map((g,ix)=>({...g,ix})).sort((a,b)=>a.k-b.k||a.ix-b.ix)]; const out=sorted.flatMap(g=>g.xs);
+    if(out.some((x,k)=>x!==seg[k])){ S.splice(i+1,seg.length,...out); moved++; rep.push(dgName(tag)); } }
+  return {dungeons:moved,names:rep}; }
 function guideTextToRoute(){ const R0=route,C0=cursor,S0=SIM; const grp=isGrp(R0); const mems=grp?R0.members:[null]; const ins=new Map(), wording=new Map();
   pushHistory(); let nF=0;
+  const DO=rxpDungeonOrder();
   /* a sticky quest step (done along the way) gets a step of its own before the turn-in, to finish whatever is left */
   for(let i=0;i<R0.steps.length;i++){ const s=R0.steps[i]; if(!s.stk||s.t!=='complete'||!s.q||(s.src&&!s.src.auto)||s.rxtm||s.rxt) continue; let tin=-1, done=false;
     for(let j=i+1;j<R0.steps.length;j++){ const x=R0.steps[j]; if(x.q!==s.q) continue; if(x.t==='complete'&&!x.stk&&(!x.obj||!s.obj||x.obj===s.obj)){ done=true; break; } if(x.t==='turnin'){ tin=j; break; } }
     if(done||tin<0) continue; const o={t:'complete',q:s.q,id:uid(),fin:1}; for(const k of ['obj','cl','loopRaw','sec','upto']) if(s[k]!=null) o[k]=JSON.parse(JSON.stringify(s[k])); if(s.path) o.path=JSON.parse(JSON.stringify(s.path)); if(s.who) o.who=[...s.who];
     R0.steps.splice(tin,0,o); nF++; }
   try{ for(const m of mems){ const v=m?memberRoute(R0,m):R0; route=v; cursor=v.steps.length-1; simulate(); const mid=m?m.id:'_'; const S=v.steps;
-      const FB=fallbackBlocks(i=>GRP.lead.has(i)||GRP.mem.has(i)||!!S[i].stk||(S[i].path&&S[i].path.length>=2)||!!S[i].rxt);
+      const FB=fallbackBlocks(i=>((GRP.lead.has(i)||GRP.mem.has(i))&&!S[i].inrun)||!!S[i].stk||(S[i].path&&S[i].path.length>=2)||!!S[i].rxt);
+      for(const [l,g] of GRP.lead){ const all=[l,...(g.mem||[])]; if(!all.every(k=>FB.has(k)||S[k].rxt)) all.forEach(k=>FB.delete(k)); } /* a group of steps written together: all in RestedXP wording or none */
       for(let i=0;i<S.length;i++){ const c=FB.get(i); if(!c) continue; const run=[]; let j=i; while(j<S.length&&FB.get(j)===c){ run.push(S[j]); j++; } const t=fallbackText(c,run); for(const x of run){ if(!wording.has(x.id)) wording.set(x.id,{}); wording.get(x.id)[mid]={t,g:c.g}; } i=j-1; }
       const N=guideNotes(); const nm=gid=>{ const g=G(gid); return (g?.name||'')+'|'+(g?.group||''); };
       for(const [M,after] of [[N.before,false],[N.after,true]]) for(const [at,L] of M){ if(at==null||!S[at]) continue; for(const n of L){ const [gid,k]=n.key.split('#'); const key=nm(gid)+'#'+k+'@'+S[at].id+(after?':a':':b');
@@ -1935,7 +1951,7 @@ function guideTextToRoute(){ const R0=route,C0=cursor,S0=SIM; const grp=isGrp(R0
     if(e.after){ const p=(afterPtr.get(e.anchor)??ix)+1; R0.steps.splice(p,0,...add); afterPtr.set(e.anchor,p+add.length-1); }
     else { while(ix>0&&R0.steps[ix-1].cw==='next') ix--; R0.steps.splice(ix,0,...add); }
     nS+=add.length; }
-  if(grp) memFix(R0); return {wording:nW,steps:nS}; }
+  if(grp) memFix(R0); return {wording:nW,steps:nS,dungeons:DO.dungeons,dnames:DO.names}; }
 let LAST_SEGS=null;
 function buildRXP(){
   const g=route.guide; const fac=charInfo(route).fac==='H'?'Horde':'Alliance';
@@ -2554,7 +2570,7 @@ function afterGuidesRender(){
   on('gFilt','change',e=>{ gFilter=e.target.value; renderRight(); });
   on('gSuggest','click',()=>suggestJoin(g));
   on('gConnect','click',()=>connectGuide(g));
-  on('gText','click',()=>{ const n=guideTextToRoute(); refresh(); toast(`Added ${n.steps} note/extra step${n.steps===1?'':'s'} and RestedXP wording on ${n.wording} step${n.wording===1?'':'s'}`,6000); });
+  on('gText','click',()=>{ const n=guideTextToRoute(); refresh(); toast(`Added ${n.steps} note/extra step${n.steps===1?'':'s'} and RestedXP wording on ${n.wording} step${n.wording===1?'':'s'}${n.dungeons?`; put ${n.dungeons} dungeon${n.dungeons>1?'s':''} in RestedXP's order`:''}`,6000); });
   on('gFill','click',()=>{ if(!g.pv){ toast('This guide was imported by an older planner version that left out Forever quests. Import the guide file again (Import button) and the missing steps are added in place.',9000); return; } const n=fillGuide(g); refresh(); toast(n?`Added ${n} missing step${n>1?'s':''} in place`:'Nothing missing: your route already has every step of this guide in that stretch'); });
   const sel=$('#rightBody .gstep.sel'); if(sel&&renderGuides._scroll){ sel.scrollIntoView({block:'nearest'}); renderGuides._scroll=false; }
 }
