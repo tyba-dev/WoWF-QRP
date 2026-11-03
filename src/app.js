@@ -1836,7 +1836,7 @@ function blkAutoSkip(t){ if(!condOK(blkHdrCond(t))) return 'class'; const ls=blk
 /* library of guide texts to look in: the guides this route uses (plus window.RAW_LIB, a list of {name,group,blocks} when the build provides more guides) */
 let RXL={key:null,idx:null};
 function rawLibIndex(){ const lib=[]; const seen=new Set(); for(const g of route.guides||[]){ const b=rawCache.get(g.id); if(b&&!seen.has(g.name+'|'+g.group)){ seen.add(g.name+'|'+g.group); lib.push({name:g.name,group:g.group||'',blocks:b}); } }
-  for(const p of (window.RAW_LIB||[])) if(!seen.has(p.name+'|'+(p.group||''))){ seen.add(p.name+'|'+(p.group||'')); lib.push({name:p.name,group:p.group||'',blocks:p.blocks}); }
+  for(const p of (window.RAW_LIB||[])) if(xrOK(p.xprate||'')&&!seen.has(p.name+'|'+(p.group||''))){ seen.add(p.name+'|'+(p.group||'')); lib.push({name:p.name,group:p.group||'',blocks:p.blocks}); }
   const key=lib.map(p=>p.name+':'+p.blocks.length).join('|'); if(RXL.key===key) return RXL.idx;
   const idx=new Map(); lib.forEach((p,pi)=>p.blocks.forEach((t,k)=>{ if(!t) return; for(const m of t.matchAll(/^\s*\.(accept|turnin|complete)\s+(\d+)/gim)){ const a=m[1].toLowerCase()+':'+m[2]; if(!idx.has(a)) idx.set(a,[]); const L=idx.get(a); if(!L.some(x=>x.pi===pi&&x.k===k)) L.push({pi,k,g:p.name,rxp:/RestedXP/i.test(p.group),t}); } }));
   const nrm=t=>t.split('\n').map(l=>l.replace(/\s--.*$/,'').trim()).filter(Boolean).join('\n'); const rx=new Set(); lib.forEach(p=>{ if(/RestedXP/i.test(p.group)) p.blocks.forEach(t=>{ if(t) rx.add(nrm(t)); }); }); idx.isRXP=t=>rx.has(nrm(t));
@@ -1907,11 +1907,61 @@ function guideNotes(){ const used=new Map(); const qs=new Set(route.steps.flatMa
           const ends=qr.filter(x=>x.k==='isonquest').map(x=>idxOf('turnin',x.q)).filter(x=>x>=0); if(mn>=0&&ref<mn){ ref=mn; } if(ends.length&&ref>Math.max(...ends)) continue; if(mn>=0&&route.steps[ref]){ put(before,ref,{key,t:tt}); continue; } } }
       if(at>=0) put(before,at,{key,t:tt}); else if(!(cw&&cw.v==='next')&&U.has(pv)) put(after,lastUse.get(gid+'#'+pv),{key,t:tt}); } }
   return {before,after}; }
+/* Link route steps to RestedXP guide steps: the route is RestedXP's steps stitched together, skipped or reordered in the planner.
+   Steps that only carry RestedXP wording, or were added in the planner but exist in a RestedXP guide, are pointed at that guide step (the guide is added to the route from window.RAW_LIB when it isn't there yet). */
+function rxpRelink(){ const R0=route,C0=cursor,S0=SIM; const grp=isGrp(R0); const mems=grp?R0.members:[{id:'_'}];
+  const lib=new Map(); for(const p of (window.RAW_LIB||[])) if(/RestedXP/i.test(p.group||'')&&xrOK(p.xprate||'')&&!lib.has(p.name)) lib.set(p.name,p);
+  for(const g of R0.guides||[]) if(/RestedXP/i.test(g.group||'')&&!lib.has(g.name)){ const b=rawCache.get(g.id); if(b) lib.set(g.name,{name:g.name,group:g.group,blocks:b}); }
+  /* which copy of a guide each member uses */
+  const owner=new Map(); for(const s of R0.steps){ for(const [mid,gid] of Object.entries(s.srcs||{})) if(!owner.has(gid)) owner.set(gid,mid); if(s.src&&s.who&&s.who.length===1&&!owner.has(s.src.g)) owner.set(s.src.g,s.who[0]); }
+  for(const g of R0.guides||[]) if(g.forMem&&!owner.has(g.id)) owner.set(g.id,g.forMem);
+  const copyFor=(name,mid)=>{ const cs=(R0.guides||[]).filter(g=>g.name===name&&/RestedXP/i.test(g.group||'')); return cs.find(g=>owner.get(g.id)===mid)||cs.find(g=>!owner.has(g.id))||cs[0]||null; };
+  let added=0; const addGuide=name=>{ const p=lib.get(name); if(!p) return false; const text=`RXPGuides.RegisterGuide(${JSON.stringify(p.group)},[[\n#name ${p.name}\n${p.blocks.join('\n')}\n]])`; const pg=parseRXP(text)[0]; if(!pg) return false;
+    const made=[]; for(const m of mems){ let steps; if(grp){ const v=memberRoute(R0,m); route=v; try{ steps=buildGuideSteps(pg,false).steps; } finally{ route=R0; } } else steps=buildGuideSteps(pg,false).steps;
+      const g={id:uid(),pv:3,name:p.name,group:p.group,cond:'',next:'',ver:'',xprate:'',color:GCOLORS[(R0.guides.length)%GCOLORS.length],visible:false,from:0,to:steps.length-1,excluded:[],stopAtBlocked:false,includeNotes:true,includeXp:true,steps}; if(grp) g.forMem=m.id;
+      R0.guides.push(g); rawPut(g.id,pg.blocks.map(b=>(b.raw||[]).join('\n'))); owner.set(g.id,m.id); made.push(g); }
+    if(made.some(g=>g.steps.length!==made[0].steps.length)) console.warn('copies differ',name); added++; return true; };
+  /* the guide step for a route step in one copy: same action, the block nearest the guide position of the steps around it */
+  const rxOf=s=>{ const g=s.src&&!s.src.auto?G(s.src.g):null; return g?{n:g.name,rx:g.steps[s.src.i]?.rx}:null; };
+  const pick=(g,s,near)=>{ const c=g.steps.map((x,i)=>[x,i]).filter(([x])=>x.t===s.t&&x.q===s.q); if(!c.length) return -1; if(near==null) return c[0][1]; c.sort((a,b)=>Math.abs(a[0].rx-near)-Math.abs(b[0].rx-near)); return c[0][1]; };
+  let linked=0; const S=R0.steps; const want=new Set(['accept','turnin','complete']);
+  for(let i=0;i<S.length;i++){ const s=S[i]; if(!s.q||!want.has(s.t)) continue; const own=s.src&&!s.src.auto?G(s.src.g):null; if(own&&/RestedXP/i.test(own.group||'')) continue;
+    const ws=s.rxtm?Object.entries(s.rxtm):(s.rxt?[['_',{g:s.rxg}]]:[]); if(!ws.length) continue; const name=ws[0][1].g; if(!lib.has(name)) continue;
+    if(!copyFor(name,mems[0].id)&&!addGuide(name)) continue;
+    let near=null; for(let j=i-1;j>=0&&j>i-15;j--){ const r=rxOf(S[j]); if(r&&r.n===name&&r.rx){ near=r.rx; break; } }
+    const mids=grp?(s.who||R0.members.map(m=>m.id)):['_']; const g0=copyFor(name,mids[0]); const gi=pick(g0,s,near); if(gi<0) continue;
+    s.src={g:g0.id,i:gi}; if(grp){ s.srcs={}; for(const mid of mids){ const gm=copyFor(name,mid); if(gm&&gm.steps[gi]&&gm.steps[gi].t===s.t&&gm.steps[gi].q===s.q) s.srcs[mid]=gm.id; } }
+    const gs=g0.steps[gi]; if(gs.rx) s.rx=gs.rx; s.allc=true; s.lvok=true; /* the route already does it at this point: the guide's level window doesn't skip it */ delete s.rxt; delete s.rxtm; delete s.rxg; linked++; }
+  if(grp) memFix(R0); return {linked,guides:added}; }
+/* second pass: steps linked to a guide that isn't RestedXP's (your own exported guides) and steps added in the planner (travel, notes, trainers) get the RestedXP guide step they were made from: the same text, or the same flight/hearth/trainer near the RestedXP steps around them */
+function rxpRelink2(){ const R0=route,C0=cursor,S0=SIM; const grp=isGrp(R0); const mems=grp?R0.members:[{id:'_'}]; const S=R0.steps;
+  const isR=g=>g&&/RestedXP/i.test(g.group||'');
+  const lib=new Map(); for(const p of (window.RAW_LIB||[])) if(/RestedXP/i.test(p.group||'')&&xrOK(p.xprate||'')&&!lib.has(p.name)) lib.set(p.name,p);
+  /* parse every library guide once (for the first member) to compare steps */
+  const parsed=new Map(); const parseLib=(name,mid)=>{ const key=name+'|'+mid; if(parsed.has(key)) return parsed.get(key); const mm=mems.find(m=>m.id===mid)||mems[0]; const p=lib.get(name); const pg=parseRXP(`RXPGuides.RegisterGuide(${JSON.stringify(p.group)},[[\n#name ${p.name}\n${p.blocks.join('\n')}\n]])`)[0]; let st=[]; if(pg){ if(grp){ const v=memberRoute(R0,mm); route=v; try{ st=buildGuideSteps(pg,false).steps; } finally{ route=R0; } } else st=buildGuideSteps(pg,false).steps; } parsed.set(key,st); return st; }; /* parsed for the member who does the step: RestedXP shows class steps' text only to that class */
+  const norm=t=>rxpPlain(String(t||'')).toLowerCase().replace(/^go to /,'').replace(/[^a-z0-9]+/g,' ').trim();
+  const owner=new Map(); for(const s of S){ for(const [mid,gid] of Object.entries(s.srcs||{})) if(!owner.has(gid)) owner.set(gid,mid); if(s.src&&s.who&&s.who.length===1&&!owner.has(s.src.g)) owner.set(s.src.g,s.who[0]); } for(const g of R0.guides) if(g.forMem) owner.set(g.id,g.forMem);
+  const copyFor=(name,mid)=>{ const cs=R0.guides.filter(g=>g.name===name&&isR(g)); return cs.find(g=>owner.get(g.id)===mid)||cs.find(g=>!owner.has(g.id))||cs[0]||null; };
+  const ensure=name=>{ if(copyFor(name,mems[0].id)) return true; const p=lib.get(name); if(!p) return false; const pg=parseRXP(`RXPGuides.RegisterGuide(${JSON.stringify(p.group)},[[\n#name ${p.name}\n${p.blocks.join('\n')}\n]])`)[0];
+    for(const m of mems){ let steps; if(grp){ const v=memberRoute(R0,m); route=v; try{ steps=buildGuideSteps(pg,false).steps; } finally{ route=R0; } } else steps=buildGuideSteps(pg,false).steps; const g={id:uid(),pv:3,name:p.name,group:p.group,cond:'',next:'',ver:'',xprate:'',color:GCOLORS[R0.guides.length%GCOLORS.length],visible:false,from:0,to:steps.length-1,excluded:[],stopAtBlocked:false,includeNotes:true,includeXp:true,steps}; if(grp) g.forMem=m.id; R0.guides.push(g); rawPut(g.id,pg.blocks.map(b=>(b.raw||[]).join('\n'))); owner.set(g.id,m.id); } return true; };
+  const ctx=i=>{ let a=null,b=null; for(let j=i-1;j>=0&&j>i-25;j--){ const g=S[j].src&&!S[j].src.auto?G(S[j].src.g):null; if(isR(g)){ a={n:g.name,rx:g.steps[S[j].src.i]?.rx}; break; } } for(let j=i+1;j<S.length&&j<i+25;j++){ const g=S[j].src&&!S[j].src.auto?G(S[j].src.g):null; if(isR(g)){ b={n:g.name,rx:g.steps[S[j].src.i]?.rx}; break; } } return {a,b}; };
+  const travelKey=s=>s.t==='travel'?s.kind:s.t;
+  const same=(s,x,txt)=>{ if(s.t!==x.t) return false; if(s.q) return x.q===s.q; if(s.t==='travel'){ if(x.kind!==s.kind&&!((s.kind==='goto'||s.kind==='note')&&(x.kind==='goto'||x.kind==='note'))) return false; if(['fly','fp'].includes(s.kind)) return norm(x.text).includes(norm(s.text))||norm(s.text).includes(norm(x.text)); if(['home','hs','ride'].includes(s.kind)) return true; return norm(x.text)===txt; } if(s.t==='train') return true; return false; };
+  let linked=0; const why={};
+  for(let i=0;i<S.length;i++){ const s=S[i]; const own=s.src&&!s.src.auto?G(s.src.g):null; if(isR(own)) continue; if(own==null&&s.src) continue; if(s.t==='grind'||s.t==='party'||s.t==='custom'||s.t==='abandon') continue;
+    const txt=norm(s.text); const {a,b}=ctx(i); const names=[...new Set([a?.n,b?.n].filter(Boolean))]; let best=null;
+    const pm=grp?(s.who?.[0]||mems[0].id):'_'; const tryGuide=(name,lo,hi)=>{ const st=parseLib(name,pm); st.forEach((x,k)=>{ if(lo!=null&&(x.rx<lo||x.rx>hi)) return; if(!same(s,x,txt)) return; const d=a&&a.n===name?Math.abs(x.rx-a.rx):b&&b.n===name?Math.abs(x.rx-b.rx):999; if(!best||d<best.d) best={name,k,d}; }); };
+    for(const n of names){ const lo=Math.min(...[a,b].filter(x=>x&&x.n===n).map(x=>x.rx))-30, hi=Math.max(...[a,b].filter(x=>x&&x.n===n).map(x=>x.rx))+30; tryGuide(n,lo,hi); }
+    if(!best&&(s.q||(s.t==='travel'&&(s.kind==='goto'||s.kind==='note')&&txt.length>12))) for(const n of lib.keys()) tryGuide(n,null,null); /* anywhere in the library: a quest, or a note with its exact text */
+    if(!best){ const c=travelKey(s); why[c]=(why[c]||0)+1; continue; }
+    if(!ensure(best.name)) continue; const mids=grp?(s.who||R0.members.map(m=>m.id)):['_']; const g0=copyFor(best.name,mids[0]); if(!g0||!g0.steps[best.k]) continue;
+    s.src={g:g0.id,i:best.k}; if(grp){ s.srcs={}; for(const mid of mids){ const gm=copyFor(best.name,mid); if(gm&&gm.steps[best.k]&&gm.steps[best.k].t===g0.steps[best.k].t) s.srcs[mid]=gm.id; } } const gs=g0.steps[best.k]; if(gs.rx) s.rx=gs.rx; if(!gs.loc&&s.loc&&pinnable(s)&&!s.pin) s.pin=s.loc; /* keep the place it was planned at when the guide step has none */ s.allc=true; s.lvok=true; delete s.rxt; delete s.rxtm; delete s.rxg; linked++; }
+  if(grp) memFix(R0); return {linked,left:why}; }
 /* WYSIWYG: put into the route what an export would otherwise have to work out on its own, so the planner shows everything the guide will have in game.
    1) quest steps without RestedXP text get the wording of the RestedXP step that has them, stored on the step (per member in a group);
    2) the guides' notes and class/zone extras next to the steps you use become steps of their own (linked to their guide step, so they're timed like any other) */
 /* the steps of a dungeon run go in the order the RestedXP guide does them: when the dungeon happens is the route's choice, the order inside it is RestedXP's */
-function rxpDungeonOrder(){ const R0=route; const byName=new Map(); for(const g of R0.guides||[]){ const b=rawCache.get(g.id); if(b&&!byName.has(g.name)&&/RestedXP/i.test(g.group||'')) byName.set(g.name,b); } for(const p of (window.RAW_LIB||[])) if(!byName.has(p.name)&&/RestedXP/i.test(p.group||'')) byName.set(p.name,p.blocks);
+function rxpDungeonOrder(){ const R0=route; const byName=new Map(); for(const g of R0.guides||[]){ const b=rawCache.get(g.id); if(b&&!byName.has(g.name)&&/RestedXP/i.test(g.group||'')) byName.set(g.name,b); } for(const p of (window.RAW_LIB||[])) if(!byName.has(p.name)&&/RestedXP/i.test(p.group||'')&&xrOK(p.xprate||'')) byName.set(p.name,p.blocks);
   const S=R0.steps; let moved=0; const rep=[];
   const srcOf=x=>{ const g=x.src&&!x.src.auto?G(x.src.g):null; const gs=g?.steps[x.src.i]; return g&&/RestedXP/i.test(g.group||'')&&gs?.rx?{n:g.name,k:gs.rx,dg:gs.dg||[]}:null; };
   const rxgOf=x=>x.rxg||(x.rxtm?Object.values(x.rxtm)[0]?.g:null);
@@ -1976,8 +2026,9 @@ function buildRXP(){
       let j=i; const run=[]; while(j<route.steps.length){ const t=route.steps[j]; const tg=t.src&&!t.src.auto?G(t.src.g):null; const tx=tg?.steps[t.src.i]; if(!tx||tg.id!==gg.id||tx.rx!==gsx.rx||RXT.has(j)) break; run.push(t); done.add(j); j++; }
       if(seg.lastBlk&&seg.lastBlk.g===gg.id) for(let k=seg.lastBlk.rx+1;k<gsx.rx;k++){ const t=raw[k-1]; if(!t) continue; if(blkLines(t).slice(1).every(l=>/^\s*(#|--)/.test(l)) && condOK(blkHdrCond(t))) seg.items.push({rx:k,text:t,step:null}); } // label-only anchors
       const runActs=new Set(run.filter(x=>x.q).map(x=>actKey(x.t,x.q))); const rm=new Set(gg.removed||[]); const blkActs=new Set(gg.steps.map((x,k)=>[x,k]).filter(([x,k])=>x.rx===gsx.rx&&x.cond&&x.q&&rm.has(k)).map(([x])=>actKey(x.t,x.q)));
-      const out=[]; let cut=0; for(const ln of raw[gsx.rx-1].split('\n')){ const am=ln.match(/^\s*\.(accept|turnin|complete)\s+-?(\d+)/i); if(am){ const k=actKey(am[1].toLowerCase(),+am[2]); if(blkActs.has(k)&&!runActs.has(k)){ cut++; continue; } if(!runActs.has(k)&&!RQ.has(+am[2])) continue; /* a quest this route never has (its lead-in was left out): drop its line */ } out.push(ln); }
+      const out=[]; let cut=0; for(const ln of raw[gsx.rx-1].split('\n')){ const am=ln.match(/^\s*\.(accept|turnin|complete)\s+-?(\d+)/i); if(am){ const k=actKey(am[1].toLowerCase(),+am[2]); if(blkActs.has(k)&&!runActs.has(k)){ cut++; continue; } if(!runActs.has(k)) continue; /* the guide step does more quests than the route does here (skipped, or done at another step): only this step's own quests are written */ } out.push(ln); }
       for(let k=out.length-1;k>=0;k--){ const am=out[k].match(/^\s*\.accept\s+(\d+)/i); if(am&&ESCORT.has(+am[1])&&!out.some(l=>l.includes('Forever bug'))) out.splice(k+1,0,`    >>|cRXP_WARN_${ESC_NOTE}|r`); }
+      if(run.some(x=>x.lvok)) for(let k=out.length-1;k>0;k--) if(/^\s*\.(xp\s*[<>]|maxlevel)\b/i.test(out[k])) out.splice(k,1); /* level window the route overrides */
       if(run.some(x=>x.allc)&&/^step\b/.test(out[0]||'')) out[0]='step'; /* "for everyone": drop the guide's own class/race filter (RestedXP's solo skips) */
       if((run.some(x=>x.opt)||out.some(l=>/^\s*#ah\b/i.test(l)))&&!out.some(l=>/^\s*#optional\b/i.test(l))) out.splice(1,0,'    #optional'); /* auction-house steps are always optional */
       const pn=run.find(x=>x.pin&&pinnable(x)&&!(x.path&&x.path.length>=2)); if(pn){ const gl=gotoLine(pn.pin); const k=out.findIndex((l,k)=>k>0&&/^\s*\.goto\b/i.test(l)); if(k>0){ const m=out[k].match(/^\s*\.goto\s+[^,]+,\s*[\d.]+\s*,\s*[\d.]+(.*)$/i); out[k]=gl+(m?m[1]:''); } else { let h=1; while(h<out.length&&/^\s*#/.test(out[h])) h++; out.splice(h,0,gl); } }
@@ -2637,8 +2688,8 @@ function guideOptions(gs){ const by=new Map(); for(const x of gs){ const k=x.gro
 const isAoE=g=>/\bAoE\b/i.test((g.group||'')+' '+(g.name||''));
 function guideOK(g){ return !!g&&xrOK(g.xprate)&&!g.ver&&condOK(g.cond||'')&&(!isAoE(g)||!!route.char.aoe); }
 function guideWhy(g){ if(!xrOK(g.xprate)) return 'Guide is for XP rate '+g.xprate; if(g.ver) return 'Guide is '+g.ver.replace(' only',' only'); if(!condOK(g.cond||'')) return 'Guide is for '+g.cond; if(isAoE(g)&&!route.char.aoe) return 'Guide is an AoE mage route (turn on in the XP rate box)'; return ''; }
-function stepActive(s,st){ if(!s.src) return null; const g=G(s.src.g); const gs=g?.steps[s.src.i]; if(!gs) return null; if(!guideOK(g)) return guideWhy(g); if(!gs.cond&&!s.src.auto&&!s.allc) return 'Not for your character ('+route.char.race+' '+route.char.cls+'): the guide shows this to other races/classes'; if(!xrOK(gs.xr)) return 'Only at XP rate '+gs.xr; const d=dungeonOK(gs); if(!d.ok) return d.why;
-  if(st&&!s.src.auto){ if(gs.lmin&&st.level<gs.lmin) return 'Guide only does this from level '+gs.lmin; if(gs.lmax&&st.level>=gs.lmax) return 'Guide skips this once you\u2019re level '+gs.lmax; } return null; }
+function stepActive(s,st){ if(!s.src) return null; const g=G(s.src.g); const gs=g?.steps[s.src.i]; if(!gs) return null; if(!guideOK(g)&&!(s.allc&&xrOK(g.xprate)&&!g.ver&&(!isAoE(g)||!!route.char.aoe))) return guideWhy(g); /* 'for everyone' steps ignore the guide's own race/class */ if(!gs.cond&&!s.src.auto&&!s.allc) return 'Not for your character ('+route.char.race+' '+route.char.cls+'): the guide shows this to other races/classes'; if(!xrOK(gs.xr)) return 'Only at XP rate '+gs.xr; const d=dungeonOK(gs); if(!d.ok) return d.why;
+  if(st&&!s.src.auto&&!s.lvok){ if(gs.lmin&&st.level<gs.lmin) return 'Guide only does this from level '+gs.lmin; if(gs.lmax&&st.level>=gs.lmax) return 'Guide skips this once you\u2019re level '+gs.lmax; } return null; }
 function allDungeonTags(){ const tags=new Map(DUNGEONS.map(([t])=>[t,0])); for(const g of route.guides||[]) for(const s of g.steps) for(const t of [...(s.dg||[]),...(s.dgs||[])]) tags.set(t,(tags.get(t)||0)+1); return tags; }
 function dungeonChecks(prefix){ const tags=allDungeonTags(); return [...tags].map(([t,n])=>`<label title="${esc(dgName(t))}"><input type="checkbox" data-${prefix}="${esc(t)}" ${dgOn(t)?'checked':''}> ${esc(t==='ST'?'Sunken Temple':dgName(t))}${n?` <span class="note">(${n})</span>`:''}</label>`).join(''); }
 function dungeonBox(){ const on=Object.values(route.char.dungeons||{}).filter(Boolean).length;
