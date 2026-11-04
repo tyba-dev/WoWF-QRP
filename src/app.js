@@ -22,7 +22,7 @@ async function loadData(){
   for(let i=0;i<bin.length;i++) u8[i]=bin.charCodeAt(i);
   const stream=new Blob([u8]).stream().pipeThrough(new DecompressionStream('gzip'));
   const o=JSON.parse(await new Response(stream).text());
-  DB=o.db; META=o.meta; for(const [id,x] of Object.entries(QEXTRA)) if(DB.q[id]) Object.assign(DB.q[id],x); /* Deeprun Tram NPCs: Questie puts both on one Stormwind-mapped point; Monty is on the Ironforge platform, Nipsy on the Stormwind one */ if(DB.n[12997]) DB.n[12997].p=[[1537,76.4,51.2]]; if(DB.n[13018]) DB.n[13018].p=[[1519,63.9,8.3,1]]; if(DB.n[13016]) DB.n[13016].p=[[1537,77.2,50.4]]; /* Deeprun Rats: on the Ironforge side with Monty */
+  DB=o.db; META=o.meta; taxiAdd([['Auberdine','Nijel'],['Auberdine','Feathermoon']],'A'); for(const [id,x] of Object.entries(QEXTRA)) if(DB.q[id]) Object.assign(DB.q[id],x); /* Deeprun Tram NPCs: Questie puts both on one Stormwind-mapped point; Monty is on the Ironforge platform, Nipsy on the Stormwind one */ if(DB.n[12997]) DB.n[12997].p=[[1537,76.4,51.2]]; if(DB.n[13018]) DB.n[13018].p=[[1519,63.9,8.3,1]]; if(DB.n[13016]) DB.n[13016].p=[[1537,77.2,50.4]]; /* Deeprun Rats: on the Ironforge side with Monty */
   labelChains();
 }
 /* quests that share a name and form a chain get "(part k/n)" so follow-ups are distinguishable */
@@ -2809,3 +2809,8 @@ function fillFpSettings(c){ const list=taxiNodes(c.faction).sort((x,y)=>taxiShor
   $('#fpSettings').innerHTML=list.map(n=>rf.has(n.id)?`<label title="Known from the start for this race"><input type="checkbox" checked disabled> ${esc(taxiShort(n.id))} <span class="note">(race)</span></label>`:`<label><input type="checkbox" data-fpk="${n.id}" ${set.has(n.id)?'checked':''}> ${esc(taxiShort(n.id))}</label>`).join(''); $('#fpAll').checked=!!c.allfps; }
 
 try{ const b=document.querySelector('.brand small'); if(b){ b.textContent='Questie data · v'+BUILD; b.title='Planner version (build time, UK)'; } }catch(e){}
+
+/* direct flights the flight data lacks (classic tools show them; Forever unconfirmed). Time estimated from distance at the network's average speed */
+function taxiAdd(pairs,fac){ const T=META.taxi?.times?.[fac], E=META.taxi?.edges?.[fac], N=META.taxi?.nodes; if(!T||!E||!N) return; const id=s=>Object.keys(N).find(k=>(N[k].n||'').startsWith(s)); const d=(x,y)=>Math.hypot(N[x].X-N[y].X,N[x].Y-N[y].Y);
+  let sd=0,st=0; for(const [x,y] of E){ const w=T[x]?.[y]??T[y]?.[x]; if(w&&N[x]&&N[y]){ sd+=d(x,y); st+=w; } } const k=sd?st/sd:0;
+  for(const [a,b] of pairs){ const x=id(a), y=id(b); if(!x||!y||!k) continue; if(E.some(([p,q])=>(p==x&&q==y)||(p==y&&q==x))) continue; E.push([x,y]); const w=Math.round(d(x,y)*k); (T[x]=T[x]||{})[y]=w; (T[y]=T[y]||{})[x]=w; } }
