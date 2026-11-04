@@ -404,6 +404,7 @@ function simulate0(){ computeGroups(); ensureIds(route);
       if(s.t==='prof'&&s.act==='learn') m-=1000; /* apprentice profession: 10s */
       if(s.t==='train'&&s.npc){ const T=trainerSpells(s.npc)||[]; const since=st.lastTrain??0; m-=T.filter(x=>x[0]<=L&&x[0]>since).reduce((a,x)=>a+x[3],0); st.lastTrain=L; }
       r.money=m; st.money=(st.money||0)+m; }
+    if(!r.inactive&&s.t==='travel'&&typeof s.text==='string'&&/(^|· )Abandon /.test(s.text)){ /* an RXP step that tells you to abandon quests (.abandon lines): drop them from the log */ for(const part of s.text.split(' · ')){ const m=/^Abandon (.+)$/.exec(part.trim()); if(!m) continue; for(const q of [...st.log.keys()]){ const n=Q(q); if(n&&(n.n===m[1]||n.on===m[1]||n.n.replace(/ \(\d+\/\d+\)$/,'')===m[1])){ st.log.delete(q); r.info=(r.info?r.info+' · ':'')+'Abandoned '+n.n; } } } }
     r.from=lastPt; r.stk=(isSticky(s)||gm!=null)&&!['hs','fly','ride','death'].includes(r.leg?.type); /* a hearth / flight still moves you even when the guide shows it as #completewith */ if(r.pt&&!r.stk) lastPt=r.pt;
     res.push(r);
     if(i===cursor) atCursor=cloneState(st);
