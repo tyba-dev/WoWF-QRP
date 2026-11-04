@@ -362,7 +362,9 @@ function simulate0(){ computeGroups(); ensureIds(route);
         e.stk=new Set(e.stk||[]); if(isSticky(s)){ for(const n of e.objs) if(!stkBefore.has(n)) e.stk.add(n); } else { if(s.obj&&!(s.upto>0)) e.stk.delete(s.obj); else if(!s.obj) e.stk.clear(); } }
     } else if(s.t==='turnin'){
       const selfObj=q.s&&q.f&&!(q.s.n||[]).length&&!(q.s.i||[]).length&&(q.s.o||[]).some(o=>(q.f.o||[]).includes(o)); /* offered and completed by the same object (Egg-O-Matic, Dalson's outhouse): one click accepts and hands in */
+      const selfNpc=!selfObj&&!!s.src&&!st.log.has(s.q)&&(q.s?.n||[]).some(n=>(q.f?.n||[]).includes(n))&&objectives(s.q).length>0&&objectives(s.q).every(o=>o.kind==='item'||o.kind==='loot'); /* item hand-ins offered and completed by the same NPC (cloth donations): the guide hands in without an accept step */
       if(!st.log.has(s.q)&&selfObj){ r.info=(r.info||'')+'Accepted and handed in at the same object'; }
+      else if(selfNpc){ r.info=(r.info||'')+'Accepted and handed in at the same NPC (bring the items)'; }
       else if(!st.log.has(s.q)){ if(q.fv&&s.src) r.warn.push('Forever quest the guide hands in without an accept step in your route (it may be picked up automatically, e.g. an escort): counted anyway'); else r.err.push('Not in your quest log'); }
       else if(!st.log.get(s.q).done){ const e=st.log.get(s.q); const miss=objectives(s.q).filter(o=>o.rx&&!(e.objs&&e.objs.has(o.rx))).map(o=>o.text); r.err.push('Objectives not done'+(miss.length?': '+miss.join('; '):'')); }
       const xp=questXP(s.q,st.level); r.gained=xp; if(q.xe&&s.xpo==null) r.warn.push(`Forever quest: Questie has no XP for it yet, ≈${fmt(xp)} estimated from its level. Set the real value with ✎ if you know it.`); if(st.stkT?.has(s.q)){ st.stkT=new Map(st.stkT); st.stkT.delete(s.q); }
