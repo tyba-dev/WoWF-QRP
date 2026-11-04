@@ -272,7 +272,7 @@ function reqFail(s,st){ if(!s.reqs) return '';
   const nm=ids=>ids.map(id=>Q(id)?.n||('quest '+id)).join(' / ');
   for(const r of s.reqs){ const ids=r.ids, on=ids.some(id=>st.log.has(id)), tin=ids.some(id=>st.turned.has(id)), comp=ids.some(id=>st.log.get(id)?.done);
     switch(r.k){
-      case 'isonquest': if(!on) return 'only if you have '+nm(ids); break;
+      case 'isonquest': if(!on&&!ids.some(id=>st.tinAt?.has(id)&&(st.curI??0)-st.tinAt.get(id)<=3)) return 'only if you have '+nm(ids); break; /* RestedXP shows a step's follow-up pick-up with the turn-in at the same NPC: just turned in counts as still on it */
       case 'isnotonquest': if(on) return 'only if you don\u2019t have '+nm(ids); break;
       case 'isquestturnedin': if(!tin) return 'only after turning in '+nm(ids); break;
       case 'isquestnotturnedin': if(ids.every(id=>st.turned.has(id))) return nm(ids)+' already turned in'; break;
@@ -325,7 +325,7 @@ function simulate0(){ computeGroups(); ensureIds(route);
   { const lastFinal=new Map(); for(let k=route.steps.length-1;k>=0;k--){ const x=route.steps[k]; if(x.t!=='complete'||!x.q) continue; const key=x.q+':'+(x.obj||0), keyQ=x.q+':0';
       if(isSticky(x)){ const f=lastFinal.get(key)??lastFinal.get(keyQ); if(f!=null) passive.set(k,f); } else { lastFinal.set(key,k); if(x.obj) { if(!lastFinal.has(keyQ)) {} } else { for(const kk of [...lastFinal.keys()]) if(kk.startsWith(x.q+':')) lastFinal.set(kk,k); } } } }
   route.steps.forEach((s,i)=>{
-    const r={i,err:[],warn:[],gained:0,before:{level:st.level,xp:st.xp}};
+    st.curI=i; const r={i,err:[],warn:[],gained:0,before:{level:st.level,xp:st.xp}};
     const q=s.q?Q(s.q):null;
     let skip=stepActive(s,st); if(!skip&&s.who) skip=whoSkip(s);
     if(!skip && s.reqs){ const key=(s.src?.g||'')+':'+(s.rx||i); let w; if(s.rx&&rqC.has(key)) w=rqC.get(key); else { w=reqFail(s,st); rqC.set(key,w); } if(w) skip='Guide skips this: '+w; }
@@ -365,7 +365,7 @@ function simulate0(){ computeGroups(); ensureIds(route);
       else if(!st.log.get(s.q).done){ const e=st.log.get(s.q); const miss=objectives(s.q).filter(o=>o.rx&&!(e.objs&&e.objs.has(o.rx))).map(o=>o.text); r.err.push('Objectives not done'+(miss.length?': '+miss.join('; '):'')); }
       const xp=questXP(s.q,st.level); r.gained=xp; if(q.xe&&s.xpo==null) r.warn.push(`Forever quest: Questie has no XP for it yet, ≈${fmt(xp)} estimated from its level. Set the real value with ✎ if you know it.`); if(st.stkT?.has(s.q)){ st.stkT=new Map(st.stkT); st.stkT.delete(s.q); }
       if(q.xp&&st.level<MAXLVL&&st.level>q.xp[0]+5){ const full=questXP(s.q,q.xp[0]); r.pen={lvl:st.level,ql:q.xp[0],xp,full}; r.warn.push(`XP penalty: you are level ${st.level}, the quest is level ${q.xp[0]}, so it gives ${Math.round(Math.max(1,Math.min(10,2*(q.xp[0]-st.level)+20))*10)}% (${fmt(xp)} of ${fmt(full)} XP, losing ${fmt(full-xp)}). Turn it in by level ${q.xp[0]+5} for full XP.`); }
-      addXP(st,xp); st.log.delete(s.q); st.turned.add(s.q);
+      addXP(st,xp); st.log.delete(s.q); st.turned.add(s.q); (st.tinAt=st.tinAt||new Map()).set(s.q,st.curI??-9);
     } else if(s.t==='abandon'){ st.log.delete(s.q); }
     else if(s.t==='grind'){
       if(s.mode==='to'){
