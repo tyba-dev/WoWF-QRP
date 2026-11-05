@@ -328,6 +328,7 @@ function simulate0(){ computeGroups(); ensureIds(route);
     st.curI=i; const r={i,err:[],warn:[],gained:0,before:{level:st.level,xp:st.xp}};
     const q=s.q?Q(s.q):null;
     let skip=stepActive(s,st); if(!skip&&s.who) skip=whoSkip(s);
+    if(!skip && !s.reqs && s.src && !s.src.auto){ const gq=G(s.src.g)?.steps[s.src.i]; if(gq?.reqs&&s.t==='turnin'&&gq.reqs.some(r=>r.k==='isquestcomplete'&&r.ids.includes(s.q))){ const L=st.log.get(s.q); if(L&&!L.done) skip='Guide skips this: only once '+(Q(s.q)?.n||'the quest')+' is complete (a later step finishes it)'; } } /* RestedXP hides a hand-in gated on .isQuestComplete until the quest is done */
     if(!skip && s.reqs){ const key=(s.src?.g||'')+':'+(s.rx||i); let w; if(s.rx&&rqC.has(key)) w=rqC.get(key); else { w=reqFail(s,st); rqC.set(key,w); } if(w) skip='Guide skips this: '+w; }
     if(!skip && s.src && !s.src.auto && q && ((s.t==='accept'&&(st.log.has(s.q)||st.turned.has(s.q)))||((s.t==='turnin'||s.t==='complete')&&st.turned.has(s.q)))) skip='Already done earlier in the route (the guide lists it more than once)';
     if(!skip && s.gopt && q){ // RestedXP #optional: only shown when it applies
