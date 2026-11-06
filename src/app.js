@@ -1346,6 +1346,26 @@ const tagStep=(b,t)=>!t?b:b.replace(/^step\b[ \t]*(?:<<[ \t]*([^\n]*?))?[ \t]*(?
 function routeVer(r){ r=r||route; const c=(typeof CLOUD!=='undefined'&&CLOUD.revs)?(CLOUD.revs[r.id]||0):0; return Math.max(c,+r.rev||0); }
 function routeVerTag(r){ const v=routeVer(r); return v?` r${v}`:''; }
 function routeIsGroupPart(){ return !!route&&!!route.grpMem; }
+/* An info step (warning, directions) tied with #completewith to a step that only picks up quests would vanish the moment that quest
+   arrives some other way (shared by a party member, auto-accepted). Retarget it to the first following step that is real work, so only
+   the pick-up itself ticks off. */
+function infoOutlastsPickups(body,part){ const L=t=>t.split('\n').map(l=>l.replace(/\s--.*$/,'').trim());
+  const ops=t=>L(t).filter(l=>/^\.(accept|turnin|complete|collect)\b/i.test(l));
+  const cw=t=>{ const m=t.match(/^(\s*)#completewith\s+(\S+)\s*$/m); return m; };
+  const isNote=t=>!ops(t).length&&L(t).some(l=>/^\+/.test(l))&&!L(t).some(l=>/^\.(goto|subzone|zone|fly|hs|vendor|train|trainer|home|fp|deathskip|use|xp)\b/i.test(l)); /* a warning or reminder, not directions */
+  const isFiller=t=>!ops(t).length&&!!cw(t); /* any completewith helper shown alongside the next real step */
+  const isPickup=t=>{ const o=ops(t); if(!o.length) return false; const acc=new Set(o.filter(l=>/^\.accept\b/i.test(l)).map(l=>+(l.match(/^\.accept\s+(\d+)/i)||[])[1])); if(!acc.size) return false; return o.every(l=>/^\.accept\b/i.test(l)||(/^\.collect\b/i.test(l)&&acc.has(+(l.match(/^\.collect\s+\d+\s*,\s*\d+\s*,\s*(\d+)/i)||[])[1]))); };
+  const tag=t=>(t.split('\n')[0].match(/<<\s*(.+)$/)||[])[1]?.trim()||'';
+  const labelOf=t=>{ const m=L(t).map(l=>l.match(/^#label\s+(\S+)/i)).find(Boolean); return m?m[1]:null; };
+  const out=body.slice(); const labIdx=new Map(); out.forEach((t,i)=>{ const lb=labelOf(t); if(lb&&!labIdx.has(lb)) labIdx.set(lb,i); }); let n=0;
+  for(let i=0;i<out.length;i++){ const t=out[i]; if(!isNote(t)) continue; const m=cw(t); if(!m) continue;
+    let tgt; if(m[2]==='next'){ tgt=i+1; while(tgt<out.length&&isFiller(out[tgt])) tgt++; } else tgt=labIdx.get(m[2]);
+    if(tgt==null||tgt<=i||tgt>=out.length||!isPickup(out[tgt])) continue;
+    /* the first real step after the pick-up that everyone who sees this note also sees */
+    const tg=tag(t); let j=tgt+1; while(j<out.length&&(isPickup(out[j])||isFiller(out[j])||(tag(out[j])&&tag(out[j])!==tg))) j++; if(j>=out.length) continue;
+    let lb=labelOf(out[j]); if(!lb){ lb=`InfoKeep${part}_${++n}`; out[j]=out[j].replace(/^(step[^\n]*)\n/,`$1\n    #label ${lb}\n`); labIdx.set(lb,j); }
+    out[i]=t.replace(m[0],`${m[1]}#completewith ${lb}`); }
+  return out; }
 async function exportGroupGuide(){ const set=isGrp()?memberRoutes():pathSet(); const R0=route,C0=cursor,S0=SIM; const nm0=$('#expName').value; const per=[]; const warns=[];
   const name=(isGrp()?route.name:set[0].name.replace(/\s*\(.*\)$/,''))||'Group';
   try{ for(const r of set){ await rawLoad((r.guides||[]).map(g=>g.id)); route=r; cursor=r.steps.length-1; simulate(); $('#expName').value=name; buildRXP(); per.push(LAST_SEGS); EXPORT_WARN.forEach(w=>warns.push(r.name+': '+w)); } }
@@ -1376,7 +1396,7 @@ async function exportGroupGuide(){ const set=isGrp()?memberRoutes():pathSet(); c
     const ord=sg.ord;
     const body=sg.blocks.flatMap(b=>{ const vars=new Map(); for(const [x,o] of b.per){ const k=norm(o.t); if(!vars.has(k)) vars.set(k,{v:o.t,m:new Set()}); vars.get(k).m.add(ord[x]); }
       return [...vars.values()].map(({v,m:S})=>{ const X=stepCond(v).trim(); const sees=new Set([...sg.m].filter(i=>S.has(i)||!X||condFor(X,set[i]))); /* members the step's own tag already hides need no extra tag */ const t=grpTag(S,sees,mem,conf); if(t) tagged++; return tagStep(v,t); }); });
-    outL.push(...H,...body,']])',''); });
+    outL.push(...H,...infoOutlastsPickups(body,k),']])',''); });
   const msgs=[`One guide for ${set.length} members: ${mem.map(m=>esc(m.name)+' ('+esc(m.race+' '+m.cls)+')').join(', ')}. ${tagged} step${tagged===1?' is':'s are'} tagged so only the members who do ${tagged===1?'it':'them'} see ${tagged===1?'it':'them'}; everything else is shared.`];
   if(conf.size) msgs.push(`⚠ ${[...conf].map(esc).join(', ')} share${conf.size===1?'s':''} a race and class with another member, so RestedXP can't tell them apart: they will also see each other's own steps. Export separate guides instead if that matters.`);
   if(!fac) msgs.push('⚠ The group mixes Horde and Alliance.');
