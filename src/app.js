@@ -1833,7 +1833,8 @@ $('#routeSel').addEventListener('change',e=>{ route=store.routes.find(r=>r.id===
 
 /* ---------- export ---------- */
 function rxpZone(z){ return zoneName(z); }
-const STEP_DONE_RE=/^\s*(\+|\.(goto|accept|turnin|complete|collect|xp|hs|home|fly|fp|trainer|vendor|deathskip|zone|subzone|reputation|skill|abandon|money|itemcount|buy|cast|isQuestComplete|isOnQuest)\b)/i;
+const GOTO_DONE=l=>{ const m=String(l).replace(/>>.*$/,'').match(/^\s*\.goto\s+[^,]+,\s*-?[\d.]+\s*,\s*-?[\d.]+\s*,\s*(-?[\d.]+)\s*(,.*)?$/i); return !!m&&+m[1]>0&&!m[2]; }; /* .goto without a radius (or with the optional flag) is text only in RestedXP: it never completes a step */
+const STEP_DONE_RE=/^\s*(\+|\.(accept|turnin|complete|collect|xp|hs|home|fly|fp|trainer|vendor|deathskip|zone|subzone|reputation|skill|abandon|money|itemcount|buy|cast|isQuestComplete|isOnQuest)\b)/i;
 function gotoLine(p){ if(!p||p.z==null) return null; const Z=META.zones[p.z]; if(Z&&Z.ui&&Z.b){ const [L,R,T,B]=Z.b; const a=L-(+p.px)/100*(L-R), b=T-(+p.py)/100*(T-B); return `    .goto ${Z.ui}/${Z.m},${a.toFixed(2)},${b.toFixed(2)}`; } return `    .goto ${rxpZone(p.z)},${(+p.px).toFixed(1)},${(+p.py).toFixed(1)}`; }
 function talkLines(p,tgt){ const ent=p?.ent||''; const name=tgt||(ent?entName(ent[0],+ent.slice(1)):null); if(!name) return {pre:[],post:[]}; if(!tgt&&ent[0]==='o') return {pre:[`    >>Click the |cRXP_PICK_${name}|r`],post:[]};
   return {pre:[`    >>|Tinterface/worldmap/chatbubble_64grey.blp:20|tTalk to |cRXP_FRIENDLY_${name}|r`],post:[`    .target ${name}`]}; }
@@ -2116,11 +2117,15 @@ function buildRXP(){
     else if(s.t==='travel'&&s.kind==='fp'&&r.node){ const t=taxiShort(r.node); lines.push(`    .fp ${t} >>Get the ${t} flight path`); if(r.pt?.label&&r.pt.node) lines.push(`    .target ${r.pt.label}`); }
     else if(s.t==='travel'&&s.kind==='ride'&&r.ride){ const rd=r.ride, z=rxpZone(rd.zone); if(!cont&&r.dep) lines.push(gotoLine(r.dep)+',40'+(rd.kind==='Zeppelin'?' >>Go up the Zeppelin Tower':'')); lines.push(`    .zone ${z} >>${rd.text}`); lines.push(`    .zoneskip ${z}`); }
     else if(s.t==='travel'&&s.kind==='hs'){ lines.push(`    .hs >>Hearth to ${r.pt?.label||rxpPlain(s.text||'')}`); lines.push('    .use 6948'); }
-    else if(s.t==='travel'){ const t=s.text||''; lines.push(({fly:`    .fly ${t} >>Fly to ${t}`,fp:`    .fp ${t} >>Get the ${t} flight path`,home:`    .home >>Set your Hearthstone to ${t}`,hs:`    .hs >>Hearth to ${t}`,goto:`    >>Go to ${t}`,note:`    >>${t}`,ride:`    >>${t}`})[s.kind]||`    >>${t}`); }
+    else if(s.t==='travel'){ const t=s.text||''; lines.push(({fly:`    .fly ${t} >>Fly to ${t}`,fp:`    .fp ${t} >>Get the ${t} flight path`,home:`    .home >>Set your Hearthstone to ${t}`,hs:`    .hs >>Hearth to ${t}`,goto:`    >>${/^(Go|Run|Take|Travel|Return|Head|Swim|Walk|Ride|Enter|Exit|Jump|Follow|Cross|Climb)\b/i.test(rxpPlain(t))?t:'Go to '+t}`,note:`    >>${t}`,ride:`    >>${t}`})[s.kind]||`    >>${t}`); }
     if(s.unote) lines.push(...s.unote.split('\n').filter(l=>l.trim()).map(l=>'    >>'+l.trim()));
     if(!cont){ /* RestedXP auto-completes (skips) a step made only of text: give it a manual checkbox (+line) so notes always stay until ticked */
       const st0=L.lastIndexOf('step'); const all=[...L.slice(st0+1),...lines];
-      if(!all.some(l=>STEP_DONE_RE.test(l))){ const k=lines.findIndex(l=>/^\s*>>/.test(l)); if(k>=0) lines[k]=lines[k].replace(/^(\s*)>>\s*/,'$1+'); else lines.push('    +'+(rxpPlain(stepText(s).t)||'Done')); } }
+      if(!all.some(l=>STEP_DONE_RE.test(l)||GOTO_DONE(l))){
+        const txt=s.text||''; const isTravel=s.t==='travel'&&s.kind==='goto'&&!/Talk to|Train|Stable|Restock|Buy|Cast|Tame|Abandon|Loot|Kill|Withdraw|Check/i.test(txt);
+        let gi=-1; for(let z=L.length-1;z>st0;z--) if(/^\s*\.goto\b/.test(L[z])){ gi=z; break; } const gk=lines.findIndex(l=>/^\s*\.goto\b/.test(l));
+        if(isTravel&&(gk>=0||gi>=0)){ /* plain travel: done on arrival, like RestedXP's own travel steps */ if(gk>=0) lines[gk]=lines[gk].replace(/^(\s*\.goto\s+[^,>]+,\s*-?[\d.]+\s*,\s*-?[\d.]+)/,'$1,25'); else L[gi]=L[gi].replace(/^(\s*\.goto\s+[^,>]+,\s*-?[\d.]+\s*,\s*-?[\d.]+)/,'$1,25'); }
+        else { /* anything you have to do there (talk, train, buy, tame): a tick box so it stays until you've done it */ const k=lines.findIndex(l=>/^\s*>>/.test(l)); if(k>=0) lines[k]=lines[k].replace(/^(\s*)>>\s*(Go to (?=\|T|\|c|Talk|Cast))?/,'$1+'); else lines.push('    +'+(rxpPlain(stepText(s).t)||'Done')); } } }
     L.push(...lines); if(!cont) L.push(...dgl);
     seg.items.push({rx:null,step:i,text:L.join('\n')});
   });
