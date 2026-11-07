@@ -1389,6 +1389,10 @@ async function exportGroupGuide(){ const set=isGrp()?memberRoutes():pathSet(); c
   const nmS=k=>parts[k].nm;
   const group=name+VT, extra=route.guide?.extra||'', next=route.guide?.next||''; let tagged=0;
   const outL=[...(isGrp()?[memHeader()]:[]),'-- Contains text from RestedXP guides (https://github.com/RestedXP/RXPGuides), licensed CC BY-NC-SA 4.0.','-- If you share this file: credit RestedXP, keep it non-commercial and share it under the same licence.','-- Made with the Forever Route Planner (GPL-3.0). Not affiliated with RestedXP, Blizzard or WoW: Forever.',`-- Group guide for ${mem.map(m=>`${m.name} (${m.race} ${m.cls})`).join(', ')}: steps only some of you do are tagged with << race/class.`,''];
+  /* RestedXP only shows .dungeon steps for dungeons ticked in each player's own RestedXP settings, unless the guide overrides it.
+     Lock every dungeon the guide mentions to the route's choice, so nobody has to match settings by hand. */
+  const dgSeen=new Map(); for(const sg of parts) for(const b of sg.blocks){ for(const [x,o] of b.per) for(const l of String(o.t).split('\n')){ const m=l.replace(/\s--.*$/,'').match(/^\s*\.dungeon\s+!?\s*(\S+)/i); if(m&&!dgSeen.has(dgTag(m[1]))) dgSeen.set(dgTag(m[1]),m[1]); } }
+  const dgStep=dgSeen.size?['step',...[...dgSeen].sort((a,b)=>a[0]<b[0]?-1:1).map(([t,raw])=>`    .enabledungeon ${dgOn(t)?'':'!'}${raw}`)].join('\n'):null;
   parts.forEach((sg,k)=>{ const H=[`RXPGuides.RegisterGuide(${JSON.stringify(group)},[[`]; const ex=extra?extra.split(/\s*;\s*|\n/).filter(Boolean):[]; if(!ex.some(l=>/^#forever\b/i.test(l))) H.push('#forever'); H.push(...ex);
     const gt=grpTag(sg.m,U,mem,conf); const facT=fac||[...new Set([...sg.m].map(i=>mem[i].fac==='H'?'Horde':'Alliance'))].join('/'); H.push(`#group ${group}`,`#subgroup ${sg.sub}`); H.push(gt?`<< ${facT} (${gt})`:`<< ${facT}`); H.push(`#name ${nmS(k)}`);
     const nx=new Map(); for(const i of sg.m){ let t=next; for(let j=k+1;j<parts.length;j++) if(parts[j].m.has(i)){ t=nmS(j); break; } if(t){ if(!nx.has(t)) nx.set(t,new Set()); nx.get(t).add(i); } }
@@ -1396,7 +1400,7 @@ async function exportGroupGuide(){ const set=isGrp()?memberRoutes():pathSet(); c
     const ord=sg.ord;
     const body=sg.blocks.flatMap(b=>{ const vars=new Map(); for(const [x,o] of b.per){ const k=norm(o.t); if(!vars.has(k)) vars.set(k,{v:o.t,m:new Set()}); vars.get(k).m.add(ord[x]); }
       return [...vars.values()].map(({v,m:S})=>{ const X=stepCond(v).trim(); const sees=new Set([...sg.m].filter(i=>S.has(i)||!X||condFor(X,set[i]))); /* members the step's own tag already hides need no extra tag */ const t=grpTag(S,sees,mem,conf); if(t) tagged++; return tagStep(v,t); }); });
-    outL.push(...H,...infoOutlastsPickups(body,k),']])',''); });
+    outL.push(...H,...(dgStep?[dgStep]:[]),...infoOutlastsPickups(body,k),']])',''); });
   const msgs=[`One guide for ${set.length} members: ${mem.map(m=>esc(m.name)+' ('+esc(m.race+' '+m.cls)+')').join(', ')}. ${tagged} step${tagged===1?' is':'s are'} tagged so only the members who do ${tagged===1?'it':'them'} see ${tagged===1?'it':'them'}; everything else is shared.`];
   if(conf.size) msgs.push(`⚠ ${[...conf].map(esc).join(', ')} share${conf.size===1?'s':''} a race and class with another member, so RestedXP can't tell them apart: they will also see each other's own steps. Export separate guides instead if that matters.`);
   if(!fac) msgs.push('⚠ The group mixes Horde and Alliance.');
