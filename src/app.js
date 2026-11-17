@@ -302,7 +302,7 @@ function cloneState(s){ return {level:s.level,xp:s.xp,party:s.party,log:new Map(
 // Forever: quest log holds 40, but escort quests can't be started with 25+ quests in the log
 const LOGMAX=40, ESC_LIMIT=25, ESCORT=new Set([155,219,309,435,648,660,665,667,731,836,863,898,938,945,976,994,995,1144,1222,1249,1270,1393,1440,1560,1651,2742,2767,2845,2904,2969,3382,3525,3982,4121,4245,4261,4265,4322,4491,4770,4901,4904,4966,5203,5321,5713,5821,5943,5944,6132,6403,6482,6523,6544,6641,8736]);
 const ESC_NOTE=`Escort quest: have fewer than ${ESC_LIMIT} quests in your log before accepting (Forever bug)`;
-function simulate(){ simulate0(); if(restCfg()){ let pv=-1; for(let z=0;z<8;z++){ const t6=restCfg().t60(); if(z>=1&&Math.abs(t6-pv)<20) break; pv=t6; simulate0(); } } const by=route.steps.map((x,k)=>[x,k]).filter(([x])=>x.t==='grind'&&x.mode==='by'); if(!by.length) return;
+function simulate(){ simulate0(); if(restCfg()){ let pv=-1; let pb=-1; for(let z=0;z<10;z++){ const t6=restCfg().t60(), b=REST.bon+REST.fd; if(z>=2&&Math.abs(t6-pv)<5&&Math.abs(b-pb)<20) break; pv=t6; pb=b; simulate0(); } } const by=route.steps.map((x,k)=>[x,k]).filter(([x])=>x.t==='grind'&&x.mode==='by'); if(!by.length) return;
   for(let it=0;it<8;it++){ let ch=false; for(const [g,k] of by){ const j=route.steps.findIndex(x=>x.id===g.at); if(j<=k||SIM.res[k]?.inactive) continue; const a=SIM.res[j]?.after; if(!a) continue;
       const diff=totalXP(Math.min(MAXLVL,g.level),g.xp||0)-totalXP(a.level,a.xp); const r=SIM.res[k]; const base=Math.max(+g._tgt||0,r.byNow||0); const nv=Math.max(r.byNow||0,Math.round(base+diff)); if(nv!==(+g._tgt||0)&&Math.abs(diff)>0){ g._tgt=nv; ch=true; } }
     if(!ch) break; simulate0(); } }
