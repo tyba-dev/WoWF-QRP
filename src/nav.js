@@ -141,7 +141,10 @@ function navPath(sa,ta){
   const tr=(t/w)|0, tc=t%w;
   const hd=(r,c,r2,c2)=>{ const dr=Math.abs(r-r2),dc=Math.abs(c-c2); return (Math.max(dr,dc)+0.4142*Math.min(dr,dc))*cell; };
   const lk=links.filter(l=>!/^Walk/.test(l.n)).map(l=>({ar:(l.ia/w)|0,ac:l.ia%w,br:(l.ib/w)|0,bc:l.ib%w,c:l.c/MIN})); /* walking links are no shortcut: leave them out of the estimate */
-  const H=i=>{ const r=(i/w)|0,c=i%w; let v=hd(r,c,tr,tc); for(const L of lk){ const v1=hd(r,c,L.ar,L.ac)+L.c+hd(L.br,L.bc,tr,tc); if(v1<v) v=v1; const v2=hd(r,c,L.br,L.bc)+L.c+hd(L.ar,L.ac,tr,tc); if(v2<v) v=v2; } return v*MIN*WT; };
+  /* a link can only lower the estimate if it is a shortcut towards the target from its own entry (c + rest < straight from entry):
+     the same for every node, so the others are dropped once per search (exactly the same estimate, much cheaper) */
+  const lh=[]; for(const L of lk){ const ab=L.c+hd(L.br,L.bc,tr,tc); if(ab<hd(L.ar,L.ac,tr,tc)) lh.push([L.ar,L.ac,ab]); const ba=L.c+hd(L.ar,L.ac,tr,tc); if(ba<hd(L.br,L.bc,tr,tc)) lh.push([L.br,L.bc,ba]); }
+  const H=i=>{ const r=(i/w)|0,c=i%w; let v=hd(r,c,tr,tc); for(const L of lh){ const v1=hd(r,c,L[0],L[1])+L[2]; if(v1<v) v=v1; } return v*MIN*WT; };
   // binary heap
   let hk=new Float64Array(4096), hv=new Int32Array(4096), hn=0;
   const push=(k,v)=>{ if(hn>=hk.length){ const k2=new Float64Array(hk.length*2); k2.set(hk); hk=k2; const v2=new Int32Array(hv.length*2); v2.set(hv); hv=v2; } let i=hn++; while(i>0){ const p=(i-1)>>1; if(hk[p]<=k) break; hk[i]=hk[p]; hv[i]=hv[p]; i=p; } hk[i]=k; hv[i]=v; };
